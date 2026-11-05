@@ -16,7 +16,7 @@ import {initializeDatabase} from './init-db.js';
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
 const app = express();
 app.disable('x-powered-by');
-app.use(helmet({contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'"],styleSrc:["'self'"],connectSrc:["'self'"],imgSrc:["'self'","data:"],objectSrc:["'none'"]}}}));
+app.use(helmet({contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'","https://js.culqi.com"],styleSrc:["'self'"],connectSrc:["'self'"],imgSrc:["'self'","data:"],objectSrc:["'none'"]}}}));
 app.use(cors({origin:process.env.CORS_ORIGIN?.split(',') || false}));
 app.use(express.json({limit:'16kb'}));
 const authLimit=rateLimit({windowMs:15*60*1000,limit:10,standardHeaders:'draft-7',legacyHeaders:false});
@@ -256,7 +256,7 @@ app.post('/api/admin/payments/:id/decision',authenticate,async(req,res)=>{
  if(!canManagePayments(req.admin))return res.status(403).json({error:'Sin permisos'});
  if(!/^\d{1,18}$/.test(req.params.id))return res.status(400).json({error:'ID inválido'});
  const parsed=z.object({decision:z.enum(['verified','rejected'])}).strict().safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Decisión inválida'});
- const conn=await db.getConnection();try{await conn.beginTransaction();const [[payment]]=await conn.execute('SELECT id,status,membership_id FROM payments WHERE id=? FOR UPDATE',[req.params.id]);if(!payment){await conn.rollback();return res.status(404).json({error:'Pago no encontrado'});}if(payment.status!=='pending'){await conn.rollback();return res.status(409).json({error:'Solicitud ya procesada'});}
+ const conn=await db.getConnection();try{await conn.beginTransaction();const [[payment]]=await conn.execute('SELECT id,status,membership_id FROM payments WHERE id=? FOR UPDATE',[req.params.id]);if(!payment){await conn.rollback();return res.status(404).json({error:'Pago no encontrado'});}if(payment.status!=='pending'){await conn.rollback();return res.status(409).json({error:'Solicitud ya procesada'});}const [[cardCheck]]=await conn.execute('SELECT method FROM payments WHERE id=?',[payment.id]);if(cardCheck?.method==='card'){await conn.rollback();return res.status(403).json({error:'Los cargos de tarjeta se concilian con Culqi'});}
  if(parsed.data.decision==='verified'){
  const [[membership]]=await conn.execute('SELECT m.id,m.user_id,m.plan_id,p.duration_days FROM memberships m JOIN plans p ON p.id=m.plan_id WHERE m.id=? FOR UPDATE',[payment.membership_id]);if(!membership)throw new Error('Membresía no encontrada');
  const [[current]]=await conn.execute("SELECT MAX(ends_at) AS last_end FROM memberships WHERE user_id=? AND status='active'",[membership.user_id]);
@@ -302,7 +302,44 @@ app.post('/api/admin/staff/:id/role',authenticate,async(req,res)=>{
 });
 
 // Pago automático: integración desactivada hasta configurar proveedor, firma webhook y conciliación.
-app.get('/api/payments/automatic/status',(req,res)=>res.json({enabled:false,reason:'Pasarela y webhook verificado pendientes'}));
+// Culqi: el navegador solo recibe la llave PUBLICA; nunca la secreta.
+const culqiReady=()=>Boolean(process.env.CULQI_PUBLIC_KEY&&process.env.CULQI_SECRET_KEY&&process.env.CULQI_ENABLE==='true');
+const cardLimit=rateLimit({windowMs:15*60*1000,limit:5,standardHeaders:'draft-7',legacyHeaders:false});
+app.get('/api/payments/automatic/status',(req,res)=>res.json({enabled:culqiReady(),provider:'culqi',publicKey:culqiReady()?process.env.CULQI_PUBLIC_KEY:null,mode:process.env.CULQI_PUBLIC_KEY?.startsWith('pk_live_')?'live':'test',reason:culqiReady()?null:'Configura CULQI_PUBLIC_KEY, CULQI_SECRET_KEY y CULQI_ENABLE=true'}));
+const cardSchema=z.object({plan_id:z.coerce.number().int().positive(),token_id:z.string().regex(/^tkn_(test|live)_[A-Za-z0-9]+$/).max(90)}).strict();
+app.post('/api/customers/payments/culqi',cardLimit,customerAuth,async(req,res)=>{
+ if(!culqiReady())return res.status(503).json({error:'Pago con tarjeta aún no disponible'});
+ const parsed=cardSchema.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Datos de pago inválidos'});
+ const live=process.env.CULQI_SECRET_KEY.startsWith('sk_live_');
+ if(!process.env.CULQI_SECRET_KEY.startsWith(live?'sk_live_':'sk_test_')||!process.env.CULQI_PUBLIC_KEY.startsWith(live?'pk_live_':'pk_test_')||!parsed.data.token_id.startsWith(live?'tkn_live_':'tkn_test_'))return res.status(503).json({error:'Las llaves y el token deben ser del mismo entorno'});
+ let conn;
+ try{
+  const [[plan]]=await db.execute('SELECT id,name,price_pen,duration_days FROM plans WHERE id=? AND active=1',[parsed.data.plan_id]);
+  if(!plan)return res.status(404).json({error:'Plan no disponible'});
+  const amount=Math.round(Number(plan.price_pen)*100);
+  if(!Number.isSafeInteger(amount)||amount<100||amount>9999900)return res.status(400).json({error:'Monto no permitido'});
+  // Culqi recibe un token, nunca números de tarjeta ni CVV en nuestro servidor.
+  const response=await fetch('https://api.culqi.com/v2/charges',{method:'POST',headers:{Authorization:`Bearer ${process.env.CULQI_SECRET_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({amount,currency_code:'PEN',email:req.customer.email,source_id:parsed.data.token_id,description:`Fijas de Elite - ${plan.name}`.slice(0,80),metadata:{user_id:String(req.customer.id),plan_id:String(plan.id)}}),signal:AbortSignal.timeout(20000)});
+  const charge=await response.json();
+  if(!response.ok||charge.object!=='charge'||!charge.id||charge.currency_code!=='PEN'||Number(charge.amount)!==amount||charge.captured!==true){
+   console.error('culqi charge not captured',response.status,charge?.id||charge?.object||'unknown');
+   return res.status(402).json({error:'Culqi no confirmó un cargo capturado. No se activó VIP. Si se realizó un débito, contacta soporte con el comprobante.'});
+  }
+  conn=await db.getConnection();await conn.beginTransaction();
+  // Idempotencia: nunca activar dos membresías por un mismo cargo.
+  const [[existing]]=await conn.execute('SELECT id FROM payments WHERE external_reference=? LIMIT 1 FOR UPDATE',[charge.id]);
+  if(existing){await conn.rollback();return res.status(409).json({error:'Este cargo ya está registrado'});}
+  const [membership]=await conn.execute("INSERT INTO memberships(user_id,plan_id,status) VALUES (?,?,'pending')",[req.customer.id,plan.id]);
+  const [payment]=await conn.execute("INSERT INTO payments(user_id,membership_id,method,amount_pen,status,external_reference,verified_at) VALUES (?,?, 'card',?,'verified',?,UTC_TIMESTAMP())",[req.customer.id,membership.insertId,plan.price_pen,charge.id]);
+  const [[current]]=await conn.execute("SELECT MAX(ends_at) AS last_end FROM memberships WHERE user_id=? AND status='active'",[req.customer.id]);
+  const start=current?.last_end&&new Date(current.last_end)>new Date()?new Date(current.last_end):new Date();
+  const end=new Date(start.getTime()+plan.duration_days*86400000);
+  await conn.execute("UPDATE memberships SET status='active',starts_at=?,ends_at=? WHERE id=?",[start,end,membership.insertId]);
+  await conn.execute("INSERT INTO audit_logs(action,entity_type,entity_id,details) VALUES ('culqi_card_captured','payment',?,JSON_OBJECT('charge_id',?))",[String(payment.insertId),charge.id]);
+  await conn.commit();res.json({ok:true,status:'verified',payment_id:payment.insertId,message:'Pago confirmado y VIP activado'});
+ }catch(e){if(conn)try{await conn.rollback();}catch{}console.error('culqi processing',e.code||e.message);res.status(503).json({error:'No se pudo completar la confirmación. Si hubo un cargo, contacta soporte antes de volver a pagar.'});}
+ finally{if(conn)conn.release();}
+});
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../public');
 app.use(express.static(root,{index:'index.html',dotfiles:'ignore'}));

@@ -18,11 +18,53 @@ async function loadDashboard(){
   for(const n of r.notices){const item=document.createElement('p');item.className='vip-notice';item.textContent=n.message;notices.append(item);}
  }catch(e){summary.textContent=e.message;}
 }
-async function me(){const r=await call('/api/customers/me',null,true);$('memberships').replaceChildren();$('accountMsg').textContent=`Bienvenido, ${r.user.display_name}`;for(const m of r.memberships){const p=document.createElement('p');p.textContent=`${m.plan}: ${m.status} · Vence: ${m.ends_at||'pendiente'}`;$('memberships').append(p);}}
+async function me(){const r=await call('/api/customers/me',null,true);$('memberships').replaceChildren();$('accountMsg').textContent=`Bienvenido, ${r.user.display_name}`;for(const m of r.memberships){const p=document.createElement('p');p.textContent=`${m.plan}: ${m.status} · Vence: ${m.ends_at||'pendiente'}`;$('memberships').append(p);}if(!r.memberships.length)$('memberships').textContent='Aún no tienes membresías registradas.';}
 $('register').addEventListener('submit',async e=>{e.preventDefault();try{await call('/api/customers/register',form('register'));$('regMsg').textContent='Cuenta creada. Ahora inicia sesión.';view('login');$('loginMsg').textContent='Cuenta creada. Inicia sesión.';}catch(err){$('regMsg').textContent=err.message;}});
-$('signin').addEventListener('submit',async e=>{e.preventDefault();try{const r=await call('/api/login',form('signin'));if(r.accountType==='admin'){sessionStorage.setItem('fijas_admin_handoff',r.token);location.replace('/admin.html');return;}token=r.token;await me();await loadCustomerPicks();await loadDashboard();document.querySelector('.auth-card').hidden=true;$('customer-area').hidden=false;}catch(err){$('loginMsg').textContent=err.message;}});
+$('signin').addEventListener('submit',async e=>{e.preventDefault();try{const r=await call('/api/login',form('signin'));if(r.accountType==='admin'){sessionStorage.setItem('fijas_admin_handoff',r.token);location.replace('/admin.html');return;}token=r.token;await me();await loadCustomerPicks();await loadDashboard();document.querySelector('.auth-card').hidden=true;$('customer-area').hidden=false;document.body.classList.add('client-logged-in');clientTab('overview');}catch(err){$('loginMsg').textContent=err.message;}});
 $('forgot').addEventListener('submit',async e=>{e.preventDefault();try{const r=await call('/api/customers/forgot-password',form('forgot'));$('forgotMsg').textContent=r.message;}catch(err){$('forgotMsg').textContent=err.message;}});
 $('reset').addEventListener('submit',async e=>{e.preventDefault();try{await call('/api/customers/reset-password',{token:new URLSearchParams(location.search).get('reset_token'),...form('reset')});history.replaceState(null,'','/clientes.html');view('login');$('loginMsg').textContent='Contraseña actualizada. Ya puedes iniciar sesión.';}catch(err){$('resetMsg').textContent=err.message;}});
 $('request').addEventListener('submit',async e=>{e.preventDefault();try{if(!token)throw Error('Primero inicia sesión');const r=await call('/api/customers/payment-requests',form('request'),true);$('requestMsg').textContent=`Solicitud #${r.payment_id} pendiente de revisión.`;await me();await loadCustomerPicks();await loadDashboard();}catch(err){$('requestMsg').textContent=err.message;}});
-$('logout').addEventListener('click',()=>{token='';$('customer-area').hidden=true;document.querySelector('.auth-card').hidden=false;view('login');});
+$('logout').addEventListener('click',()=>{token='';$('customer-area').hidden=true;document.body.classList.remove('client-logged-in');document.querySelector('.auth-card').hidden=false;view('login');});
 if(new URLSearchParams(location.search).has('reset_token'))view('reset');load();
+// Navegación de cliente: una sección visible a la vez, sin alterar los permisos del servidor.
+function clientTab(name){
+ const names=['overview','predictions','membership','payments','notices'];
+ if(!names.includes(name))return;
+ document.querySelectorAll('[data-client-panel]').forEach(el=>{el.hidden=el.dataset.clientPanel!==name;});
+ document.querySelectorAll('[data-client-tab]').forEach(btn=>{const active=btn.dataset.clientTab===name;btn.classList.toggle('active',active);if(active)btn.setAttribute('aria-current','page');else btn.removeAttribute('aria-current');});
+ const panel=document.querySelector('[data-client-panel="'+name+'"]');
+ if(panel)panel.scrollIntoView({block:'start',behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});
+}
+document.querySelectorAll('[data-client-tab]').forEach(btn=>btn.addEventListener('click',()=>clientTab(btn.dataset.clientTab)));
+document.querySelectorAll('[data-client-go]').forEach(btn=>btn.addEventListener('click',()=>clientTab(btn.dataset.clientGo)));
+
+// Culqi Checkout tokeniza la tarjeta directamente con Culqi; no recibe PAN/CVV este backend.
+let culqiConfig=null;
+async function initCulqi(){
+ const btn=$('culqi-pay'),msg=$('culqi-msg');if(!btn)return;
+ try{const status=await call('/api/payments/automatic/status');if(!status.enabled){msg.textContent='Tarjetas pendientes de configuración por el dueño.';return;}
+  if(typeof CulqiCheckout!=='function'){msg.textContent='No se pudo cargar el checkout seguro de Culqi.';return;}
+  culqiConfig=status;btn.disabled=false;msg.textContent=status.mode==='test'?'Modo de prueba: no se realizan cobros reales.':'Pago seguro mediante Culqi.';
+ }catch(e){msg.textContent='Tarjetas no disponibles temporalmente.';}
+}
+$('culqi-pay')?.addEventListener('click',()=>{
+ if(!token){$('culqi-msg').textContent='Primero inicia sesión.';return;}
+ const selected=$('plans').selectedOptions[0];if(!selected){$('culqi-msg').textContent='Selecciona un plan.';return;}
+ const priceMatch=selected.textContent.match(/S\/\s*([\d.]+)/);if(!priceMatch){$('culqi-msg').textContent='No se pudo obtener el precio.';return;}
+ const amount=Math.round(Number(priceMatch[1])*100);const planId=Number($('plans').value);
+ try{
+  const checkout=new CulqiCheckout(culqiConfig.publicKey,{
+   settings:{title:'Fijas de Élite',currency:'PEN',amount},
+   client:{email:$('signin').querySelector('[name="email"]')?.value||''},
+   options:{lang:'es',modal:true,paymentMethods:{tarjeta:true,yape:false,billetera:false,agente:false,bancaMovil:false,cuotealo:false}}
+  });
+  checkout.culqi=async()=>{
+   if(!checkout.token){$('culqi-msg').textContent=checkout.error?.user_message||'No se generó el token de tarjeta.';return;}
+   const id=checkout.token.id;checkout.close();$('culqi-pay').disabled=true;$('culqi-msg').textContent='Validando cargo con Culqi…';
+   try{const result=await call('/api/customers/payments/culqi',{plan_id:planId,token_id:id},true);$('culqi-msg').textContent=result.message;await me();await loadDashboard();await loadCustomerPicks();}
+   catch(e){$('culqi-msg').textContent=e.message;}
+   finally{$('culqi-pay').disabled=false;}
+  };checkout.open();
+ }catch(e){$('culqi-msg').textContent='No se pudo abrir Culqi Checkout: '+e.message;}
+});
+initCulqi();
