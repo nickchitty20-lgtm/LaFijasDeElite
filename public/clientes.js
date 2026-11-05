@@ -24,6 +24,11 @@ async function loadDashboard(){
   summary.replaceChildren();stats.replaceChildren();notices.replaceChildren();
   const heading=document.createElement('div');heading.className='vip-status';heading.textContent=r.membership?`✦ VIP ACTIVO · ${r.membership.plan} · ${r.membership.days_left} día(s) restantes`:'◇ CUENTA GRATUITA · VIP BLOQUEADO';summary.append(heading);
   const sub=document.createElement('p');sub.textContent=r.membership?`Vigente hasta ${new Date(r.membership.ends_at).toLocaleDateString('es-PE',{dateStyle:'long'})}`:'Puedes consultar los pronósticos gratuitos. Activa un plan para desbloquear VIP.';summary.append(sub);
+  if(r.membership?.renewals_scheduled>0){
+   const renewal=document.createElement('p');renewal.className='vip-renewal-applied';
+   renewal.textContent=`✓ Renovación confirmada: ${r.membership.renewals_scheduled} plan(es) adicional(es) incluido(s) en esta fecha de vencimiento.`;
+   summary.append(renewal);
+  }
   // A VIP client sees a renewal flow; the server remains the only authority on VIP status.
   const activeVip=Boolean(r.membership);
   const payNav=document.querySelector('[data-client-tab="payments"]');
@@ -42,7 +47,19 @@ async function loadDashboard(){
   for(const n of r.notices){const item=document.createElement('p');item.className='vip-notice';item.textContent=n.message;notices.append(item);}
  }catch(e){summary.textContent=e.message;}
 }
-async function me(){const r=await call('/api/customers/me',null,true);$('memberships').replaceChildren();$('accountMsg').textContent=`Bienvenido, ${r.user.display_name}`;for(const m of r.memberships){const p=document.createElement('p');p.textContent=`${m.plan}: ${m.status} · Vence: ${m.ends_at||'pendiente'}`;$('memberships').append(p);}if(!r.memberships.length)$('memberships').textContent='Aún no tienes membresías registradas.';}
+async function me(){
+ const r=await call('/api/customers/me',null,true);
+ $('memberships').replaceChildren();$('accountMsg').textContent=`Bienvenido, ${r.user.display_name}`;
+ const dateLabel=d=>d?new Date(d).toLocaleDateString('es-PE',{dateStyle:'medium'}):'pendiente';
+ for(const m of r.memberships){
+  const p=document.createElement('p');
+  const future=m.status==='active'&&m.starts_at&&new Date(m.starts_at).getTime()>Date.now();
+  const status=future?'Renovación confirmada (próxima)':({active:'Activa',pending:'Pendiente',expired:'Expirada',cancelled:'Cancelada'})[m.status]||m.status;
+  p.textContent=`${m.plan} · ${status}${future?' · Comienza: '+dateLabel(m.starts_at):''} · Vence: ${dateLabel(m.ends_at)}`;
+  $('memberships').append(p);
+ }
+ if(!r.memberships.length)$('memberships').textContent='Aún no tienes membresías registradas.';
+}
 $('register').addEventListener('submit',async e=>{e.preventDefault();try{await call('/api/customers/register',form('register'));$('regMsg').textContent='Cuenta creada. Ahora inicia sesión.';view('login');$('loginMsg').textContent='Cuenta creada. Inicia sesión.';}catch(err){$('regMsg').textContent=err.message;}});
 async function enterCustomerPanel(){
  await me();await loadCustomerPicks();await loadDashboard();

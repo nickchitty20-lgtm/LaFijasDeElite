@@ -12,9 +12,10 @@ import {fileURLToPath} from 'node:url';
 import {z} from 'zod';
 import {db} from './db.js';
 import {initializeDatabase} from './init-db.js';
+import {buildMembershipSummary} from './membership-summary.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
-const APP_VERSION = '1.8.5';
+const APP_VERSION = '1.8.6';
 const app = express();
 // Railway terminates HTTPS behind one reverse proxy; trust only that hop.
 app.set('trust proxy', 1);
@@ -335,17 +336,23 @@ app.get('/api/customers/predictions',customerAuth,async(req,res)=>{
 // Customer-only dashboard: all figures are derived from database records.
 app.get('/api/customers/dashboard',customerAuth,async(req,res)=>{
  try{
-  const [[membership]]=await db.execute("SELECT m.ends_at,p.name AS plan FROM memberships m JOIN plans p ON p.id=m.plan_id WHERE m.user_id=? AND m.status='active' AND m.starts_at<=UTC_TIMESTAMP() AND m.ends_at>UTC_TIMESTAMP() ORDER BY m.ends_at DESC LIMIT 1",[req.customer.id]);
+  // Determine whether VIP is active NOW, then include all confirmed, consecutive
+  // future renewals in its displayed expiry. Previously the dashboard excluded
+  // future starts_at rows, making a successful renewal appear not to be applied.
+  const [[currentMembership]]=await db.execute("SELECT m.ends_at,p.name AS plan FROM memberships m JOIN plans p ON p.id=m.plan_id WHERE m.user_id=? AND m.status='active' AND m.starts_at<=UTC_TIMESTAMP() AND m.ends_at>UTC_TIMESTAMP() ORDER BY m.ends_at DESC LIMIT 1",[req.customer.id]);
+  const [[horizon]]=currentMembership?await db.execute("SELECT m.ends_at FROM memberships m WHERE m.user_id=? AND m.status='active' AND m.ends_at>UTC_TIMESTAMP() ORDER BY m.ends_at DESC LIMIT 1",[req.customer.id]):[[null]];
+  const [[scheduled]]=currentMembership?await db.execute("SELECT COUNT(*) AS total FROM memberships WHERE user_id=? AND status='active' AND starts_at>UTC_TIMESTAMP() AND ends_at>UTC_TIMESTAMP()",[req.customer.id]):[[{total:0}]];
+  const membership=buildMembershipSummary(currentMembership,horizon,scheduled?.total);
   const [[stats]]=await db.query("SELECT COUNT(*) AS total, SUM(outcome='won') AS won, SUM(outcome='lost') AS lost, SUM(outcome='pending') AS pending FROM predictions WHERE published_at IS NOT NULL AND outcome IN ('won','lost','pending')");
   const [payments]=await db.execute("SELECT py.id,py.status,py.created_at,p.name AS plan FROM payments py JOIN memberships m ON m.id=py.membership_id JOIN plans p ON p.id=m.plan_id WHERE py.user_id=? ORDER BY py.id DESC LIMIT 5",[req.customer.id]);
   const [recent]=await db.query("SELECT id,title,visibility,outcome,match_date FROM predictions WHERE published_at IS NOT NULL ORDER BY id DESC LIMIT 6");
-  const now=Date.now(),daysLeft=membership?Math.max(0,Math.ceil((new Date(membership.ends_at).getTime()-now)/86400000)):0;
+  const daysLeft=membership?.days_left||0;
   const notices=[];
   if(membership&&daysLeft<=3)notices.push({type:'expiry',message:`Tu membresía vence en ${daysLeft} día(s).`});
   if(!membership)notices.push({type:'vip',message:'Activa una membresía para desbloquear los pronósticos VIP.'});
   if(payments.some(p=>p.status==='pending'))notices.push({type:'payment',message:'Tienes una solicitud de pago pendiente de revisión.'});
   if(recent.length)notices.push({type:'picks',message:'Hay pronósticos publicados. Consulta las tarjetas disponibles según tu acceso.'});
-  res.set('Cache-Control','private, no-store').json({membership:membership?{plan:membership.plan,ends_at:membership.ends_at,days_left:daysLeft}:null,stats:{total:Number(stats.total||0),won:Number(stats.won||0),lost:Number(stats.lost||0),pending:Number(stats.pending||0)},payments,notices});
+  res.set('Cache-Control','private, no-store').json({membership,stats:{total:Number(stats.total||0),won:Number(stats.won||0),lost:Number(stats.lost||0),pending:Number(stats.pending||0)},payments,notices});
  }catch(e){console.error('customer dashboard',e.code||e.message);res.status(500).json({error:'No se pudo cargar el panel'});}
 });
 app.get('/api/customers/me',customerAuth,async(req,res)=>{const [memberships]=await db.execute('SELECT m.id,m.status,m.starts_at,m.ends_at,p.name AS plan FROM memberships m JOIN plans p ON p.id=m.plan_id WHERE m.user_id=? ORDER BY m.id DESC LIMIT 20',[req.customer.id]);res.json({user:req.customer,memberships});});
@@ -366,6 +373,8 @@ app.post('/api/admin/payments/:id/decision',authenticate,async(req,res)=>{
  const conn=await db.getConnection();try{await conn.beginTransaction();const [[payment]]=await conn.execute('SELECT id,status,membership_id FROM payments WHERE id=? FOR UPDATE',[req.params.id]);if(!payment){await conn.rollback();return res.status(404).json({error:'Pago no encontrado'});}if(payment.status!=='pending'){await conn.rollback();return res.status(409).json({error:'Solicitud ya procesada'});}const [[cardCheck]]=await conn.execute('SELECT method FROM payments WHERE id=?',[payment.id]);if(cardCheck?.method==='card'){await conn.rollback();return res.status(403).json({error:'Los pagos con tarjeta se concilian automáticamente con el proveedor'});}
  if(parsed.data.decision==='verified'){
  const [[membership]]=await conn.execute('SELECT m.id,m.user_id,m.plan_id,p.duration_days FROM memberships m JOIN plans p ON p.id=m.plan_id WHERE m.id=? FOR UPDATE',[payment.membership_id]);if(!membership)throw new Error('Membresía no encontrada');
+ // Serialize approvals for the same customer to prevent two renewals overwriting days.
+ await conn.execute('SELECT id FROM users WHERE id=? FOR UPDATE',[membership.user_id]);
  const [[current]]=await conn.execute("SELECT MAX(ends_at) AS last_end FROM memberships WHERE user_id=? AND status='active'",[membership.user_id]);
  const start=current?.last_end && new Date(current.last_end)>new Date()?new Date(current.last_end):new Date();
  const end=new Date(start.getTime()+membership.duration_days*86400000);
@@ -488,11 +497,19 @@ async function reconcilePaypalOrder(orderId){
  try{
   await conn.beginTransaction();
   const [[pay]]=await conn.execute("SELECT id,user_id,membership_id,amount_pen,status,external_reference FROM payments WHERE id=? AND method='card' FOR UPDATE",[paymentId]);
-  if(!pay||pay.status!=='pending'||pay.external_reference!==orderId){await conn.rollback();return false;}
+  if(!pay||pay.external_reference!==orderId){await conn.rollback();return false;}
+  if(pay.status==='verified'){
+   const [[existing]]=await conn.execute("SELECT id FROM memberships WHERE id=? AND user_id=? AND status='active' LIMIT 1",[pay.membership_id,pay.user_id]);
+   await conn.rollback();return Boolean(existing);
+  }
+  if(pay.status!=='pending'){await conn.rollback();return false;}
   // The exact USD amount was fixed at order creation. Compare capture and order amounts.
   if(u.amount?.currency_code!=='USD'||Number(captures[0].amount.value)!==Number(u.amount.value)){await conn.rollback();return false;}
   const [[member]]=await conn.execute('SELECT m.id,m.user_id,p.duration_days FROM memberships m JOIN plans p ON p.id=m.plan_id WHERE m.id=? FOR UPDATE',[pay.membership_id]);
   if(!member||Number(member.user_id)!==Number(pay.user_id)){await conn.rollback();return false;}
+  // Row-lock the customer: distinct PayPal orders cannot extend the same expiry
+  // concurrently from an identical old end date. Confirmation remains idempotent.
+  await conn.execute('SELECT id FROM users WHERE id=? FOR UPDATE',[pay.user_id]);
   const [[current]]=await conn.execute("SELECT MAX(ends_at) AS last_end FROM memberships WHERE user_id=? AND status='active'",[pay.user_id]);
   const start=current?.last_end&&new Date(current.last_end)>new Date()?new Date(current.last_end):new Date();
   const end=new Date(start.getTime()+Number(member.duration_days)*86400000);
@@ -509,7 +526,7 @@ app.post('/api/customers/payments/paypal/capture',paypalConfirmLimit,customerAut
  try{
   const [[pay]]=await db.execute("SELECT id,status FROM payments WHERE user_id=? AND method='card' AND external_reference=? LIMIT 1",[req.customer.id,id]);
   if(!pay)return res.status(404).json({error:'Orden no encontrada'});
-  if(pay.status==='verified')return res.json({status:'verified',message:'Tu membresía VIP ya está activa.'});
+  if(pay.status==='verified')return res.json({status:'verified',message:'Este pago ya estaba confirmado. La renovación debe aparecer en «Mi membresía» y en la fecha total de vencimiento.'});
   const order=await paypalApi('/v2/checkout/orders/'+encodeURIComponent(id));
   if(order.status==='APPROVED'){
    await paypalApi('/v2/checkout/orders/'+encodeURIComponent(id)+'/capture',{method:'POST',headers:{'PayPal-Request-Id':'fijas-capture-'+pay.id},body:'{}'});
@@ -521,9 +538,9 @@ app.post('/api/customers/payments/paypal/capture',paypalConfirmLimit,customerAut
 // Manual reconciliation by the authenticated customer (never trust redirect query as proof).
 app.post('/api/customers/payments/paypal/check',paypalConfirmLimit,customerAuth,async(req,res)=>{
  if(!paypalReady())return res.status(503).json({error:'PayPal no disponible'});
- const [[pay]]=await db.execute("SELECT external_reference,status FROM payments WHERE user_id=? AND method='card' AND external_reference IS NOT NULL ORDER BY id DESC LIMIT 1",[req.customer.id]);
+ const [[pay]]=await db.execute("SELECT external_reference,status FROM payments WHERE user_id=? AND method='card' AND external_reference IS NOT NULL ORDER BY (status='pending') DESC,id DESC LIMIT 1",[req.customer.id]);
  if(!pay)return res.json({status:'no_pending',message:'No hay órdenes PayPal para verificar.'});
- if(pay.status==='verified')return res.json({status:'verified',message:'Membresía VIP activa.'});
+ if(pay.status==='verified')return res.json({status:'verified',message:'Tu último pago PayPal ya estaba confirmado. La fecha de vencimiento actualizada se muestra en «Mi membresía».'});
  try{
   // The order belongs to the authenticated customer. Resume capture if return processing failed.
   const order=await paypalApi('/v2/checkout/orders/'+encodeURIComponent(pay.external_reference));

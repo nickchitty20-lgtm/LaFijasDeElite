@@ -27,3 +27,6 @@ body.client-logged-in>header{display:none}body.client-logged-in .auth-layout{max
 .vip-renewal-note{background:linear-gradient(125deg,#2c2518,#1a1e25);border:1px solid #947743;border-radius:14px;padding:16px 20px;color:#e8d0a0;line-height:1.65;margin:0 0 20px}
 .paypal-reconcile button:disabled{opacity:.5;cursor:not-allowed}
 #client-account-tier{color:#e5c47e;font-weight:750}
+
+/* Confirmed renewals are displayed immediately in the customer summary. */
+.vip-renewal-applied{color:#d8bf7c;font-weight:600;font-size:.9rem;margin-top:.7rem}

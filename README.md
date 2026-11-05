@@ -1,38 +1,31 @@
-# Fijas de Élite v1.8.5 — Sesiones persistentes con cookies seguras
+# Fijas de Élite v1.8.6 — Corrección de renovaciones VIP
 
-Actualización de v1.8.4. Se mantiene toda la lógica de PayPal Sandbox, Yape, Plin, transferencias, permisos por cargo y pronósticos protegidos.
+Actualiza v1.8.5 sin perder datos, cuentas, cookies ni pagos anteriores. Mantiene PayPal Sandbox, Yape, Plin, transferencias y paneles premium.
 
-## Qué cambia
+## Error corregido
 
-- **Sesión persistente**: clientes gratuitos y VIP permanecen conectados **14 días** (desde el inicio de sesión), aun cuando cierren el navegador o regresen del checkout PayPal.
-- **Administradores**: permanecen conectados hasta **12 horas**; para mayor seguridad deben volver a autenticarse después de ese plazo.
-- La sesión se almacena en una cookie `fijas_session` con `HttpOnly`, `SameSite=Lax` y `Secure` en HTTPS (o NODE_ENV=production); no se guarda el JWT en `localStorage` ni `sessionStorage`.
-- El servidor valida la cuenta y los permisos en cada solicitud, no desde datos guardados por el navegador.
-- Si cambia la contraseña de una cuenta, las sesiones emitidas con la contraseña anterior dejan de funcionar.
-- **Cerrar sesión** limpia la cookie. En dispositivos compartidos, usa siempre este botón.
-- Protección de origen para peticiones que modifican información, para mitigar ataques CSRF con autenticación basada en cookies.
-- Un usuario VIP **no pierde su membresía ni sus pagos por cerrar la web**: todo se consulta en MySQL.
-- El regreso desde PayPal mantiene la sesión y vuelve a comprobar la orden en el servidor sin pedir un segundo pago.
+Antes, el pago de una renovación se marcaba como `verified` y se registraba una membresía nueva con `starts_at` igual al vencimiento actual. Esa estrategia **acumulaba los días**, pero el endpoint `/api/customers/dashboard` ignoraba la renovación porque su comienzo era futuro. Por eso mostraba el vencimiento antiguo pese al pago confirmado.
 
-## Publicación
+Ahora, si el cliente tiene un plan VIP vigente, el panel muestra inmediatamente el **vencimiento máximo de todas las renovaciones confirmadas**, junto al número de renovaciones programadas. La sección «Mi membresía» distingue entre una membresía vigente y las siguientes renovaciones confirmadas.
 
-1. Descomprime este ZIP y sube **el contenido** a la raíz del repositorio de GitHub, sin borrar tu base de datos.
-2. Espera a que Railway indique `Success` y comprueba `https://lafijasdeelite-production.up.railway.app/health`: `version` debe ser `1.8.5`.
-3. Mantén `JWT_SECRET` sin cambios y con al menos 32 caracteres; **no lo cambies** porque invalidaría todas las sesiones.
-4. Mantén `PUBLIC_BASE_URL=https://lafijasdeelite-production.up.railway.app` (sin barra final) y verifica que el checkout use este dominio.
-5. Mantén `PAYPAL_MODE=sandbox` durante las pruebas, con credenciales Sandbox. No pases a Live hasta terminar la verificación comercial y pruebas de pagos.
-6. Inicia sesión una vez, cierra la pestaña, regresa a `/clientes.html` y verifica que entres sin contraseña.
-7. Inicia una compra ficticia PayPal y regresa: la misma sesión permite verificar el pago.
-8. Pulsa **Cerrar sesión**: al volver, debe solicitar contraseña.
+También:
 
-## Seguridad y límites
+- Los pagos PayPal repetidamente verificados son idempotentes; no añaden días otra vez.
+- La conciliación de órdenes PayPal y la aprobación manual bloquean la fila del cliente durante el cálculo de días para evitar pérdidas de renovaciones simultáneas.
+- El botón «Verificar mi último pago PayPal» busca primero órdenes pendientes, no se limita a mostrar un pago anterior ya verificado.
+- Las cuentas que no tienen un VIP **vigente ahora** continúan sin acceso VIP aunque exista una membresía futura. No se adelanta la fecha de acceso.
+- El sistema sigue aceptando las renovaciones ya registradas en MySQL: el nuevo dashboard las refleja **sin cambios manuales de base de datos**.
 
-- Los navegadores con cookies bloqueadas no conservan la sesión; las ventanas privadas la eliminan al cerrarlas.
-- La duración de cliente es fija (14 días) y no se renueva automáticamente con actividad.
-- Las sesiones antiguas de versiones previas (que solo vivían en memoria) requieren **un nuevo inicio de sesión** una sola vez.
-- No usar `app.set('trust proxy', true)` indiscriminadamente: la app mantiene `trust proxy=1` detrás de Railway.
-- En producción usa HTTPS y no compartas `PAYPAL_CLIENT_SECRET`, `JWT_SECRET` ni la clave de MySQL.
-- `POST /api/logout` borra la cookie. `GET /api/session` informa únicamente el tipo de cuenta de la sesión actual.
-- No se añaden tablas ni se altera el esquema MySQL para esta actualización.
+## Instalación
 
-**Validación local:** comprobación de sintaxis de los archivos JS y del ZIP; las pruebas con Railway, MySQL y PayPal Sandbox deben hacerse tras desplegar.
+1. Extrae el ZIP y reemplaza el contenido del repositorio GitHub; **no borres la base de datos Railway**.
+2. Espera a que Railway indique `Success` y abre `/health`. Debe responder con `version: 1.8.6`.
+3. Abre la cuenta VIP que renovó y visita `Resumen` y `Mi membresía`. La fecha total debe sumar los días confirmados.
+4. Si la fecha sigue incorrecta, revisa en el panel admin el registro del último pago: `verified` vs `pending`. **No repitas el pago**. Una autorización de PayPal por sí sola no acredita el abono.
+5. Mantén `PAYPAL_MODE=sandbox` y `JWT_SECRET` sin cambios.
+
+## Verificación local
+
+`npm test` ejecuta pruebas sin MySQL ni PayPal para el cálculo de acumulación de fechas. `node --check src/server.js` verifica la sintaxis. **No equivale a probar un cobro real**; las operaciones con PayPal Sandbox y la base de datos desplegada deben verificarse después de instalar.
+
+Aviso: El registro de pagos verificables, el acceso VIP y el saldo del plan se mantienen en MySQL, nunca en cookies.
