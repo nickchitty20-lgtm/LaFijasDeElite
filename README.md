@@ -1,23 +1,12 @@
-# Fijas de Élite v1.0 — Dark Premium + Roles
+# Fijas de Élite v1.1 — Pronósticos protegidos
 
-Actualización sobre v0.9: **no borres la base de datos**. Copia los archivos en la raíz de tu repositorio GitHub y despliega en Railway.
+Actualización completa de v1.0. Sustituye los archivos del repositorio en GitHub. Railway debe desplegar automáticamente.
 
-## Incluye
-- Landing y páginas de acceso con estilos oscuros y transiciones suaves.
-- Login unificado: cliente o administrador según rol verificado en el servidor.
-- Registro público solo como cliente; compra requiere JWT de cliente válido.
-- Dueño puede promover o revocar roles en Gestión de personal; usuarios deben registrarse primero.
-- Selección de plan conservada al abrir login desde la landing.
-- Predicciones y Telegram conservados.
+- La landing muestra tarjetas de pronósticos con candado, sin revelar análisis, cuotas ni selecciones.
+- Los pronósticos gratuitos completos requieren iniciar sesión.
+- Los VIP solo se entregan a clientes con membresía activa y no vencida, verificada en MySQL por el servidor.
+- La API pública anterior `/api/predictions/free` ahora devuelve 401 para impedir fugas.
+- El portal de clientes muestra pronósticos después del login.
+- No modifica tablas ni elimina cuentas.
 
-## Notas de seguridad
-- La cuenta de dueño creada con el proceso inicial se conserva. No habilites de nuevo OWNER_SETUP_TOKEN.
-- El dueño existente es la única excepción al registro público obligatorio.
-- Los roles nuevos se guardan en `admins` asociados por email al usuario registrado en `users`. El inicio de sesión del personal ascendido comprueba la contraseña actual del usuario.
-- La revocación se comprueba en cada solicitud autenticada.
-- Los pagos manuales deben verificarse en la cuenta receptora; la pasarela automática está desactivada.
-- **No está listo para cobrar en producción**: faltan 2FA, revisión de seguridad, control de sesiones y conciliación de pagos.
-- La recuperación de contraseña por correo requiere configurar SMTP.
-
-## Railway
-Mantén DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME, JWT_SECRET, NODE_ENV y variables de Telegram. No subas secretos a GitHub.
+Prueba con visitante anónimo, cliente gratuito y cliente VIP. La versión aún requiere auditoría de seguridad antes de ventas reales.

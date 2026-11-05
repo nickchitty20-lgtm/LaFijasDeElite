@@ -149,12 +149,13 @@ app.patch('/api/admin/predictions/:id/outcome',authenticate,async(req,res)=>{
  await db.execute("INSERT INTO audit_logs(actor_admin_id,action,entity_type,entity_id,details) VALUES (?,'prediction_outcome_updated','prediction',?,JSON_OBJECT('outcome',?))",[req.admin.id,req.params.id,p.data.outcome]);res.json({ok:true});}
  catch(e){console.error('outcome update',e.code||e.message);res.status(500).json({error:'No se pudo actualizar'});}
 });
-// Solo contenido gratuito es público. VIP necesita autenticación de clientes, pendiente.
-app.get('/api/predictions/free',async(req,res)=>{
- try{const [rows]=await db.query("SELECT id,title,analysis,league,match_date,market,selection,odds,outcome,published_at FROM predictions WHERE visibility='free' AND published_at IS NOT NULL ORDER BY id DESC LIMIT 50");res.json({predictions:rows});}
- catch{res.status(500).json({error:'No disponible'});}
+// Public teasers contain no picks, odds, selections or analysis.
+app.get('/api/predictions/teasers',async(req,res)=>{
+ try{const [rows]=await db.query("SELECT id,title,league,match_date,visibility FROM predictions WHERE published_at IS NOT NULL ORDER BY id DESC LIMIT 12");res.json({predictions:rows});}
+ catch(e){console.error('teasers',e.code||e.message);res.status(500).json({error:'No disponible'});}
 });
-
+// Legacy endpoint must never expose free predictions anonymously.
+app.get('/api/predictions/free',(req,res)=>res.status(401).json({error:'Inicia sesión para ver pronósticos gratuitos'}));
 
 // V0.4: catálogo, clientes y solicitudes manuales. No se procesan cargos reales.
 const registerLimit=rateLimit({windowMs:15*60*1000,limit:5,standardHeaders:'draft-7',legacyHeaders:false});
@@ -208,6 +209,16 @@ app.post('/api/customers/reset-password',resetLimit,async(req,res)=>{
  }catch(e){await conn.rollback();console.error('reset password failed',e.code||e.message);res.status(500).json({error:'No se pudo actualizar la contraseña'});}finally{conn.release();}
 });
 async function customerAuth(req,res,next){const h=req.headers.authorization||'';if(!h.startsWith('Bearer '))return res.status(401).json({error:'Inicia sesión'});try{const t=jwt.verify(h.slice(7),process.env.JWT_SECRET,{issuer:'fijas-de-elite',audience:'customer'});const [[u]]=await db.execute('SELECT id,email,display_name FROM users WHERE id=?',[t.sub]);if(!u)return res.status(401).json({error:'Cuenta no disponible'});req.customer=u;next();}catch{return res.status(401).json({error:'Sesión inválida'});}}
+// Always authorize content on the server; never send VIP selections to non-VIP users.
+app.get('/api/customers/predictions',customerAuth,async(req,res)=>{
+ try{
+  const [[active]]=await db.execute("SELECT EXISTS(SELECT 1 FROM memberships WHERE user_id=? AND status='active' AND starts_at<=UTC_TIMESTAMP() AND ends_at>UTC_TIMESTAMP()) AS has_vip",[req.customer.id]);
+  const vip=Boolean(active.has_vip);
+  const [rows]=await db.query("SELECT id,title,league,match_date,visibility,analysis,market,selection,odds,outcome FROM predictions WHERE published_at IS NOT NULL ORDER BY id DESC LIMIT 50");
+  res.set('Cache-Control','private, no-store');
+  res.json({has_vip:vip,predictions:rows.map(p=>p.visibility==='vip'&&!vip?{id:p.id,title:p.title,league:p.league,match_date:p.match_date,visibility:'vip',locked:true}:{...p,locked:false})});
+ }catch(e){console.error('customer predictions',e.code||e.message);res.status(500).json({error:'No se pudieron cargar los pronósticos'});}
+});
 app.get('/api/customers/me',customerAuth,async(req,res)=>{const [memberships]=await db.execute('SELECT m.id,m.status,m.starts_at,m.ends_at,p.name AS plan FROM memberships m JOIN plans p ON p.id=m.plan_id WHERE m.user_id=? ORDER BY m.id DESC LIMIT 20',[req.customer.id]);res.json({user:req.customer,memberships});});
 app.post('/api/customers/payment-requests',customerAuth,async(req,res)=>{
  const p=paymentRequest.safeParse(req.body);if(!p.success)return res.status(400).json({error:'Datos de solicitud inválidos'});
