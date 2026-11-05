@@ -26,3 +26,7 @@ No se sobrescriben los planes que ya hayas creado, ni se elimina información. S
 
 ## v0.6 Animaciones
 Se agregó `public/motion.js` y mejoras en `public/landing.css` y `public/index.html`. Incluye entrada del hero, apariciones al desplazarse, tarjetas con hover, barra de progreso, brillo dorado y movimiento ambiental. Respeta `prefers-reduced-motion`. No modifica endpoints, pagos, usuarios, tablas ni credenciales.
+
+
+## v0.7 — Motion en toda la web
+Se añadieron `public/ui-motion.css` y `public/ui-motion.js` a landing, administración y portal de clientes. Animaciones suaves en botones, enlaces, tarjetas, formularios, secciones y elementos dinámicos. Compatible con `prefers-reduced-motion`. No se alteran rutas, autenticación, pagos ni tablas.
