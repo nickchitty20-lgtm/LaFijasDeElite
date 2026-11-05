@@ -1,16 +1,28 @@
-# Fijas de Élite v0.4 — usuarios y membresías (pruebas)
+# Fijas de Élite v0.5 — Landing y planes iniciales
 
-Proyecto completo basado en v0.3. Subir todos los archivos a GitHub conservando carpetas. Railway reinicia y `src/init-db.js` agrega la columna `users.password_hash` sin borrar tablas. Se conservan las variables DB_*, JWT_SECRET y Telegram.
+Actualización completa basada en v0.4. **No borres MySQL ni tus variables de Railway.** Descomprime y reemplaza los archivos del repositorio, conservando carpetas.
 
-## Funciones
-- `/clientes.html`: registro con contraseña bcrypt, login, catálogo y solicitud de pago manual.
-- Panel: crear planes, ver clientes, revisar solicitudes y aprobar/rechazar manualmente.
-- Aprobar crea una membresía activa y calcula su vencimiento. Las decisiones quedan en `audit_logs`.
-- API `/api/payments/automatic/status` informa que la pasarela **no está implementada**. No existe cobro por tarjeta ni activación automática por Yape/Plin.
+## Rutas
+- `/` — Landing pública profesional, responsive, negro y dorado.
+- `/admin.html` — Panel administrativo existente (se movió desde `/`).
+- `/clientes.html` — Portal de registro y solicitudes VIP existente.
+- `/health` — Salud del backend y MySQL.
 
-## Seguridad y límites
-- **Entorno de pruebas**. Antes de recibir dinero real: 2FA de admins, CSRF/cookies seguras o BFF, control de sesiones, auditoría de concurrencia, controles antifraude, política de privacidad, comprobantes y conciliación.
-- No aprobar pagos solo por código de operación: verificar el abono real en la cuenta.
-- No subir contraseñas, tokens ni capturas de credenciales a GitHub.
-- La suscripción web aún no controla automáticamente el acceso a Telegram VIP.
-- La pasarela automática necesita elegir proveedor autorizado, credenciales de prueba y webhook firmado; no se simula como si fuera real.
+## Planes iniciales
+En el arranque se comprueba la existencia de cada nombre de plan y se crea solo si falta:
+- VIP Semanal: S/ 15, 7 días
+- VIP Mensual: S/ 45, 30 días
+- VIP Trimestral: S/ 120, 90 días
+
+No se sobrescriben los planes que ya hayas creado, ni se elimina información. Si ya hay otros planes activos, también aparecerán en el landing, porque se consultan desde `/api/plans`.
+
+## Limitaciones importantes
+- Los pagos automáticos **no** están conectados. No aceptar pagos reales hasta completar seguridad, conciliación y verificación.
+- El acceso al canal Telegram VIP todavía no se gestiona automáticamente por membresía.
+- El contenido público usa los endpoints reales `/api/plans` y `/api/predictions/free`.
+- El landing carga una fuente externa de Google Fonts; si el navegador o la política CSP la bloquea, se usa tipografía del sistema. No se necesita fuente externa para que funcione.
+- Para pruebas, verifica `/`, `/admin.html`, `/clientes.html` y `/health` después de que Railway muestre Success.
+
+
+## v0.6 Animaciones
+Se agregó `public/motion.js` y mejoras en `public/landing.css` y `public/index.html`. Incluye entrada del hero, apariciones al desplazarse, tarjetas con hover, barra de progreso, brillo dorado y movimiento ambiental. Respeta `prefers-reduced-motion`. No modifica endpoints, pagos, usuarios, tablas ni credenciales.
