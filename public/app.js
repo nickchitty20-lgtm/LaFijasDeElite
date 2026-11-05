@@ -31,7 +31,7 @@ async function dashboard(){
  $('customersPanel').hidden=!clients;$('auditPanel').hidden=!audit;
  if(me.role==='owner')await loadStaff();if(pred)await loadPredictions();
  if(pay)await loadCommerce();else if(clients)await loadCustomersOnly();
- if(audit)await loadAudit();}catch(err){token='';$('loginMsg').textContent=err.message;show('login');}
+ if(audit)await loadAudit();initAdminNavigation();}catch(err){token='';$('loginMsg').textContent=err.message;show('login');}
 }
 $('logout').addEventListener('click',()=>{token='';show('login');});
 refreshSetup();
@@ -91,3 +91,30 @@ async function loadAudit(){
  try{const {logs}=await api('/api/admin/audit');for(const log of logs){const item=document.createElement('p');item.textContent=`${new Date(log.created_at).toLocaleString('es-PE')} · ${log.actor||'Sistema'} · ${log.action} · ${log.entity_type} #${log.entity_id||'—'}`;area.append(item);}if(!logs.length)area.textContent='Sin acciones registradas';}
  catch(e){area.textContent=e.message;}
 }
+
+// Navegación de una sola sección a la vez, respetando permisos del servidor.
+let activeAdminSection='overview';
+function initAdminNavigation(){
+ const buttons=[...document.querySelectorAll('.admin-nav button[data-section]')];
+ for(const button of buttons){
+  const access=button.dataset.access;
+  button.hidden=Boolean(access && $(access).hidden);
+ }
+ if(!buttons.some(b=>b.dataset.section===activeAdminSection&&!b.hidden))activeAdminSection='overview';
+ selectAdminSection(activeAdminSection);
+}
+function selectAdminSection(section){
+ const buttons=[...document.querySelectorAll('.admin-nav button[data-section]')];
+ const selected=buttons.find(b=>b.dataset.section===section&&!b.hidden);
+ if(!selected)return;
+ activeAdminSection=section;
+ for(const b of buttons){const on=b===selected;b.classList.toggle('active',on);b.setAttribute('aria-current',on?'page':'false');}
+ for(const panel of document.querySelectorAll('#dashboard [data-panel]')){
+   const accessId=panel.id==='predictionHistory'?'predictionEditor':panel.id;
+  const guarded=['predictionEditor','predictionHistory','plansPanel','paymentsPanel','staffPanel','customersPanel','auditPanel'].includes(panel.id);
+  panel.hidden=panel.dataset.panel!==section || (guarded && !isAdminPanelAllowed(accessId));
+ }
+ document.querySelector('#dashboard .heading h1').textContent=({overview:'Resumen del negocio',predictions:'Gestión de pronósticos',payments:'Solicitudes de pago',plans:'Planes y precios',customers:'Clientes registrados',staff:'Gestión de personal',audit:'Historial de actividad'})[section]||'Resumen del negocio';
+}
+function isAdminPanelAllowed(id){const button=document.querySelector(`.admin-nav button[data-access="${id}"]`);return button&&!button.hidden;}
+document.querySelectorAll('.admin-nav button[data-section]').forEach(button=>button.addEventListener('click',()=>selectAdminSection(button.dataset.section)));

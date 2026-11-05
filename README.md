@@ -33,3 +33,7 @@ Prueba con visitante anónimo, cliente gratuito y cliente VIP. La versión aún 
 - Los administradores ascendidos usan la contraseña actual de su cuenta cliente.
 
 Pendiente: suspensiones, edición/eliminación de pronósticos, MFA y pruebas reales de Railway.
+
+
+## v1.4 — Dashboard organizado
+Panel de administración con navegación lateral por secciones (Resumen, Pronósticos, Pagos, Planes, Clientes, Personal, Actividad), menú horizontal en móviles y tarjetas de estadísticas. No se modifican endpoints ni tablas. Los accesos visibles respetan el rol actual; los permisos reales siguen verificados por el servidor.
