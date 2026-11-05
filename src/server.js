@@ -16,7 +16,7 @@ import {initializeDatabase} from './init-db.js';
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
 const app = express();
 app.disable('x-powered-by');
-app.use(helmet({contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'","https://js.culqi.com"],styleSrc:["'self'"],connectSrc:["'self'"],imgSrc:["'self'","data:"],objectSrc:["'none'"]}}}));
+app.use(helmet({contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'"],styleSrc:["'self'"],connectSrc:["'self'"],imgSrc:["'self'","data:"],objectSrc:["'none'"]}}}));
 app.use(cors({origin:process.env.CORS_ORIGIN?.split(',') || false}));
 app.use(express.json({limit:'16kb'}));
 const authLimit=rateLimit({windowMs:15*60*1000,limit:10,standardHeaders:'draft-7',legacyHeaders:false});
@@ -65,7 +65,7 @@ app.post('/api/login',unifiedLimit,async(req,res)=>{
   const [[customer]]=await db.execute('SELECT id,password_hash FROM users WHERE email=? LIMIT 1',[email]);
   const dummy='$2a$12$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';
   const [adminValid,customerValid]=await Promise.all([
-   bcrypt.compare(p.data.password,(customer?.password_hash || admin?.password_hash)||dummy),
+   bcrypt.compare(p.data.password,admin?.password_hash||dummy),
    bcrypt.compare(p.data.password,customer?.password_hash||dummy)
   ]);
   if(admin?.is_active && adminValid){
@@ -256,7 +256,7 @@ app.post('/api/admin/payments/:id/decision',authenticate,async(req,res)=>{
  if(!canManagePayments(req.admin))return res.status(403).json({error:'Sin permisos'});
  if(!/^\d{1,18}$/.test(req.params.id))return res.status(400).json({error:'ID inválido'});
  const parsed=z.object({decision:z.enum(['verified','rejected'])}).strict().safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Decisión inválida'});
- const conn=await db.getConnection();try{await conn.beginTransaction();const [[payment]]=await conn.execute('SELECT id,status,membership_id FROM payments WHERE id=? FOR UPDATE',[req.params.id]);if(!payment){await conn.rollback();return res.status(404).json({error:'Pago no encontrado'});}if(payment.status!=='pending'){await conn.rollback();return res.status(409).json({error:'Solicitud ya procesada'});}const [[cardCheck]]=await conn.execute('SELECT method FROM payments WHERE id=?',[payment.id]);if(cardCheck?.method==='card'){await conn.rollback();return res.status(403).json({error:'Los cargos de tarjeta se concilian con Culqi'});}
+ const conn=await db.getConnection();try{await conn.beginTransaction();const [[payment]]=await conn.execute('SELECT id,status,membership_id FROM payments WHERE id=? FOR UPDATE',[req.params.id]);if(!payment){await conn.rollback();return res.status(404).json({error:'Pago no encontrado'});}if(payment.status!=='pending'){await conn.rollback();return res.status(409).json({error:'Solicitud ya procesada'});}const [[cardCheck]]=await conn.execute('SELECT method FROM payments WHERE id=?',[payment.id]);if(cardCheck?.method==='card'){await conn.rollback();return res.status(403).json({error:'Los pagos con tarjeta se concilian automáticamente con el proveedor'});}
  if(parsed.data.decision==='verified'){
  const [[membership]]=await conn.execute('SELECT m.id,m.user_id,m.plan_id,p.duration_days FROM memberships m JOIN plans p ON p.id=m.plan_id WHERE m.id=? FOR UPDATE',[payment.membership_id]);if(!membership)throw new Error('Membresía no encontrada');
  const [[current]]=await conn.execute("SELECT MAX(ends_at) AS last_end FROM memberships WHERE user_id=? AND status='active'",[membership.user_id]);
@@ -301,44 +301,97 @@ app.post('/api/admin/staff/:id/role',authenticate,async(req,res)=>{
  }catch(e){await conn.rollback();console.error('staff update',e.code||e.message);res.status(500).json({error:'No se pudo cambiar el rol'});}finally{conn.release();}
 });
 
-// Pago automático: integración desactivada hasta configurar proveedor, firma webhook y conciliación.
-// Culqi: el navegador solo recibe la llave PUBLICA; nunca la secreta.
-const culqiReady=()=>Boolean(process.env.CULQI_PUBLIC_KEY&&process.env.CULQI_SECRET_KEY&&process.env.CULQI_ENABLE==='true');
-const cardLimit=rateLimit({windowMs:15*60*1000,limit:5,standardHeaders:'draft-7',legacyHeaders:false});
-app.get('/api/payments/automatic/status',(req,res)=>res.json({enabled:culqiReady(),provider:'culqi',publicKey:culqiReady()?process.env.CULQI_PUBLIC_KEY:null,mode:process.env.CULQI_PUBLIC_KEY?.startsWith('pk_live_')?'live':'test',reason:culqiReady()?null:'Configura CULQI_PUBLIC_KEY, CULQI_SECRET_KEY y CULQI_ENABLE=true'}));
-const cardSchema=z.object({plan_id:z.coerce.number().int().positive(),token_id:z.string().regex(/^tkn_(test|live)_[A-Za-z0-9]+$/).max(90)}).strict();
-app.post('/api/customers/payments/culqi',cardLimit,customerAuth,async(req,res)=>{
- if(!culqiReady())return res.status(503).json({error:'Pago con tarjeta aún no disponible'});
- const parsed=cardSchema.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Datos de pago inválidos'});
- const live=process.env.CULQI_SECRET_KEY.startsWith('sk_live_');
- if(!process.env.CULQI_SECRET_KEY.startsWith(live?'sk_live_':'sk_test_')||!process.env.CULQI_PUBLIC_KEY.startsWith(live?'pk_live_':'pk_test_')||!parsed.data.token_id.startsWith(live?'tkn_live_':'tkn_test_'))return res.status(503).json({error:'Las llaves y el token deben ser del mismo entorno'});
- let conn;
+// PayPal Checkout: orders are created/captured server-to-server; no browser-provided amount is trusted.
+// PayPal REST does not support PEN as a checkout currency. USD is calculated with an owner-configured rate.
+const paypalLimit=rateLimit({windowMs:15*60*1000,limit:6,standardHeaders:'draft-7',legacyHeaders:false});
+const paypalPlan=z.object({plan_id:z.coerce.number().int().positive()}).strict();
+const paypalOrder=z.object({order_id:z.string().regex(/^[A-Z0-9-]{8,64}$/i)}).strict();
+const paypalMode=()=>process.env.PAYPAL_MODE==='live'?'live':'sandbox';
+const paypalHost=()=>paypalMode()==='live'?'https://api-m.paypal.com':'https://api-m.sandbox.paypal.com';
+const paypalRate=()=>Number(process.env.PAYPAL_PEN_PER_USD);
+const paypalReady=()=>process.env.PAYPAL_ENABLE==='true'&&Boolean(process.env.PAYPAL_CLIENT_ID)&&Boolean(process.env.PAYPAL_CLIENT_SECRET)&&Number.isFinite(paypalRate())&&paypalRate()>0&&Boolean(process.env.PUBLIC_BASE_URL);
+const usdFromPen=pen=>(Math.round(Number(pen)/paypalRate()*100)/100).toFixed(2);
+let paypalAccess={token:null,expires:0};
+async function paypalToken(){
+ if(paypalAccess.token&&paypalAccess.expires>Date.now()+30000)return paypalAccess.token;
+ const credentials=Buffer.from(process.env.PAYPAL_CLIENT_ID+':'+process.env.PAYPAL_CLIENT_SECRET).toString('base64');
+ const r=await fetch(paypalHost()+'/v1/oauth2/token',{method:'POST',headers:{Authorization:'Basic '+credentials,'Content-Type':'application/x-www-form-urlencoded'},body:'grant_type=client_credentials',signal:AbortSignal.timeout(12000)});
+ if(!r.ok)throw new Error('PayPal auth HTTP '+r.status);
+ const d=await r.json();paypalAccess={token:d.access_token,expires:Date.now()+Number(d.expires_in||300)*1000};return d.access_token;
+}
+async function paypalApi(route,opts={}){
+ const token=await paypalToken();const r=await fetch(paypalHost()+route,{...opts,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json',...(opts.headers||{})},signal:AbortSignal.timeout(15000)});
+ const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error('PayPal HTTP '+r.status);return data;
+}
+app.get('/api/payments/automatic/status',(req,res)=>res.json({enabled:paypalReady(),provider:'paypal',mode:paypalMode(),currency:'USD',pen_per_usd:paypalReady()?paypalRate():null,reason:paypalReady()?null:'Configura PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET, PAYPAL_PEN_PER_USD, PUBLIC_BASE_URL y PAYPAL_ENABLE=true'}));
+app.post('/api/customers/payments/paypal',paypalLimit,customerAuth,async(req,res)=>{
+ if(!paypalReady())return res.status(503).json({error:'PayPal todavía no está disponible'});
+ const parsed=paypalPlan.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Plan inválido'});
  try{
-  const [[plan]]=await db.execute('SELECT id,name,price_pen,duration_days FROM plans WHERE id=? AND active=1',[parsed.data.plan_id]);
+  const [[plan]]=await db.execute('SELECT id,name,price_pen FROM plans WHERE id=? AND active=1',[parsed.data.plan_id]);
   if(!plan)return res.status(404).json({error:'Plan no disponible'});
-  const amount=Math.round(Number(plan.price_pen)*100);
-  if(!Number.isSafeInteger(amount)||amount<100||amount>9999900)return res.status(400).json({error:'Monto no permitido'});
-  // Culqi recibe un token, nunca números de tarjeta ni CVV en nuestro servidor.
-  const response=await fetch('https://api.culqi.com/v2/charges',{method:'POST',headers:{Authorization:`Bearer ${process.env.CULQI_SECRET_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({amount,currency_code:'PEN',email:req.customer.email,source_id:parsed.data.token_id,description:`Fijas de Elite - ${plan.name}`.slice(0,80),metadata:{user_id:String(req.customer.id),plan_id:String(plan.id)}}),signal:AbortSignal.timeout(20000)});
-  const charge=await response.json();
-  if(!response.ok||charge.object!=='charge'||!charge.id||charge.currency_code!=='PEN'||Number(charge.amount)!==amount||charge.captured!==true){
-   console.error('culqi charge not captured',response.status,charge?.id||charge?.object||'unknown');
-   return res.status(402).json({error:'Culqi no confirmó un cargo capturado. No se activó VIP. Si se realizó un débito, contacta soporte con el comprobante.'});
-  }
-  conn=await db.getConnection();await conn.beginTransaction();
-  // Idempotencia: nunca activar dos membresías por un mismo cargo.
-  const [[existing]]=await conn.execute('SELECT id FROM payments WHERE external_reference=? LIMIT 1 FOR UPDATE',[charge.id]);
-  if(existing){await conn.rollback();return res.status(409).json({error:'Este cargo ya está registrado'});}
-  const [membership]=await conn.execute("INSERT INTO memberships(user_id,plan_id,status) VALUES (?,?,'pending')",[req.customer.id,plan.id]);
-  const [payment]=await conn.execute("INSERT INTO payments(user_id,membership_id,method,amount_pen,status,external_reference,verified_at) VALUES (?,?, 'card',?,'verified',?,UTC_TIMESTAMP())",[req.customer.id,membership.insertId,plan.price_pen,charge.id]);
-  const [[current]]=await conn.execute("SELECT MAX(ends_at) AS last_end FROM memberships WHERE user_id=? AND status='active'",[req.customer.id]);
+  const usd=usdFromPen(plan.price_pen);if(Number(usd)<0.01)return res.status(400).json({error:'Monto inválido'});
+  const conn=await db.getConnection();let paymentId;
+  try{await conn.beginTransaction();const [m]=await conn.execute("INSERT INTO memberships(user_id,plan_id,status) VALUES (?,?,'pending')",[req.customer.id,plan.id]);const [pay]=await conn.execute("INSERT INTO payments(user_id,membership_id,method,amount_pen,status) VALUES (?,?,'card',?,'pending')",[req.customer.id,m.insertId,plan.price_pen]);paymentId=pay.insertId;await conn.commit();}
+  catch(e){await conn.rollback();throw e;}finally{conn.release();}
+  const base=process.env.PUBLIC_BASE_URL.replace(/\/$/,'');
+  const order=await paypalApi('/v2/checkout/orders',{method:'POST',headers:{'PayPal-Request-Id':'fijas-order-'+paymentId},body:JSON.stringify({intent:'CAPTURE',purchase_units:[{reference_id:String(paymentId),custom_id:String(paymentId),description:'Fijas de Élite - '+plan.name,amount:{currency_code:'USD',value:usd}}],application_context:{return_url:base+'/clientes.html?paypal_return=success',cancel_url:base+'/clientes.html?paypal_return=cancel',user_action:'PAY_NOW'}})});
+  const approve=order.links?.find(x=>x.rel==='approve'&&x.href?.startsWith('https://'))?.href;
+  if(!approve||!order.id)throw new Error('PayPal order incomplete');
+  // Store PayPal order id before redirect; use a compare-and-swap to avoid accidental overwrite.
+  await db.execute("UPDATE payments SET external_reference=? WHERE id=? AND status='pending' AND external_reference IS NULL",[order.id,paymentId]);
+  res.json({checkout_url:approve,order_id:order.id,amount_usd:usd,pen_per_usd:paypalRate(),status:'pending'});
+ }catch(e){console.error('paypal create',e.message);res.status(503).json({error:'No se pudo preparar PayPal. No se activó VIP.'});}
+});
+async function reconcilePaypalOrder(orderId){
+ const order=await paypalApi('/v2/checkout/orders/'+encodeURIComponent(orderId));
+ if(order.id!==orderId||order.status!=='COMPLETED')return false;
+ const units=order.purchase_units||[];if(units.length!==1)return false;
+ const u=units[0];const captures=u.payments?.captures||[];
+ if(captures.length!==1||captures[0].status!=='COMPLETED'||captures[0].amount?.currency_code!=='USD')return false;
+ const paymentId=u.custom_id;if(!/^\d{1,20}$/.test(String(paymentId)))return false;
+ const conn=await db.getConnection();
+ try{
+  await conn.beginTransaction();
+  const [[pay]]=await conn.execute("SELECT id,user_id,membership_id,amount_pen,status,external_reference FROM payments WHERE id=? AND method='card' FOR UPDATE",[paymentId]);
+  if(!pay||pay.status!=='pending'||pay.external_reference!==orderId){await conn.rollback();return false;}
+  // The exact USD amount was fixed at order creation. Compare capture and order amounts.
+  if(u.amount?.currency_code!=='USD'||Number(captures[0].amount.value)!==Number(u.amount.value)){await conn.rollback();return false;}
+  const [[member]]=await conn.execute('SELECT m.id,m.user_id,p.duration_days FROM memberships m JOIN plans p ON p.id=m.plan_id WHERE m.id=? FOR UPDATE',[pay.membership_id]);
+  if(!member||Number(member.user_id)!==Number(pay.user_id)){await conn.rollback();return false;}
+  const [[current]]=await conn.execute("SELECT MAX(ends_at) AS last_end FROM memberships WHERE user_id=? AND status='active'",[pay.user_id]);
   const start=current?.last_end&&new Date(current.last_end)>new Date()?new Date(current.last_end):new Date();
-  const end=new Date(start.getTime()+plan.duration_days*86400000);
-  await conn.execute("UPDATE memberships SET status='active',starts_at=?,ends_at=? WHERE id=?",[start,end,membership.insertId]);
-  await conn.execute("INSERT INTO audit_logs(action,entity_type,entity_id,details) VALUES ('culqi_card_captured','payment',?,JSON_OBJECT('charge_id',?))",[String(payment.insertId),charge.id]);
-  await conn.commit();res.json({ok:true,status:'verified',payment_id:payment.insertId,message:'Pago confirmado y VIP activado'});
- }catch(e){if(conn)try{await conn.rollback();}catch{}console.error('culqi processing',e.code||e.message);res.status(503).json({error:'No se pudo completar la confirmación. Si hubo un cargo, contacta soporte antes de volver a pagar.'});}
- finally{if(conn)conn.release();}
+  const end=new Date(start.getTime()+Number(member.duration_days)*86400000);
+  await conn.execute("UPDATE memberships SET status='active',starts_at=?,ends_at=? WHERE id=? AND status='pending'",[start,end,member.id]);
+  await conn.execute("UPDATE payments SET status='verified',verified_at=UTC_TIMESTAMP() WHERE id=? AND status='pending'",[pay.id]);
+  await conn.execute("INSERT INTO audit_logs(action,entity_type,entity_id,details) VALUES ('paypal_captured','payment',?,JSON_OBJECT('paypal_order_id',?))",[String(pay.id),orderId]);
+  await conn.commit();return true;
+ }catch(e){await conn.rollback();throw e;}finally{conn.release();}
+}
+app.post('/api/customers/payments/paypal/capture',paypalLimit,customerAuth,async(req,res)=>{
+ if(!paypalReady())return res.status(503).json({error:'PayPal no disponible'});
+ const parsed=paypalOrder.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Orden inválida'});
+ const id=parsed.data.order_id;
+ try{
+  const [[pay]]=await db.execute("SELECT id,status FROM payments WHERE user_id=? AND method='card' AND external_reference=? LIMIT 1",[req.customer.id,id]);
+  if(!pay)return res.status(404).json({error:'Orden no encontrada'});
+  if(pay.status==='verified')return res.json({status:'verified',message:'Tu membresía VIP ya está activa.'});
+  const order=await paypalApi('/v2/checkout/orders/'+encodeURIComponent(id));
+  if(order.status==='APPROVED'){
+   await paypalApi('/v2/checkout/orders/'+encodeURIComponent(id)+'/capture',{method:'POST',headers:{'PayPal-Request-Id':'fijas-capture-'+pay.id},body:'{}'});
+  }
+  const activated=await reconcilePaypalOrder(id);
+  res.json({status:activated?'verified':'pending',message:activated?'Pago confirmado. ¡Tu membresía VIP está activa!':'PayPal todavía no confirma la captura del pago.'});
+ }catch(e){console.error('paypal capture',e.message);res.status(503).json({error:'No se pudo verificar el cobro. Intenta nuevamente; no pagues dos veces.'});}
+});
+// Manual reconciliation by the authenticated customer (never trust redirect query as proof).
+app.post('/api/customers/payments/paypal/check',paypalLimit,customerAuth,async(req,res)=>{
+ if(!paypalReady())return res.status(503).json({error:'PayPal no disponible'});
+ const [[pay]]=await db.execute("SELECT external_reference,status FROM payments WHERE user_id=? AND method='card' AND external_reference IS NOT NULL ORDER BY id DESC LIMIT 1",[req.customer.id]);
+ if(!pay)return res.json({status:'no_pending',message:'No hay órdenes PayPal para verificar.'});
+ if(pay.status==='verified')return res.json({status:'verified',message:'Membresía VIP activa.'});
+ try{const done=await reconcilePaypalOrder(pay.external_reference);res.json({status:done?'verified':'pending',message:done?'Pago confirmado. VIP activado.':'Aún no hay un pago capturado confirmado.'});}
+ catch(e){console.error('paypal check',e.message);res.status(503).json({error:'No se pudo verificar el estado del pago.'});}
 });
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../public');

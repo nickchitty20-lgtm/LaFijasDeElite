@@ -1,18 +1,22 @@
-# Fijas de Élite v1.6 — Culqi + pagos manuales
+# Fijas de Élite v1.8 — PayPal Checkout
 
-Mantiene todas las funciones de v1.5. Checkout de tarjeta Culqi Checkout + cargo server-side; Yape, Plin y transferencia siguen con verificación manual.
+Incluye paneles oscuros premium, registro obligatorio, roles, pronósticos protegidos, pagos manuales (Yape, Plin, transferencia) y PayPal REST Checkout.
 
-## Railway
-Configurar `CULQI_PUBLIC_KEY=pk_test_...`, `CULQI_SECRET_KEY=sk_test_...`, `CULQI_ENABLE=true`. Primero probar en entorno de pruebas. Las llaves de producción `pk_live_` y `sk_live_` deben corresponderse. Nunca incluir secretos en GitHub.
+## Instalación
+Sube los archivos a GitHub y despliega en Railway. Conserva las variables MySQL/JWT y añade en Railway: `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_MODE=sandbox`, `PAYPAL_ENABLE=false`, `PAYPAL_PEN_PER_USD` y `PUBLIC_BASE_URL`.
 
-El navegador genera un token mediante el SDK de Culqi. El servidor calcula el importe desde MySQL, crea el cargo en Culqi, y solo activa VIP si la API devuelve un cargo capturado válido. Los cargos con 3DS/pending no activan VIP; requieren una integración de autenticación 3DS adicional. Si el cargo se confirma pero la base de datos falla, **no se debe reintentar el pago**: revisar el cargo en Culqi y conciliar manualmente. No es una integración lista para producción sin pruebas reales, reconciliación de pagos y revisión del flujo 3DS.
+**Importante:** PayPal no admite PEN como moneda de captura en esta integración. Los planes se convierten a USD usando `PAYPAL_PEN_PER_USD` configurado por el dueño. Revisa periódicamente la tasa y los precios. Se muestra en la interfaz que el cobro será en USD.
 
-## Importante
-- Los planes son pagos únicos, no suscripciones recurrentes.
-- Para operar en producción es necesario completar el onboarding y validación comercial de Culqi.
-- El campo `payments.external_reference` debería tener índice UNIQUE para idempotencia fuerte; antes de agregarlo hay que verificar que no existan duplicados previos.
-- Los cobros manuales solo se aprueban desde el panel de administradores autorizados.
-- No introducir datos de tarjeta en formularios propios ni logs.
-- En caso de error después del cobro, conciliar el cargo desde el panel de Culqi antes de reintentar.
+Habilita `PAYPAL_ENABLE=true` **solo tras** verificar en Sandbox la cuenta comercial, permisos, moneda, precio final, aprobación/captura, reintentos y cancelaciones. Las cuentas y la actividad de pronósticos deportivos están sujetas a aprobación y políticas de PayPal.
 
-Documentación: https://docs.culqi.com/es/documentacion/checkout/checkout-custom y https://apidocs.culqi.com/
+El checkout crea la orden desde el servidor, guarda su identificador en MySQL, redirige a PayPal y captura mediante el backend cuando el cliente vuelve. El servidor consulta a PayPal el estado COMPLETED antes de activar VIP, bloqueando la fila MySQL para evitar activaciones duplicadas. El botón «Verificar pago» solo concilia capturas ya confirmadas. El retorno de navegador por sí solo nunca activa membresías.
+
+Yape, Plin y transferencias conservan aprobación manual. No incluyas credenciales en GitHub ni en mensajes. Las variables `MP_*` de la versión anterior pueden eliminarse después de verificar el despliegue.
+
+### Pendientes antes de producción
+- Verificar la elegibilidad de la actividad de pronósticos con PayPal y la posibilidad de recibir cobros en Perú.
+- Pruebas end-to-end en Sandbox (sin acceso a tu cuenta desde este entorno).
+- Añadir reconciliación de reembolsos/contracargos y un webhook PayPal firmado para procesar capturas aunque el cliente no regrese al sitio.
+- Definir política de precios USD y tratamiento tributario.
+
+La sintaxis JavaScript se valida localmente, no se han ejecutado pagos reales.

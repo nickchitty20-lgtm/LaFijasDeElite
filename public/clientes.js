@@ -38,33 +38,29 @@ function clientTab(name){
 document.querySelectorAll('[data-client-tab]').forEach(btn=>btn.addEventListener('click',()=>clientTab(btn.dataset.clientTab)));
 document.querySelectorAll('[data-client-go]').forEach(btn=>btn.addEventListener('click',()=>clientTab(btn.dataset.clientGo)));
 
-// Culqi Checkout tokeniza la tarjeta directamente con Culqi; no recibe PAN/CVV este backend.
-let culqiConfig=null;
-async function initCulqi(){
+// PayPal hosted checkout. The browser never receives card details or API secrets.
+async function initPayPal(){
  const btn=$('culqi-pay'),msg=$('culqi-msg');if(!btn)return;
- try{const status=await call('/api/payments/automatic/status');if(!status.enabled){msg.textContent='Tarjetas pendientes de configuración por el dueño.';return;}
-  if(typeof CulqiCheckout!=='function'){msg.textContent='No se pudo cargar el checkout seguro de Culqi.';return;}
-  culqiConfig=status;btn.disabled=false;msg.textContent=status.mode==='test'?'Modo de prueba: no se realizan cobros reales.':'Pago seguro mediante Culqi.';
- }catch(e){msg.textContent='Tarjetas no disponibles temporalmente.';}
+ try{const st=await call('/api/payments/automatic/status');btn.disabled=!st.enabled;msg.textContent=st.enabled?`PayPal ${st.mode==='sandbox'?'Sandbox (pruebas)':'Live'} · cobro en USD, tasa referencial S/${st.pen_per_usd} por US$1.`:'PayPal pendiente de habilitación por el dueño.';}
+ catch{msg.textContent='PayPal temporalmente no disponible.';}
 }
-$('culqi-pay')?.addEventListener('click',()=>{
- if(!token){$('culqi-msg').textContent='Primero inicia sesión.';return;}
- const selected=$('plans').selectedOptions[0];if(!selected){$('culqi-msg').textContent='Selecciona un plan.';return;}
- const priceMatch=selected.textContent.match(/S\/\s*([\d.]+)/);if(!priceMatch){$('culqi-msg').textContent='No se pudo obtener el precio.';return;}
- const amount=Math.round(Number(priceMatch[1])*100);const planId=Number($('plans').value);
- try{
-  const checkout=new CulqiCheckout(culqiConfig.publicKey,{
-   settings:{title:'Fijas de Élite',currency:'PEN',amount},
-   client:{email:$('signin').querySelector('[name="email"]')?.value||''},
-   options:{lang:'es',modal:true,paymentMethods:{tarjeta:true,yape:false,billetera:false,agente:false,bancaMovil:false,cuotealo:false}}
-  });
-  checkout.culqi=async()=>{
-   if(!checkout.token){$('culqi-msg').textContent=checkout.error?.user_message||'No se generó el token de tarjeta.';return;}
-   const id=checkout.token.id;checkout.close();$('culqi-pay').disabled=true;$('culqi-msg').textContent='Validando cargo con Culqi…';
-   try{const result=await call('/api/customers/payments/culqi',{plan_id:planId,token_id:id},true);$('culqi-msg').textContent=result.message;await me();await loadDashboard();await loadCustomerPicks();}
-   catch(e){$('culqi-msg').textContent=e.message;}
-   finally{$('culqi-pay').disabled=false;}
-  };checkout.open();
- }catch(e){$('culqi-msg').textContent='No se pudo abrir Culqi Checkout: '+e.message;}
+$('culqi-pay')?.addEventListener('click',async()=>{
+ const btn=$('culqi-pay'),msg=$('culqi-msg');if(!token){msg.textContent='Primero inicia sesión.';return;}
+ const planId=Number($('plans').value);if(!planId){msg.textContent='Selecciona un plan.';return;}
+ btn.disabled=true;msg.textContent='Preparando checkout seguro…';
+ try{const r=await call('/api/customers/payments/paypal',{plan_id:planId},true);window.location.assign(r.checkout_url);}
+ catch(e){msg.textContent=e.message;btn.disabled=false;}
 });
-initCulqi();
+$('mp-check')?.addEventListener('click',async()=>{
+ const msg=$('culqi-msg');try{const r=await call('/api/customers/payments/paypal/check',{},true);msg.textContent=r.message;await me();await loadDashboard();await loadCustomerPicks();}catch(e){msg.textContent=e.message;}
+});
+initPayPal();
+const paypalParams=new URLSearchParams(location.search);
+if(paypalParams.has('paypal_return')){
+ clientTab('payments');
+ const order=paypalParams.get('token');
+ if(paypalParams.get('paypal_return')==='success'&&order&&/^[A-Z0-9-]{8,64}$/i.test(order)){
+  call('/api/customers/payments/paypal/capture',{order_id:order},true).then(async r=>{$('culqi-msg').textContent=r.message;await me();await loadDashboard();await loadCustomerPicks();}).catch(e=>{$('culqi-msg').textContent=e.message+' Usa «Verificar pago».';});
+ }else $('culqi-msg').textContent='El pago fue cancelado o no confirmado. No se activó VIP.';
+ history.replaceState(null,'',location.pathname);
+}
