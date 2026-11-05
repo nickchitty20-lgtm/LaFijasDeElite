@@ -1,40 +1,40 @@
-# Fijas de Élite v1.8.3 — Métodos de pago unificados
+# Fijas de Élite v1.8.4 — Renovación VIP y respuestas JSON seguras
 
-Basado en la v1.8.2 con backend Node.js/Express, MySQL, roles, paneles premium y pronósticos protegidos.
+Basado en v1.8.3. Mantiene PayPal Sandbox, Yape, Plin, transferencias, paneles premium y pronósticos protegidos.
 
-## Cambios importantes
+## Cambios
 
-- El menú **Método de pago** del cliente incluye Yape, Plin, transferencia y **PayPal**.
-- Los métodos manuales solicitan referencia y envían una solicitud de revisión; PayPal **no** usa la ruta de pagos manuales, sino el checkout oficial del servidor.
-- El botón y los campos cambian automáticamente según el método elegido.
-- Si PayPal está deshabilitado, el usuario ve el motivo general y no puede iniciar un checkout. **Agregar PayPal al menú no activa PayPal en Railway.**
-- Al regresar de PayPal, el cliente inicia sesión otra vez (el token no se guarda en almacenamiento persistente) y solo entonces se comprueba/captura el pago contra la API de PayPal.
-- Se puede reintentar la verificación de la orden PayPal desde el panel, sin volver a pagar.
-- Se conserva el diagnóstico privado del dueño, el trust proxy de Railway y el versionado en `/health`.
+- El menú **Comprar VIP** cambia a **Renovar VIP** cuando la API confirma que el cliente ya tiene una membresía activa. El estado VIP NO se inventa en el navegador.
+- El checkout informa fecha de vencimiento y renovación sin desactivar el acceso existente.
+- Todos los límites de `express-rate-limit` devuelven **JSON con HTTP 429**, evitando el error `Unexpected token 'T', "Too many requests..."` del navegador.
+- El cliente muestra un mensaje claro cuando una solicitud recibe un 429 u otra respuesta inesperada del servidor.
+- Se desactiva el botón de verificar PayPal cuando la configuración de PayPal no está habilitada.
+- Se separó el límite de creación de checkout del límite de verificación de cobros para reducir bloqueos accidentales por intentos repetidos.
+- `/health` identifica esta versión como `1.8.4`.
 
-## Instalación
+## Nota sobre PayPal
 
-1. Subir **el contenido del ZIP**, no el archivo ZIP como único elemento, a la raíz de GitHub.
-2. Esperar un nuevo despliegue **Success** en Railway.
-3. Abrir `/health` y comprobar `version: 1.8.3`.
-4. Abrir `/clientes.html`, iniciar sesión y entrar en **Comprar VIP**: seleccionar los cuatro métodos y comprobar que cambia el formulario.
-5. Si PayPal sigue deshabilitado, iniciar sesión como dueño en `/admin.html`, **Resumen → Diagnóstico de PayPal** y completar los nombres de las variables indicadas.
-
-## Configuración de PayPal Sandbox
+**La actualización no cambia ni crea credenciales.** El aviso "PayPal pendiente de habilitación" es independiente del tipo de usuario y solo desaparece al completar las variables de Railway. Entra como dueño en **Resumen → Diagnóstico de PayPal** para ver los nombres de las variables faltantes (nunca mostrará los secretos).
 
 ```env
 PAYPAL_ENABLE=true
 PAYPAL_MODE=sandbox
-PAYPAL_CLIENT_ID=CLIENT_ID_DE_SANDBOX
-PAYPAL_CLIENT_SECRET=SECRET_DE_SANDBOX
+PAYPAL_CLIENT_ID=TU_ID_SANDBOX
+PAYPAL_CLIENT_SECRET=TU_SECRETO_SANDBOX
 PAYPAL_PEN_PER_USD=3.50
 PUBLIC_BASE_URL=https://lafijasdeelite-production.up.railway.app
 ```
 
-**La tasa 3.50 es un ejemplo de prueba, no un tipo de cambio vigente.** No compartas credenciales ni subas secretos a GitHub. PayPal para venta de pronósticos deportivos está sujeto a sus requisitos y autorización. No activar pagos `live` sin validación comercial, pruebas completas, conciliación y manejo de disputas.
+La tasa 3.50 es solo un ejemplo para pruebas, no una cotización. No publiques secretos ni actives el modo live antes de completar la revisión de elegibilidad comercial, las pruebas y conciliación.
 
-## Limitaciones
+## Instalación
 
-- No se ha ejecutado una compra contra el Sandbox real ni se ha verificado el despliegue público.
-- Los pagos manuales requieren que el administrador valide el abono en su cuenta; la referencia del cliente no es prueba de pago.
-- PayPal usa USD, con conversión configurada por el dueño.
+1. Extrae el ZIP y sube su **contenido** a la raíz de GitHub.
+2. Confirma el nuevo commit en Railway y espera a `Success`.
+3. Abre `/health` y busca `"version":"1.8.4"`.
+4. Inicia sesión con una cuenta VIP activa: el menú debe mostrar **Renovar VIP**.
+5. Para PayPal, inicia como dueño y consulta **Resumen → Diagnóstico de PayPal**.
+
+## Verificación
+
+Sintaxis JS revisada con Node. Checkout sin operaciones reales; faltan pruebas de pago en PayPal Sandbox y en el Railway del usuario.

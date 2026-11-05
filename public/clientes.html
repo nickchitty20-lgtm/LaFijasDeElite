@@ -11,13 +11,13 @@
   </nav><div class="client-side-footer">ACCESO SEGURO · FIJAS DE ÉLITE</div>
  </aside>
  <div class="client-content">
-  <div class="client-topbar"><span>ESPACIO PERSONAL</span><button type="button" id="logout" class="client-logout">Cerrar sesión ↗</button></div>
+  <div class="client-topbar"><span id="client-account-tier">ESPACIO PERSONAL</span><button type="button" id="logout" class="client-logout">Cerrar sesión ↗</button></div>
   <div class="client-welcome"><div><span class="eyebrow">TU PANEL PERSONAL</span><h2>Bienvenido a Élite <span class="client-gold">◆</span></h2><p id="accountMsg"></p></div><span class="vip-mark">FE</span></div>
   <section class="client-panel" data-client-panel="overview"><div class="client-section-heading"><h3>Resumen de tu cuenta</h3><p>Consulta el estado de tu membresía y las estadísticas publicadas.</p></div><div id="vip-summary" class="vip-summary" aria-live="polite"></div><div id="vip-stats" class="vip-stats"></div><div class="client-shortcuts"><button type="button" data-client-go="predictions">Ver pronósticos ↗</button><button type="button" data-client-go="payments">Explorar planes VIP ↗</button></div></section>
   <section class="client-panel" data-client-panel="predictions" hidden><div class="client-section-heading"><h3>Pronósticos e historial</h3><p>Los pronósticos VIP se mantienen ocultos si tu membresía no está activa.</p></div><div id="customer-picks" class="customer-picks"></div></section>
   <section class="client-panel" data-client-panel="membership" hidden><div class="client-section-heading"><h3>Mi membresía</h3><p>Revisa tus planes y fechas de vencimiento.</p></div><div id="memberships" class="client-memberships"></div><button type="button" class="client-cta" data-client-go="payments">Solicitar o renovar VIP</button></section>
   <section class="client-panel" data-client-panel="payments" hidden>
-   <div class="client-section-heading"><h3>Comprar membresía VIP</h3><p>Selecciona tu plan y elige cómo deseas pagar. Necesitas una cuenta registrada para finalizar la compra.</p></div>
+   <div class="client-section-heading"><h3>Comprar membresía VIP</h3><p>Selecciona tu plan y elige cómo deseas pagar. Necesitas una cuenta registrada para finalizar la compra.</p></div><p id="vip-renewal-note" class="vip-renewal-note" hidden></p>
    <div class="client-payment-layout">
     <div class="client-form-card unified-checkout">
      <span class="eyebrow">CHECKOUT SEGURO · FIJAS DE ÉLITE</span>

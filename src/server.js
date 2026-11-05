@@ -14,7 +14,7 @@ import {db} from './db.js';
 import {initializeDatabase} from './init-db.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
-const APP_VERSION = '1.8.3';
+const APP_VERSION = '1.8.4';
 const app = express();
 // Railway terminates HTTPS behind one reverse proxy; trust only that hop.
 app.set('trust proxy', 1);
@@ -22,7 +22,16 @@ app.disable('x-powered-by');
 app.use(helmet({contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'"],styleSrc:["'self'"],connectSrc:["'self'"],imgSrc:["'self'","data:"],objectSrc:["'none'"]}}}));
 app.use(cors({origin:process.env.CORS_ORIGIN?.split(',') || false}));
 app.use(express.json({limit:'16kb'}));
-const authLimit=rateLimit({windowMs:15*60*1000,limit:10,standardHeaders:'draft-7',legacyHeaders:false});
+// All /api rate limits return JSON, so clients never parse HTML/text 429 pages as JSON.
+// The proxy-aware client IP still comes from the single trusted Railway proxy hop.
+const apiRateLimit=options=>rateLimit({
+ ...options,
+ handler:(req,res)=>res.status(429).json({
+  error:'Demasiadas solicitudes. Espera unos minutos antes de intentarlo de nuevo.',
+  code:'RATE_LIMITED'
+ })
+});
+const authLimit=apiRateLimit({windowMs:15*60*1000,limit:10,standardHeaders:'draft-7',legacyHeaders:false});
 app.use('/api/auth',authLimit);
 app.get('/health',async(req,res)=>{try{await db.query('SELECT 1');res.json({status:'ok',database:'connected',version:APP_VERSION});}catch{res.status(503).json({status:'unavailable',version:APP_VERSION});}});
 
@@ -57,8 +66,8 @@ app.post('/api/auth/setup-owner',async(req,res)=>{
 });
 // Unified sign-in: admins use their existing account and are routed to admin dashboard.
 // No role or authorization level is accepted from the browser.
-const adminLoginLimit=rateLimit({windowMs:15*60*1000,limit:10,standardHeaders:'draft-7',legacyHeaders:false});
-const unifiedLimit=rateLimit({windowMs:15*60*1000,limit:10,standardHeaders:'draft-7',legacyHeaders:false});
+const adminLoginLimit=apiRateLimit({windowMs:15*60*1000,limit:10,standardHeaders:'draft-7',legacyHeaders:false});
+const unifiedLimit=apiRateLimit({windowMs:15*60*1000,limit:10,standardHeaders:'draft-7',legacyHeaders:false});
 app.post('/api/login',unifiedLimit,async(req,res)=>{
  const p=loginSchema.safeParse(req.body);
  if(!p.success)return res.status(400).json({error:'Datos inválidos'});
@@ -167,7 +176,7 @@ app.get('/api/predictions/teasers',async(req,res)=>{
 app.get('/api/predictions/free',(req,res)=>res.status(401).json({error:'Inicia sesión para ver pronósticos gratuitos'}));
 
 // V0.4: catálogo, clientes y solicitudes manuales. No se procesan cargos reales.
-const registerLimit=rateLimit({windowMs:15*60*1000,limit:5,standardHeaders:'draft-7',legacyHeaders:false});
+const registerLimit=apiRateLimit({windowMs:15*60*1000,limit:5,standardHeaders:'draft-7',legacyHeaders:false});
 const customerRegister=z.object({email:z.string().email().max(254),password:z.string().min(12).max(128),display_name:z.string().trim().min(2).max(120)}).strict();
 const planSchema=z.object({name:z.string().trim().min(3).max(100),duration_days:z.coerce.number().int().min(1).max(365),price_pen:z.coerce.number().min(0).max(100000)}).strict();
 const paymentRequest=z.object({plan_id:z.coerce.number().int().positive(),method:z.enum(['yape','plin','direct']),reference:z.string().trim().min(4).max(190)}).strict();
@@ -184,7 +193,7 @@ app.post('/api/customers/login',registerLimit,async(req,res)=>{
  catch{res.status(500).json({error:'No se pudo iniciar sesión'});}
 });
 // Password recovery: hashed, single-use, expiring tokens; no account enumeration.
-const resetLimit=rateLimit({windowMs:60*60*1000,limit:5,standardHeaders:'draft-7',legacyHeaders:false});
+const resetLimit=apiRateLimit({windowMs:60*60*1000,limit:5,standardHeaders:'draft-7',legacyHeaders:false});
 const resetRequestSchema=z.object({email:z.string().email().max(254)}).strict();
 const resetFinishSchema=z.object({token:z.string().regex(/^[a-f0-9]{64}$/),password:z.string().min(12).max(128)}).strict();
 const resetHash=t=>crypto.createHash('sha256').update(t).digest('hex');
@@ -306,7 +315,9 @@ app.post('/api/admin/staff/:id/role',authenticate,async(req,res)=>{
 
 // PayPal Checkout: orders are created/captured server-to-server; no browser-provided amount is trusted.
 // PayPal REST does not support PEN as a checkout currency. USD is calculated with an owner-configured rate.
-const paypalLimit=rateLimit({windowMs:15*60*1000,limit:6,standardHeaders:'draft-7',legacyHeaders:false});
+// Separate limits prevent repeated payment checks from exhausting the checkout creation quota.
+const paypalCreateLimit=apiRateLimit({windowMs:15*60*1000,limit:6,standardHeaders:'draft-7',legacyHeaders:false});
+const paypalConfirmLimit=apiRateLimit({windowMs:15*60*1000,limit:15,standardHeaders:'draft-7',legacyHeaders:false});
 const paypalPlan=z.object({plan_id:z.coerce.number().int().positive()}).strict();
 const paypalOrder=z.object({order_id:z.string().regex(/^[A-Z0-9-]{8,64}$/i)}).strict();
 const paypalMode=()=>process.env.PAYPAL_MODE==='live'?'live':'sandbox';
@@ -344,7 +355,7 @@ app.get('/api/admin/paypal/diagnostics',authenticate,(req,res)=>{
  if(req.admin.role!=='owner')return res.status(403).json({error:'Solo el dueño puede ver el diagnóstico'});
  return res.json({version:APP_VERSION,provider:'paypal',mode:paypalMode(),ready:paypalReady(),missing:paypalMissing(),proxy_hops:app.get('trust proxy'),message:paypalReady()?'Configuración completa. Falta validar la conexión con PayPal Sandbox.':'Configura las variables indicadas en Railway y espera el despliegue.'});
 });
-const paypalConnectivityLimit=rateLimit({windowMs:15*60*1000,limit:3,standardHeaders:'draft-7',legacyHeaders:false});
+const paypalConnectivityLimit=apiRateLimit({windowMs:15*60*1000,limit:3,standardHeaders:'draft-7',legacyHeaders:false});
 app.post('/api/admin/paypal/connectivity',paypalConnectivityLimit,authenticate,async(req,res)=>{
  if(req.admin.role!=='owner')return res.status(403).json({error:'Solo el dueño puede comprobar PayPal'});
  const missing=paypalMissing();
@@ -352,7 +363,7 @@ app.post('/api/admin/paypal/connectivity',paypalConnectivityLimit,authenticate,a
  try {await paypalToken();return res.json({connected:true,mode:paypalMode(),message:'Credenciales aceptadas por PayPal. Esto no valida la elegibilidad comercial ni realiza cobros.'});}
  catch(e){console.error('paypal diagnostics connectivity',e.message);return res.status(503).json({connected:false,error:'No se pudo autenticar con PayPal. Verifica el modo Sandbox y las credenciales del mismo entorno. No compartas tus claves.'});}
 });
-app.post('/api/customers/payments/paypal',paypalLimit,customerAuth,async(req,res)=>{
+app.post('/api/customers/payments/paypal',paypalCreateLimit,customerAuth,async(req,res)=>{
  if(!paypalReady())return res.status(503).json({error:'PayPal todavía no está disponible'});
  const parsed=paypalPlan.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Plan inválido'});
  try{
@@ -396,7 +407,7 @@ async function reconcilePaypalOrder(orderId){
   await conn.commit();return true;
  }catch(e){await conn.rollback();throw e;}finally{conn.release();}
 }
-app.post('/api/customers/payments/paypal/capture',paypalLimit,customerAuth,async(req,res)=>{
+app.post('/api/customers/payments/paypal/capture',paypalConfirmLimit,customerAuth,async(req,res)=>{
  if(!paypalReady())return res.status(503).json({error:'PayPal no disponible'});
  const parsed=paypalOrder.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Orden inválida'});
  const id=parsed.data.order_id;
@@ -413,7 +424,7 @@ app.post('/api/customers/payments/paypal/capture',paypalLimit,customerAuth,async
  }catch(e){console.error('paypal capture',e.message);res.status(503).json({error:'No se pudo verificar el cobro. Intenta nuevamente; no pagues dos veces.'});}
 });
 // Manual reconciliation by the authenticated customer (never trust redirect query as proof).
-app.post('/api/customers/payments/paypal/check',paypalLimit,customerAuth,async(req,res)=>{
+app.post('/api/customers/payments/paypal/check',paypalConfirmLimit,customerAuth,async(req,res)=>{
  if(!paypalReady())return res.status(503).json({error:'PayPal no disponible'});
  const [[pay]]=await db.execute("SELECT external_reference,status FROM payments WHERE user_id=? AND method='card' AND external_reference IS NOT NULL ORDER BY id DESC LIMIT 1",[req.customer.id]);
  if(!pay)return res.json({status:'no_pending',message:'No hay órdenes PayPal para verificar.'});

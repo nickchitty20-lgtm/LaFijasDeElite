@@ -22,3 +22,8 @@ body.client-logged-in>header{display:none}body.client-logged-in .auth-layout{max
 .paypal-reconcile{border-top:1px solid #3b3934;padding-top:14px;margin-top:15px}
 .paypal-reconcile button{border:1px solid #565043!important;background:#22262d!important;color:#f0d9aa!important}
 .paypal-reconcile p{color:#e7c789;font-size:13px}
+
+/* v1.8.4 — account-aware VIP renewal and accessible disabled PayPal verification */
+.vip-renewal-note{background:linear-gradient(125deg,#2c2518,#1a1e25);border:1px solid #947743;border-radius:14px;padding:16px 20px;color:#e8d0a0;line-height:1.65;margin:0 0 20px}
+.paypal-reconcile button:disabled{opacity:.5;cursor:not-allowed}
+#client-account-tier{color:#e5c47e;font-weight:750}

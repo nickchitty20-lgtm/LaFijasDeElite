@@ -1,5 +1,17 @@
 const $=id=>document.getElementById(id);let token='';
-async function call(url,body,auth=false){const r=await fetch(url,{method:body?'POST':'GET',headers:{'Content-Type':'application/json',...(auth?{Authorization:`Bearer ${token}`}:{})},...(body?{body:JSON.stringify(body)}:{})});const d=await r.json();if(!r.ok)throw Error(d.error||'Error');return d;}
+async function call(url,body,auth=false){
+ const r=await fetch(url,{method:body?'POST':'GET',headers:{'Content-Type':'application/json',...(auth?{Authorization:`Bearer ${token}`}:{})},...(body?{body:JSON.stringify(body)}:{})});
+ const data=await r.json().catch(()=>null);
+ if(!r.ok){
+  const message=(data&&typeof data.error==='string'&&data.error)||
+   (r.status===429?'Demasiadas solicitudes. Espera unos minutos antes de volver a intentarlo.':
+    r.status===503?'Servicio temporalmente no disponible. Intenta más tarde.':
+    'No se pudo completar la solicitud (HTTP '+r.status+').');
+  throw Error(message);
+ }
+ if(!data||typeof data!=='object')throw Error('El servidor devolvió una respuesta no válida. Actualiza la página e inténtalo nuevamente.');
+ return data;
+}
 const form=id=>Object.fromEntries(new FormData($(id)));
 function view(name){document.querySelectorAll('.auth-view').forEach(el=>el.hidden=el.id!==`auth-${name}`);document.querySelectorAll('[data-view]').forEach(el=>el.classList.toggle('active',el.dataset.view===name));}
 document.querySelectorAll('[data-view]').forEach(el=>el.addEventListener('click',()=>view(el.dataset.view)));
@@ -12,6 +24,18 @@ async function loadDashboard(){
   summary.replaceChildren();stats.replaceChildren();notices.replaceChildren();
   const heading=document.createElement('div');heading.className='vip-status';heading.textContent=r.membership?`✦ VIP ACTIVO · ${r.membership.plan} · ${r.membership.days_left} día(s) restantes`:'◇ CUENTA GRATUITA · VIP BLOQUEADO';summary.append(heading);
   const sub=document.createElement('p');sub.textContent=r.membership?`Vigente hasta ${new Date(r.membership.ends_at).toLocaleDateString('es-PE',{dateStyle:'long'})}`:'Puedes consultar los pronósticos gratuitos. Activa un plan para desbloquear VIP.';summary.append(sub);
+  // A VIP client sees a renewal flow; the server remains the only authority on VIP status.
+  const activeVip=Boolean(r.membership);
+  const payNav=document.querySelector('[data-client-tab="payments"]');
+  const payShortcut=document.querySelector('[data-client-go="payments"]');
+  const payHeading=document.querySelector('[data-client-panel="payments"] .client-section-heading h3');
+  if(payNav)payNav.textContent=activeVip?'♛ Renovar VIP':'▣ Comprar VIP';
+  if(payShortcut)payShortcut.textContent=activeVip?'Renovar mi membresía ↗':'Explorar planes VIP ↗';
+  if(payHeading)payHeading.textContent=activeVip?'Renovar mi membresía VIP':'Comprar membresía VIP';
+  const renewNote=$('vip-renewal-note');
+  if(renewNote){renewNote.hidden=!activeVip;if(activeVip)renewNote.textContent=`✦ Tu VIP está activo hasta el ${new Date(r.membership.ends_at).toLocaleDateString('es-PE')}. Puedes renovarlo; la nueva duración se añadirá después de la fecha de vencimiento vigente.`;}
+  const accountTier=$('client-account-tier');
+  if(accountTier)accountTier.textContent=activeVip?'♛ CLIENTE VIP ACTIVO':'◇ CUENTA GRATUITA';
   const values=[['Publicados',r.stats.total],['Ganados',r.stats.won],['Perdidos',r.stats.lost],['Pendientes',r.stats.pending]];
   for(const [label,value] of values){const tile=document.createElement('div');tile.className='vip-stat';const strong=document.createElement('strong');strong.textContent=String(value);const small=document.createElement('span');small.textContent=label;tile.append(strong,small);stats.append(tile);}
   if(!r.notices.length){notices.textContent='No tienes notificaciones nuevas.';return;}
@@ -83,6 +107,7 @@ function updatePaymentMethod(){
  $('payment-reference').disabled=isPaypal;
  $('payment-submit').textContent=isPaypal?'Continuar con PayPal ↗':'Enviar pago para revisión';
  $('payment-submit').disabled=isPaypal&&!paypalAvailability?.enabled;
+ $('paypal-check').disabled=!isPaypal||!paypalAvailability?.enabled;
  $('requestMsg').textContent='';
 }
 $('payment-method').addEventListener('change',updatePaymentMethod);
