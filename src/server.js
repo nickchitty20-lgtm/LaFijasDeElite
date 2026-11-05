@@ -15,6 +15,8 @@ import {initializeDatabase} from './init-db.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
 const app = express();
+// Railway terminates HTTPS behind one reverse proxy; trust only that hop.
+app.set('trust proxy', 1);
 app.disable('x-powered-by');
 app.use(helmet({contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'"],styleSrc:["'self'"],connectSrc:["'self'"],imgSrc:["'self'","data:"],objectSrc:["'none'"]}}}));
 app.use(cors({origin:process.env.CORS_ORIGIN?.split(',') || false}));

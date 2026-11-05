@@ -20,3 +20,7 @@ Yape, Plin y transferencias conservan aprobación manual. No incluyas credencial
 - Definir política de precios USD y tratamiento tributario.
 
 La sintaxis JavaScript se valida localmente, no se han ejecutado pagos reales.
+
+
+## Railway proxy fix (v1.8.1)
+Configured `app.set('trust proxy', 1)` before express-rate-limit to correctly handle Railway `X-Forwarded-For` when there is exactly one trusted reverse proxy. Keep PayPal in sandbox until validated.
