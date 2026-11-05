@@ -12,14 +12,18 @@ $('back').addEventListener('click',()=>show('login'));
 $('setupForm').addEventListener('submit',async e=>{
  e.preventDefault();const form=e.currentTarget;$('setupMsg').textContent='Creando cuenta...';
  const body=Object.fromEntries(new FormData(form));
- try{const r=await api('/api/auth/setup-owner',{method:'POST',body:JSON.stringify(body)});$('setupMsg').textContent=r.message;form.reset();await refreshSetup();setTimeout(()=>show('login'),1800);}catch(err){$('setupMsg').textContent=err.message;}
+ try{const r=await api('/api/auth/setup-owner',{method:'POST',body:JSON.stringify(body)});$('setupMsg').textContent=r.message;form.reset();await refreshSetup();
+// One-time same-tab handoff from the unified customer/admin login.
+const handoff=sessionStorage.getItem('fijas_admin_handoff');
+if(handoff){sessionStorage.removeItem('fijas_admin_handoff');token=handoff;dashboard();}
+setTimeout(()=>show('login'),1800);}catch(err){$('setupMsg').textContent=err.message;}
 });
 $('loginForm').addEventListener('submit',async e=>{
  e.preventDefault();const form=e.currentTarget;$('loginMsg').textContent='Comprobando acceso...';
  try{const body=Object.fromEntries(new FormData(form));const r=await api('/api/auth/login',{method:'POST',body:JSON.stringify(body)});token=r.token;form.reset();$('loginMsg').textContent='';await dashboard();}catch(err){$('loginMsg').textContent=err.message;}
 });
 async function dashboard(){
- try{const [me,overview]=await Promise.all([api('/api/admin/me'),api('/api/admin/overview')]);$('identity').textContent=`${me.email} · ${me.role}`;for(const key of ['users','active_memberships','pending_payments','predictions'])$(key).textContent=Number(overview.stats[key]||0).toLocaleString('es-PE');show('dashboard');await loadPredictions();await loadCommerce();}catch(err){token='';$('loginMsg').textContent=err.message;show('login');}
+ try{const [me,overview]=await Promise.all([api('/api/admin/me'),api('/api/admin/overview')]);$('identity').textContent=`${me.email} · ${me.role}`;for(const key of ['users','active_memberships','pending_payments','predictions'])$(key).textContent=Number(overview.stats[key]||0).toLocaleString('es-PE');show('dashboard');$('staffPanel').hidden=me.role!=='owner';if(me.role==='owner')await loadStaff();await loadPredictions();await loadCommerce();}catch(err){token='';$('loginMsg').textContent=err.message;show('login');}
 }
 $('logout').addEventListener('click',()=>{token='';show('login');});
 refreshSetup();
@@ -50,4 +54,19 @@ async function loadCommerce(){
  for(const [id,url,key,fmt] of [['planList','/api/admin/plans','plans',x=>`#${x.id} ${x.name} · ${x.duration_days} días · S/ ${x.price_pen}`],['customerList','/api/admin/customers','users',x=>`#${x.id} ${x.display_name||''} · ${x.email}`]]){
  const el=$(id);el.replaceChildren();try{const r=await api(url);if(!r[key].length)el.textContent='Sin registros todavía';for(const x of r[key]){const d=document.createElement('p');d.textContent=fmt(x);el.append(d);}}catch(err){el.textContent=err.message;}}
  const area=$('paymentList');area.replaceChildren();try{const {payments}=await api('/api/admin/payments');if(!payments.length)area.textContent='No hay solicitudes';for(const x of payments){const d=document.createElement('div');d.className='prediction-item';const info=document.createElement('p');info.textContent=`#${x.id} ${x.email} · ${x.plan} · ${x.method} · S/ ${x.amount_pen} · Ref: ${x.external_reference} · ${x.status}`;d.append(info);if(x.status==='pending'){for(const [action,label] of [['verified','Aprobar tras verificar'],['rejected','Rechazar']]){const b=document.createElement('button');b.className='secondary';b.textContent=label;b.addEventListener('click',async()=>{if(!confirm(action==='verified'?'¿Confirmas que comprobaste el ingreso real del dinero en tu cuenta?':'¿Rechazar esta solicitud?'))return;try{await api(`/api/admin/payments/${x.id}/decision`,{method:'POST',body:JSON.stringify({decision:action})});await loadCommerce();await dashboard();}catch(err){alert(err.message);}});d.append(b);}}area.append(d);}}catch(err){area.textContent=err.message;}
+}
+
+async function loadStaff(){
+ const area=$('staffList');area.replaceChildren();
+ try{const {users}=await api('/api/admin/staff');
+ if(!users.length){area.textContent='No hay clientes registrados.';return;}
+ for(const u of users){const item=document.createElement('div');item.className='staff-row';
+ const info=document.createElement('div');const name=document.createElement('strong');name.textContent=u.display_name||'Cliente';const mail=document.createElement('small');mail.textContent=u.email;info.append(name,mail);
+ const select=document.createElement('select');select.setAttribute('aria-label','Rol de '+u.email);
+ for(const [value,label] of [['customer','Cliente'],['general_admin','Admin general'],['payments_admin','Admin pagos'],['analyst','Analista'],['moderator','Moderador']]){const o=document.createElement('option');o.value=value;o.textContent=label;select.append(o);}select.value=u.role;
+ const btn=document.createElement('button');btn.className='secondary';btn.textContent='Guardar rol';btn.addEventListener('click',async()=>{
+ if(!confirm('¿Cambiar el rol de '+u.email+' a '+select.options[select.selectedIndex].text+'?'))return;
+ btn.disabled=true;try{await api('/api/admin/staff/'+u.id+'/role',{method:'POST',body:JSON.stringify({role:select.value})});$('staffMsg').textContent='Rol actualizado. El cambio de permisos se aplica en el servidor.';await loadStaff();}catch(e){$('staffMsg').textContent=e.message;}finally{btn.disabled=false;}
+ });item.append(info,select,btn);area.append(item);}
+ }catch(e){area.textContent=e.message;}
 }

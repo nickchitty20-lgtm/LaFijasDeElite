@@ -6,6 +6,7 @@ import rateLimit from 'express-rate-limit';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
+import nodemailer from 'nodemailer';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {z} from 'zod';
@@ -51,6 +52,30 @@ app.post('/api/auth/setup-owner',async(req,res)=>{
  }catch(e){try{await conn.rollback();}catch{}console.error('owner setup error',e.code||e.message);return res.status(e.code==='ER_DUP_ENTRY'?409:500).json({error:'No se pudo crear la cuenta'});}
  finally{if(locked)try{await conn.query("SELECT RELEASE_LOCK('fijas_owner_setup_v1')");}catch{}conn.release();}
 });
+// Unified sign-in: admins use their existing account and are routed to admin dashboard.
+// No role or authorization level is accepted from the browser.
+const unifiedLimit=rateLimit({windowMs:15*60*1000,limit:10,standardHeaders:'draft-7',legacyHeaders:false});
+app.post('/api/login',unifiedLimit,async(req,res)=>{
+ const p=loginSchema.safeParse(req.body);
+ if(!p.success)return res.status(400).json({error:'Datos inválidos'});
+ const email=emailKey(p.data.email);
+ try{
+  const [[admin]]=await db.execute('SELECT id,password_hash,is_active FROM admins WHERE email=? LIMIT 1',[email]);
+  const [[customer]]=await db.execute('SELECT id,password_hash FROM users WHERE email=? LIMIT 1',[email]);
+  const dummy='$2a$12$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';
+  const [adminValid,customerValid]=await Promise.all([
+   bcrypt.compare(p.data.password,(customer && admin?.is_active ? customer.password_hash : admin?.password_hash)||dummy),
+   bcrypt.compare(p.data.password,customer?.password_hash||dummy)
+  ]);
+  if(admin?.is_active && adminValid){
+   return res.json({accountType:'admin',token:jwt.sign({sub:String(admin.id)},process.env.JWT_SECRET,{expiresIn:'20m',issuer:'fijas-de-elite',audience:'admin'})});
+  }
+  if(customer && customerValid){
+   return res.json({accountType:'customer',token:jwt.sign({sub:String(customer.id)},process.env.JWT_SECRET,{expiresIn:'30m',issuer:'fijas-de-elite',audience:'customer'})});
+  }
+  return res.status(401).json({error:'Credenciales incorrectas'});
+ }catch(e){console.error('unified login',e.code||e.message);return res.status(500).json({error:'No se pudo iniciar sesión'});}
+});
 app.post('/api/auth/login',async(req,res)=>{
  const p=loginSchema.safeParse(req.body);if(!p.success)return res.status(400).json({error:'Datos inválidos'});
  try{
@@ -58,7 +83,7 @@ app.post('/api/auth/login',async(req,res)=>{
   const admin=rows[0];
   // Compare against a dummy hash to reduce account enumeration timing.
   const dummy='$2a$12$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';
-  const valid=await bcrypt.compare(p.data.password,admin?.password_hash||dummy);
+  const [[linkedUser]]=await db.execute('SELECT password_hash FROM users WHERE email=? LIMIT 1',[emailKey(p.data.email)]);const valid=await bcrypt.compare(p.data.password,(linkedUser && admin?.is_active ? linkedUser.password_hash : admin?.password_hash)||dummy);
   if(!admin || !admin.is_active || !valid)return res.status(401).json({error:'Credenciales incorrectas'});
   const token=jwt.sign({sub:String(admin.id)},process.env.JWT_SECRET,{expiresIn:'20m',issuer:'fijas-de-elite',audience:'admin'});
   res.json({token,admin:{id:admin.id,email:admin.email,role:admin.role},mfaRequiredForProduction:true});
@@ -140,13 +165,47 @@ const canManagePayments=a=>['owner','general_admin','payments_admin'].includes(a
 app.get('/api/plans',async(req,res)=>{try{const [plans]=await db.query('SELECT id,name,duration_days,price_pen FROM plans WHERE active=1 ORDER BY price_pen,id');res.json({plans});}catch{res.status(500).json({error:'No se pudieron consultar los planes'});}});
 app.post('/api/customers/register',registerLimit,async(req,res)=>{
  const p=customerRegister.safeParse(req.body);if(!p.success)return res.status(400).json({error:'Revisa los datos y utiliza una contraseña de 12 caracteres como mínimo'});
- try{const hash=await bcrypt.hash(p.data.password,12);const [r]=await db.execute('INSERT INTO users(email,display_name,password_hash) VALUES (?,?,?)',[emailKey(p.data.email),p.data.display_name,hash]);res.status(201).json({ok:true,user_id:r.insertId});}
+ try{const [[existingAdmin]]=await db.execute('SELECT id FROM admins WHERE email=? LIMIT 1',[emailKey(p.data.email)]);if(existingAdmin)return res.status(409).json({error:'Correo ya registrado'});const hash=await bcrypt.hash(p.data.password,12);const [r]=await db.execute('INSERT INTO users(email,display_name,password_hash) VALUES (?,?,?)',[emailKey(p.data.email),p.data.display_name,hash]);res.status(201).json({ok:true,user_id:r.insertId});}
  catch(e){res.status(e.code==='ER_DUP_ENTRY'?409:500).json({error:e.code==='ER_DUP_ENTRY'?'Correo ya registrado':'No se pudo registrar'});}
 });
 app.post('/api/customers/login',registerLimit,async(req,res)=>{
  const p=loginSchema.safeParse(req.body);if(!p.success)return res.status(400).json({error:'Datos inválidos'});
  try{const [[u]]=await db.execute('SELECT id,password_hash FROM users WHERE email=?',[emailKey(p.data.email)]);const dummy='$2a$12$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';const ok=await bcrypt.compare(p.data.password,u?.password_hash||dummy);if(!u||!ok)return res.status(401).json({error:'Credenciales incorrectas'});res.json({token:jwt.sign({sub:String(u.id)},process.env.JWT_SECRET,{expiresIn:'30m',issuer:'fijas-de-elite',audience:'customer'})});}
  catch{res.status(500).json({error:'No se pudo iniciar sesión'});}
+});
+// Password recovery: hashed, single-use, expiring tokens; no account enumeration.
+const resetLimit=rateLimit({windowMs:60*60*1000,limit:5,standardHeaders:'draft-7',legacyHeaders:false});
+const resetRequestSchema=z.object({email:z.string().email().max(254)}).strict();
+const resetFinishSchema=z.object({token:z.string().regex(/^[a-f0-9]{64}$/),password:z.string().min(12).max(128)}).strict();
+const resetHash=t=>crypto.createHash('sha256').update(t).digest('hex');
+app.post('/api/customers/forgot-password',resetLimit,async(req,res)=>{
+ const p=resetRequestSchema.safeParse(req.body);if(!p.success)return res.status(400).json({error:'Correo inválido'});
+ const generic={message:'Si el correo existe, recibirás instrucciones para recuperar tu contraseña.'};
+ try{
+  const [[u]]=await db.execute('SELECT id,email FROM users WHERE email=? LIMIT 1',[emailKey(p.data.email)]);
+  if(!u)return res.json(generic);
+  const keys=['SMTP_HOST','SMTP_PORT','SMTP_USER','SMTP_PASSWORD','SMTP_FROM','PUBLIC_BASE_URL'];
+  if(keys.some(k=>!process.env[k])){console.error('Password recovery SMTP is not configured');return res.status(503).json({error:'Recuperación temporalmente no disponible. Contacta con soporte.'});}
+  const raw=crypto.randomBytes(32).toString('hex');
+  const transporter=nodemailer.createTransport({host:process.env.SMTP_HOST,port:Number(process.env.SMTP_PORT),secure:Number(process.env.SMTP_PORT)===465,auth:{user:process.env.SMTP_USER,pass:process.env.SMTP_PASSWORD}});
+  const url=new URL('/clientes.html',process.env.PUBLIC_BASE_URL);url.searchParams.set('reset_token',raw);
+  await db.execute('DELETE FROM customer_password_resets WHERE user_id=?',[u.id]);
+  await db.execute('INSERT INTO customer_password_resets(user_id,token_hash,expires_at) VALUES (?,?,DATE_ADD(UTC_TIMESTAMP(), INTERVAL 20 MINUTE))',[u.id,resetHash(raw)]);
+  await transporter.sendMail({from:process.env.SMTP_FROM,to:u.email,subject:'Fijas de Élite · Recuperar contraseña',text:`Para restablecer tu contraseña abre este enlace (válido 20 minutos):\n${url.toString()}\nSi no lo solicitaste, ignora este mensaje.`});
+  res.json(generic);
+ }catch(e){console.error('Password recovery failed',e.code||e.message);res.status(503).json({error:'No se pudo enviar el correo. Intenta más tarde.'});}
+});
+app.post('/api/customers/reset-password',resetLimit,async(req,res)=>{
+ const p=resetFinishSchema.safeParse(req.body);if(!p.success)return res.status(400).json({error:'Enlace o contraseña inválidos'});
+ const conn=await db.getConnection();try{
+  await conn.beginTransaction();
+  const [[row]]=await conn.execute('SELECT user_id FROM customer_password_resets WHERE token_hash=? AND expires_at>UTC_TIMESTAMP() FOR UPDATE',[resetHash(p.data.token)]);
+  if(!row){await conn.rollback();return res.status(400).json({error:'Enlace vencido o utilizado'});}
+  const hash=await bcrypt.hash(p.data.password,12);
+  await conn.execute('UPDATE users SET password_hash=? WHERE id=?',[hash,row.user_id]);
+  await conn.execute('DELETE FROM customer_password_resets WHERE user_id=?',[row.user_id]);
+  await conn.commit();res.json({ok:true});
+ }catch(e){await conn.rollback();console.error('reset password failed',e.code||e.message);res.status(500).json({error:'No se pudo actualizar la contraseña'});}finally{conn.release();}
 });
 async function customerAuth(req,res,next){const h=req.headers.authorization||'';if(!h.startsWith('Bearer '))return res.status(401).json({error:'Inicia sesión'});try{const t=jwt.verify(h.slice(7),process.env.JWT_SECRET,{issuer:'fijas-de-elite',audience:'customer'});const [[u]]=await db.execute('SELECT id,email,display_name FROM users WHERE id=?',[t.sub]);if(!u)return res.status(401).json({error:'Cuenta no disponible'});req.customer=u;next();}catch{return res.status(401).json({error:'Sesión inválida'});}}
 app.get('/api/customers/me',customerAuth,async(req,res)=>{const [memberships]=await db.execute('SELECT m.id,m.status,m.starts_at,m.ends_at,p.name AS plan FROM memberships m JOIN plans p ON p.id=m.plan_id WHERE m.user_id=? ORDER BY m.id DESC LIMIT 20',[req.customer.id]);res.json({user:req.customer,memberships});});
@@ -176,6 +235,33 @@ app.post('/api/admin/payments/:id/decision',authenticate,async(req,res)=>{
  await conn.execute("INSERT INTO audit_logs(actor_admin_id,action,entity_type,entity_id,details) VALUES (?,'payment_decision','payment',?,JSON_OBJECT('decision',?))",[req.admin.id,String(payment.id),parsed.data.decision]);await conn.commit();res.json({ok:true,status:parsed.data.decision});
  }catch(e){await conn.rollback();console.error('payment decision',e.code||e.message);res.status(500).json({error:'No se pudo procesar'});}finally{conn.release();}
 });
+
+// Staff: registration always creates a customer. Only the owner may grant or revoke staff roles.
+const staffRoleSchema=z.object({role:z.enum(['general_admin','payments_admin','analyst','moderator','customer'])}).strict();
+app.get('/api/admin/staff',authenticate,async(req,res)=>{
+ if(req.admin.role!=='owner')return res.status(403).json({error:'Solo el dueño puede gestionar el personal'});
+ try{const [rows]=await db.query(`SELECT u.id,u.email,u.display_name,COALESCE(IF(a.is_active=1,a.role,NULL),'customer') AS role FROM users u LEFT JOIN admins a ON a.email=u.email ORDER BY u.id DESC LIMIT 200`);res.json({users:rows});}
+ catch(e){console.error('staff list',e.code||e.message);res.status(500).json({error:'No se pudo consultar el personal'});}
+});
+app.post('/api/admin/staff/:id/role',authenticate,async(req,res)=>{
+ if(req.admin.role!=='owner')return res.status(403).json({error:'Solo el dueño puede asignar roles'});
+ if(!/^\d{1,18}$/.test(req.params.id))return res.status(400).json({error:'ID inválido'});
+ const parsed=staffRoleSchema.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Rol inválido'});
+ const conn=await db.getConnection();try{
+  await conn.beginTransaction();
+  const [[u]]=await conn.execute('SELECT id,email,password_hash FROM users WHERE id=? FOR UPDATE',[req.params.id]);
+  if(!u||!u.password_hash){await conn.rollback();return res.status(404).json({error:'El usuario debe registrarse primero'});}
+  const [[a]]=await conn.execute('SELECT id,role FROM admins WHERE email=? FOR UPDATE',[u.email]);
+  if(a?.role==='owner'){await conn.rollback();return res.status(403).json({error:'No se puede modificar al dueño'});}
+  if(parsed.data.role==='customer'){
+   if(a)await conn.execute('UPDATE admins SET is_active=0 WHERE id=?',[a.id]);
+  }else if(a){await conn.execute('UPDATE admins SET role=?,is_active=1 WHERE id=?',[parsed.data.role,a.id]);}
+  else await conn.execute('INSERT INTO admins(email,password_hash,role,is_active) VALUES (?,?,?,1)',[u.email,u.password_hash,parsed.data.role]);
+  await conn.execute("INSERT INTO audit_logs(actor_admin_id,action,entity_type,entity_id,details) VALUES (?,'staff_role_changed','user',?,JSON_OBJECT('role',?))",[req.admin.id,String(u.id),parsed.data.role]);
+  await conn.commit();res.json({ok:true,role:parsed.data.role});
+ }catch(e){await conn.rollback();console.error('staff update',e.code||e.message);res.status(500).json({error:'No se pudo cambiar el rol'});}finally{conn.release();}
+});
+
 // Pago automático: integración desactivada hasta configurar proveedor, firma webhook y conciliación.
 app.get('/api/payments/automatic/status',(req,res)=>res.json({enabled:false,reason:'Pasarela y webhook verificado pendientes'}));
 
@@ -184,5 +270,5 @@ app.use(express.static(root,{index:'index.html',dotfiles:'ignore'}));
 app.use('/api',(req,res)=>res.status(404).json({error:'Ruta no encontrada'}));
 app.use((req,res)=>res.status(404).send('Not Found'));
 const port=Number(process.env.PORT||3000);
-try{await initializeDatabase();app.listen(port,'0.0.0.0',()=>console.log(`Fijas de Elite API listening on ${port}`));}
+try{await initializeDatabase();await db.query(`CREATE TABLE IF NOT EXISTS customer_password_resets (user_id BIGINT UNSIGNED NOT NULL PRIMARY KEY, token_hash CHAR(64) NOT NULL UNIQUE, expires_at DATETIME NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE) ENGINE=InnoDB`);app.listen(port,'0.0.0.0',()=>console.log(`Fijas de Elite API listening on ${port}`));}
 catch(e){console.error('Database initialization failed:',e);process.exitCode=1;await db.end();}
