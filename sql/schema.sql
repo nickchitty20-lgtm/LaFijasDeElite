@@ -1,0 +1,69 @@
+CREATE TABLE IF NOT EXISTS admins (
+ id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ email VARCHAR(254) NOT NULL UNIQUE,
+ password_hash VARCHAR(255) NOT NULL,
+ role ENUM('owner','general_admin','payments_admin','analyst','moderator') NOT NULL,
+ is_active BOOLEAN NOT NULL DEFAULT TRUE,
+ created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS users (
+ id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ telegram_id BIGINT UNIQUE NULL,
+ email VARCHAR(254) UNIQUE NULL,
+ display_name VARCHAR(120) NULL,
+ created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS plans (
+ id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ name VARCHAR(100) NOT NULL,
+ duration_days INT UNSIGNED NOT NULL,
+ price_pen DECIMAL(10,2) NOT NULL,
+ active BOOLEAN NOT NULL DEFAULT TRUE
+);
+CREATE TABLE IF NOT EXISTS memberships (
+ id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ user_id BIGINT UNSIGNED NOT NULL,
+ plan_id BIGINT UNSIGNED NOT NULL,
+ status ENUM('pending','active','expired','cancelled') NOT NULL DEFAULT 'pending',
+ starts_at DATETIME NULL,
+ ends_at DATETIME NULL,
+ created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ FOREIGN KEY (user_id) REFERENCES users(id),
+ FOREIGN KEY (plan_id) REFERENCES plans(id),
+ INDEX idx_memberships_expiry(status,ends_at)
+);
+CREATE TABLE IF NOT EXISTS payments (
+ id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ user_id BIGINT UNSIGNED NOT NULL,
+ membership_id BIGINT UNSIGNED NULL,
+ method ENUM('yape','plin','card','direct','telegram_stars') NOT NULL,
+ amount_pen DECIMAL(10,2) NOT NULL,
+ status ENUM('pending','verified','rejected','refunded') NOT NULL DEFAULT 'pending',
+ external_reference VARCHAR(190) NULL,
+ verified_by BIGINT UNSIGNED NULL,
+ verified_at DATETIME NULL,
+ created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ FOREIGN KEY (user_id) REFERENCES users(id),
+ FOREIGN KEY (membership_id) REFERENCES memberships(id),
+ FOREIGN KEY (verified_by) REFERENCES admins(id)
+);
+CREATE TABLE IF NOT EXISTS predictions (
+ id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ title VARCHAR(200) NOT NULL,
+ analysis TEXT NOT NULL,
+ visibility ENUM('free','vip') NOT NULL DEFAULT 'free',
+ outcome ENUM('pending','won','lost','void') NOT NULL DEFAULT 'pending',
+ published_at DATETIME NULL,
+ author_id BIGINT UNSIGNED NOT NULL,
+ FOREIGN KEY (author_id) REFERENCES admins(id)
+);
+CREATE TABLE IF NOT EXISTS audit_logs (
+ id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ actor_admin_id BIGINT UNSIGNED NULL,
+ action VARCHAR(100) NOT NULL,
+ entity_type VARCHAR(100) NOT NULL,
+ entity_id VARCHAR(100) NULL,
+ details JSON NULL,
+ created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ FOREIGN KEY (actor_admin_id) REFERENCES admins(id)
+);
