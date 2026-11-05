@@ -14,7 +14,7 @@ import {db} from './db.js';
 import {initializeDatabase} from './init-db.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
-const APP_VERSION = '1.8.4';
+const APP_VERSION = '1.8.5';
 const app = express();
 // Railway terminates HTTPS behind one reverse proxy; trust only that hop.
 app.set('trust proxy', 1);
@@ -22,6 +22,65 @@ app.disable('x-powered-by');
 app.use(helmet({contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'"],styleSrc:["'self'"],connectSrc:["'self'"],imgSrc:["'self'","data:"],objectSrc:["'none'"]}}}));
 app.use(cors({origin:process.env.CORS_ORIGIN?.split(',') || false}));
 app.use(express.json({limit:'16kb'}));
+
+// Persistent same-site sessions, no JWT exposed to browser JavaScript.
+// Customers stay connected for 14 days; administrative sessions expire after 12 hours.
+const SESSION_COOKIE='fijas_session';
+const sessionMaxAge={customer:14*24*60*60*1000,admin:12*60*60*1000};
+const sessionFingerprint=passwordHash=>crypto.createHmac('sha256',process.env.JWT_SECRET)
+ .update(passwordHash).digest('hex');
+const cookieSecure=req=>req.secure || process.env.NODE_ENV==='production';
+const cookieOptions=req=>({httpOnly:true,secure:cookieSecure(req),sameSite:'lax',path:'/'});
+function setSessionCookie(req,res,audience,accountId,passwordHash){
+ const token=jwt.sign({sub:String(accountId),sv:sessionFingerprint(passwordHash)},process.env.JWT_SECRET,{
+  expiresIn:audience==='admin'?'12h':'14d',issuer:'fijas-de-elite',audience
+ });
+ const cookie=encodeURIComponent(token);
+ const flags=[`${SESSION_COOKIE}=${cookie}`,'Path=/','HttpOnly','SameSite=Lax',`Max-Age=${Math.floor(sessionMaxAge[audience]/1000)}`];
+ if(cookieSecure(req))flags.push('Secure');
+ res.setHeader('Set-Cookie',flags.join('; '));
+ return token;
+}
+function clearSessionCookie(req,res){
+ res.setHeader('Set-Cookie',[`${SESSION_COOKIE}=`,'Path=/','HttpOnly','SameSite=Lax','Max-Age=0',...(cookieSecure(req)?['Secure']:[])].join('; '));
+}
+function sessionToken(req){
+ const bearer=req.headers.authorization||'';
+ if(bearer.startsWith('Bearer '))return bearer.slice(7); // brief support for older deployed tabs
+ const cookie=(req.headers.cookie||'').split(';').map(v=>v.trim()).find(v=>v.startsWith(SESSION_COOKIE+'='));
+ if(!cookie)return null;
+ try{return decodeURIComponent(cookie.slice(SESSION_COOKIE.length+1));}catch{return null;}
+}
+function verifyToken(req,audience){
+ const token=sessionToken(req);
+ if(!token)return null;
+ return jwt.verify(token,process.env.JWT_SECRET,{issuer:'fijas-de-elite',audience});
+}
+function sessionStillValid(payload,hash){
+ // Legacy short-lived Bearer tokens are accepted until natural expiry, but new
+ // HttpOnly-cookie sessions are invalidated whenever the password changes.
+ return !payload.sv || payload.sv===sessionFingerprint(hash);
+}
+// Cookie-based authentication needs a CSRF defense on state-changing requests.
+// Accept requests only from this origin; PayPal returns via a top-level GET (SameSite=Lax).
+app.use('/api',(req,res,next)=>{
+ res.set('Cache-Control','no-store');
+ if(['GET','HEAD','OPTIONS'].includes(req.method))return next();
+ const origin=req.get('Origin');
+ const requestOrigin=`${req.protocol}://${req.get('host')}`;
+ let configuredOrigin=requestOrigin;
+ try{if(process.env.PUBLIC_BASE_URL)configuredOrigin=new URL(process.env.PUBLIC_BASE_URL).origin;}catch{}
+ if(origin && origin!==requestOrigin && origin!==configuredOrigin)
+  return res.status(403).json({error:'Origen de solicitud no autorizado'});
+ if(!origin && req.headers.cookie && !req.headers.authorization){
+  let refererOrigin='';
+  try{if(req.get('Referer'))refererOrigin=new URL(req.get('Referer')).origin;}catch{}
+  if(![requestOrigin,configuredOrigin].includes(refererOrigin) && req.get('Sec-Fetch-Site')!=='same-origin')
+   return res.status(403).json({error:'Solicitud no autorizada desde otro sitio'});
+ }
+ next();
+});
+
 // All /api rate limits return JSON, so clients never parse HTML/text 429 pages as JSON.
 // The proxy-aware client IP still comes from the single trusted Railway proxy hop.
 const apiRateLimit=options=>rateLimit({
@@ -76,15 +135,19 @@ app.post('/api/login',unifiedLimit,async(req,res)=>{
   const [[admin]]=await db.execute('SELECT id,password_hash,is_active FROM admins WHERE email=? LIMIT 1',[email]);
   const [[customer]]=await db.execute('SELECT id,password_hash FROM users WHERE email=? LIMIT 1',[email]);
   const dummy='$2a$12$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';
+  // Assigned staff authenticate using the password from their customer account.
+  const adminHash=customer?.password_hash||admin?.password_hash||dummy;
   const [adminValid,customerValid]=await Promise.all([
-   bcrypt.compare(p.data.password,admin?.password_hash||dummy),
+   bcrypt.compare(p.data.password,adminHash),
    bcrypt.compare(p.data.password,customer?.password_hash||dummy)
   ]);
   if(admin?.is_active && adminValid){
-   return res.json({accountType:'admin',token:jwt.sign({sub:String(admin.id)},process.env.JWT_SECRET,{expiresIn:'20m',issuer:'fijas-de-elite',audience:'admin'})});
+   setSessionCookie(req,res,'admin',admin.id,adminHash);
+   return res.json({accountType:'admin'});
   }
   if(customer && customerValid){
-   return res.json({accountType:'customer',token:jwt.sign({sub:String(customer.id)},process.env.JWT_SECRET,{expiresIn:'30m',issuer:'fijas-de-elite',audience:'customer'})});
+   setSessionCookie(req,res,'customer',customer.id,customer.password_hash);
+   return res.json({accountType:'customer'});
   }
   return res.status(401).json({error:'Credenciales incorrectas'});
  }catch(e){console.error('unified login',e.code||e.message);return res.status(500).json({error:'No se pudo iniciar sesión'});}
@@ -98,19 +161,42 @@ app.post('/api/auth/login',adminLoginLimit,async(req,res)=>{
   const dummy='$2a$12$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';
   const [[linkedUser]]=await db.execute('SELECT password_hash FROM users WHERE email=? LIMIT 1',[emailKey(p.data.email)]);const valid=await bcrypt.compare(p.data.password,(linkedUser?.password_hash || admin?.password_hash)||dummy);
   if(!admin || !admin.is_active || !valid)return res.status(401).json({error:'Credenciales incorrectas'});
-  const token=jwt.sign({sub:String(admin.id)},process.env.JWT_SECRET,{expiresIn:'20m',issuer:'fijas-de-elite',audience:'admin'});
-  res.json({token,admin:{id:admin.id,email:admin.email,role:admin.role},mfaRequiredForProduction:true});
+  setSessionCookie(req,res,'admin',admin.id,linkedUser?.password_hash||admin.password_hash);
+  res.json({accountType:'admin',admin:{id:admin.id,email:admin.email,role:admin.role},mfaRequiredForProduction:true});
  }catch(e){console.error('login error',e.code||e.message);res.status(500).json({error:'Error interno'});}
 });
 async function authenticate(req,res,next){
- const h=req.headers.authorization||'';if(!h.startsWith('Bearer '))return res.status(401).json({error:'Sin autorización'});
  try{
-  const payload=jwt.verify(h.slice(7),process.env.JWT_SECRET,{issuer:'fijas-de-elite',audience:'admin'});
-  const [rows]=await db.execute('SELECT id,email,role,is_active FROM admins WHERE id=? LIMIT 1',[payload.sub]);
-  if(!rows[0]?.is_active)return res.status(403).json({error:'Acceso denegado'});
-  req.admin=rows[0];next();
+  const payload=verifyToken(req,'admin');
+  if(!payload)return res.status(401).json({error:'Inicia sesión como administrador'});
+  const [[admin]]=await db.execute(`SELECT a.id,a.email,a.role,a.is_active,
+   COALESCE(u.password_hash,a.password_hash) AS auth_hash
+   FROM admins a LEFT JOIN users u ON u.email=a.email WHERE a.id=? LIMIT 1`,[payload.sub]);
+  if(!admin?.is_active)return res.status(403).json({error:'Acceso denegado'});
+  if(!sessionStillValid(payload,admin.auth_hash))return res.status(401).json({error:'La contraseña cambió. Inicia sesión otra vez.'});
+  const {auth_hash,...safeAdmin}=admin;
+  req.admin=safeAdmin;next();
  }catch{return res.status(401).json({error:'Sesión inválida o vencida'});}
 }
+// Session state is checked against current database records; never trust role claims alone.
+app.get('/api/session',async(req,res)=>{
+ const raw=sessionToken(req);
+ if(!raw)return res.json({authenticated:false,accountType:null});
+ try{
+  const payload=jwt.verify(raw,process.env.JWT_SECRET,{issuer:'fijas-de-elite'});
+  if(payload.aud==='admin'){
+   const [[a]]=await db.execute(`SELECT a.is_active,COALESCE(u.password_hash,a.password_hash) AS auth_hash
+    FROM admins a LEFT JOIN users u ON u.email=a.email WHERE a.id=? LIMIT 1`,[payload.sub]);
+   return res.json({authenticated:Boolean(a?.is_active && sessionStillValid(payload,a.auth_hash)),accountType:a?.is_active && sessionStillValid(payload,a.auth_hash)?'admin':null});
+  }
+  if(payload.aud==='customer'){
+   const [[u]]=await db.execute('SELECT password_hash FROM users WHERE id=? LIMIT 1',[payload.sub]);
+   return res.json({authenticated:Boolean(u && sessionStillValid(payload,u.password_hash)),accountType:u && sessionStillValid(payload,u.password_hash)?'customer':null});
+  }
+ }catch(e){if(e.code)console.error('session check',e.code);}
+ res.json({authenticated:false,accountType:null});
+});
+app.post('/api/logout',(req,res)=>{clearSessionCookie(req,res);res.json({ok:true});});
 app.get('/api/admin/me',authenticate,(req,res)=>res.json(req.admin));
 app.get('/api/admin/overview',authenticate,async(req,res)=>{
  try{
@@ -189,7 +275,7 @@ app.post('/api/customers/register',registerLimit,async(req,res)=>{
 });
 app.post('/api/customers/login',registerLimit,async(req,res)=>{
  const p=loginSchema.safeParse(req.body);if(!p.success)return res.status(400).json({error:'Datos inválidos'});
- try{const [[u]]=await db.execute('SELECT id,password_hash FROM users WHERE email=?',[emailKey(p.data.email)]);const dummy='$2a$12$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';const ok=await bcrypt.compare(p.data.password,u?.password_hash||dummy);if(!u||!ok)return res.status(401).json({error:'Credenciales incorrectas'});res.json({token:jwt.sign({sub:String(u.id)},process.env.JWT_SECRET,{expiresIn:'30m',issuer:'fijas-de-elite',audience:'customer'})});}
+ try{const [[u]]=await db.execute('SELECT id,password_hash FROM users WHERE email=?',[emailKey(p.data.email)]);const dummy='$2a$12$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';const ok=await bcrypt.compare(p.data.password,u?.password_hash||dummy);if(!u||!ok)return res.status(401).json({error:'Credenciales incorrectas'});setSessionCookie(req,res,'customer',u.id,u.password_hash);res.json({accountType:'customer'});}
  catch{res.status(500).json({error:'No se pudo iniciar sesión'});}
 });
 // Password recovery: hashed, single-use, expiring tokens; no account enumeration.
@@ -226,7 +312,16 @@ app.post('/api/customers/reset-password',resetLimit,async(req,res)=>{
   await conn.commit();res.json({ok:true});
  }catch(e){await conn.rollback();console.error('reset password failed',e.code||e.message);res.status(500).json({error:'No se pudo actualizar la contraseña'});}finally{conn.release();}
 });
-async function customerAuth(req,res,next){const h=req.headers.authorization||'';if(!h.startsWith('Bearer '))return res.status(401).json({error:'Inicia sesión'});try{const t=jwt.verify(h.slice(7),process.env.JWT_SECRET,{issuer:'fijas-de-elite',audience:'customer'});const [[u]]=await db.execute('SELECT id,email,display_name FROM users WHERE id=?',[t.sub]);if(!u)return res.status(401).json({error:'Cuenta no disponible'});req.customer=u;next();}catch{return res.status(401).json({error:'Sesión inválida'});}}
+async function customerAuth(req,res,next){
+ try{
+  const t=verifyToken(req,'customer');
+  if(!t)return res.status(401).json({error:'Inicia sesión'});
+  const [[u]]=await db.execute('SELECT id,email,display_name,password_hash FROM users WHERE id=?',[t.sub]);
+  if(!u||!sessionStillValid(t,u.password_hash))return res.status(401).json({error:'Sesión vencida o cuenta no disponible'});
+  const {password_hash,...customer}=u;
+  req.customer=customer;next();
+ }catch{return res.status(401).json({error:'Sesión inválida o vencida'});}
+}
 // Always authorize content on the server; never send VIP selections to non-VIP users.
 app.get('/api/customers/predictions',customerAuth,async(req,res)=>{
  try{

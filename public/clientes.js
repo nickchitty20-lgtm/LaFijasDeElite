@@ -1,6 +1,6 @@
-const $=id=>document.getElementById(id);let token='';
+const $=id=>document.getElementById(id);let signedIn=false;
 async function call(url,body,auth=false){
- const r=await fetch(url,{method:body?'POST':'GET',headers:{'Content-Type':'application/json',...(auth?{Authorization:`Bearer ${token}`}:{})},...(body?{body:JSON.stringify(body)}:{})});
+ const r=await fetch(url,{method:body?'POST':'GET',credentials:'same-origin',headers:{'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});
  const data=await r.json().catch(()=>null);
  if(!r.ok){
   const message=(data&&typeof data.error==='string'&&data.error)||
@@ -44,13 +44,28 @@ async function loadDashboard(){
 }
 async function me(){const r=await call('/api/customers/me',null,true);$('memberships').replaceChildren();$('accountMsg').textContent=`Bienvenido, ${r.user.display_name}`;for(const m of r.memberships){const p=document.createElement('p');p.textContent=`${m.plan}: ${m.status} · Vence: ${m.ends_at||'pendiente'}`;$('memberships').append(p);}if(!r.memberships.length)$('memberships').textContent='Aún no tienes membresías registradas.';}
 $('register').addEventListener('submit',async e=>{e.preventDefault();try{await call('/api/customers/register',form('register'));$('regMsg').textContent='Cuenta creada. Ahora inicia sesión.';view('login');$('loginMsg').textContent='Cuenta creada. Inicia sesión.';}catch(err){$('regMsg').textContent=err.message;}});
-$('signin').addEventListener('submit',async e=>{e.preventDefault();try{const r=await call('/api/login',form('signin'));if(r.accountType==='admin'){sessionStorage.setItem('fijas_admin_handoff',r.token);location.replace('/admin.html');return;}token=r.token;await me();await loadCustomerPicks();await loadDashboard();document.querySelector('.auth-card').hidden=true;$('customer-area').hidden=false;document.body.classList.add('client-logged-in');if(pendingPayPalReturn){$('payment-method').value='paypal';updatePaymentMethod();clientTab('payments');await completePayPalReturn();}else clientTab('overview');}catch(err){$('loginMsg').textContent=err.message;}});
+async function enterCustomerPanel(){
+ await me();await loadCustomerPicks();await loadDashboard();
+ signedIn=true;
+ document.querySelector('.auth-card').hidden=true;$('customer-area').hidden=false;
+ document.body.classList.add('client-logged-in');
+ if(pendingPayPalReturn){$('payment-method').value='paypal';updatePaymentMethod();clientTab('payments');await completePayPalReturn();}
+ else clientTab('overview');
+}
+$('signin').addEventListener('submit',async e=>{
+ e.preventDefault();$('loginMsg').textContent='Comprobando acceso…';
+ try{
+  const r=await call('/api/login',form('signin'));
+  if(r.accountType==='admin'){location.replace('/admin.html');return;}
+  await enterCustomerPanel();$('loginMsg').textContent='';
+ }catch(err){$('loginMsg').textContent=err.message;}
+});
 $('forgot').addEventListener('submit',async e=>{e.preventDefault();try{const r=await call('/api/customers/forgot-password',form('forgot'));$('forgotMsg').textContent=r.message;}catch(err){$('forgotMsg').textContent=err.message;}});
 $('reset').addEventListener('submit',async e=>{e.preventDefault();try{await call('/api/customers/reset-password',{token:new URLSearchParams(location.search).get('reset_token'),...form('reset')});history.replaceState(null,'','/clientes.html');view('login');$('loginMsg').textContent='Contraseña actualizada. Ya puedes iniciar sesión.';}catch(err){$('resetMsg').textContent=err.message;}});
 $('request').addEventListener('submit',async e=>{
  e.preventDefault();
  const msg=$('requestMsg'),btn=$('payment-submit');
- if(!token){msg.textContent='Primero inicia sesión.';return;}
+ if(!signedIn){msg.textContent='Primero inicia sesión.';return;}
  const method=$('payment-method').value;
  btn.disabled=true;msg.textContent=method==='paypal'?'Preparando checkout seguro de PayPal…':'Enviando solicitud de pago…';
  try{
@@ -71,7 +86,7 @@ $('request').addEventListener('submit',async e=>{
  }catch(err){msg.textContent=err.message;}
  finally{btn.disabled=false;}
 });
-$('logout').addEventListener('click',()=>{token='';$('customer-area').hidden=true;document.body.classList.remove('client-logged-in');document.querySelector('.auth-card').hidden=false;view('login');});
+$('logout').addEventListener('click',async()=>{try{await call('/api/logout',{});}catch(e){$('loginMsg').textContent='No se pudo cerrar sesión, intenta de nuevo.';return;}signedIn=false;$('customer-area').hidden=true;document.body.classList.remove('client-logged-in');document.querySelector('.auth-card').hidden=false;view('login');});
 if(new URLSearchParams(location.search).has('reset_token'))view('reset');load();
 // Navegación de cliente: una sección visible a la vez, sin alterar los permisos del servidor.
 function clientTab(name){
@@ -94,8 +109,8 @@ const pendingPayPalReturn=paypalReturnQuery.has('paypal_return')?{
 if(pendingPayPalReturn){
  view('login');
  $('loginMsg').textContent=pendingPayPalReturn.status==='success'
-  ?'Inicia sesión de nuevo con tu cuenta para confirmar el pago PayPal. No necesitas volver a pagar.'
-  :'Regresaste de PayPal sin confirmar un pago. Puedes iniciar sesión para intentarlo nuevamente.';
+  ?'Volviste de PayPal. Confirmaremos tu pago automáticamente si tu sesión sigue activa.'
+  :'Regresaste de PayPal sin completar el pago. No se ha activado VIP.';
  history.replaceState(null,'',location.pathname);
 }
 function updatePaymentMethod(){
@@ -126,7 +141,7 @@ async function initPayPal(){
 }
 $('paypal-check').addEventListener('click',async()=>{
  const msg=$('paypal-message');
- if(!token){msg.textContent='Primero inicia sesión.';return;}
+ if(!signedIn){msg.textContent='Primero inicia sesión.';return;}
  msg.textContent='Comprobando el estado del último pago…';
  try{
   const r=await call('/api/customers/payments/paypal/check',{},true);
@@ -153,3 +168,13 @@ async function completePayPalReturn(){
  }catch(e){msg.textContent=e.message+' Si pagaste, usa «Verificar mi último pago PayPal»; no realices otro pago todavía.';}
 }
 initPayPal();
+// Resume a valid cookie session automatically, including after returning from PayPal.
+async function resumeCustomerSession(){
+ if(new URLSearchParams(location.search).has('reset_token'))return;
+ try{
+  const session=await call('/api/session');
+  if(session.accountType==='admin'){location.replace('/admin.html');return;}
+  if(session.authenticated && session.accountType==='customer')await enterCustomerPanel();
+ }catch(err){$('loginMsg').textContent='Tu sesión no pudo restaurarse. Inicia sesión para continuar.';}
+}
+resumeCustomerSession();

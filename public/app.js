@@ -1,8 +1,7 @@
 const $=id=>document.getElementById(id);
-let token='';
 let currentAdminRole='';
 async function api(url,options={}){
- const r=await fetch(url,{...options,headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{})}});
+ const r=await fetch(url,{...options,credentials:'same-origin',headers:{'Content-Type':'application/json'}});
  const data=await r.json().catch(()=>({error:'Respuesta inesperada'}));
  if(!r.ok)throw new Error(data.error||'Error de conexión');return data;
 }
@@ -19,7 +18,7 @@ setTimeout(()=>show('login'),1800);}catch(err){$('setupMsg').textContent=err.mes
 });
 $('loginForm').addEventListener('submit',async e=>{
  e.preventDefault();const form=e.currentTarget;$('loginMsg').textContent='Comprobando acceso...';
- try{const body=Object.fromEntries(new FormData(form));const r=await api('/api/auth/login',{method:'POST',body:JSON.stringify(body)});token=r.token;form.reset();$('loginMsg').textContent='';await dashboard();}catch(err){$('loginMsg').textContent=err.message;}
+ try{const body=Object.fromEntries(new FormData(form));const r=await api('/api/auth/login',{method:'POST',body:JSON.stringify(body)});form.reset();$('loginMsg').textContent='';await dashboard();}catch(err){$('loginMsg').textContent=err.message;}
 });
 async function dashboard(){
  try{const [me,overview]=await Promise.all([api('/api/admin/me'),api('/api/admin/overview')]);currentAdminRole=me.role;$('identity').textContent=`${me.email} · ${me.role}`;for(const key of ['users','active_memberships','pending_payments','predictions'])$(key).textContent=Number(overview.stats[key]||0).toLocaleString('es-PE');show('dashboard');$('staffPanel').hidden=me.role!=='owner';
@@ -32,12 +31,17 @@ async function dashboard(){
  $('customersPanel').hidden=!clients;$('auditPanel').hidden=!audit;
  if($('paypalDiagnosticsPanel'))$('paypalDiagnosticsPanel').hidden=me.role!=='owner';if(me.role==='owner'){await loadStaff();await loadPaypalDiagnostics();}if(pred)await loadPredictions();
  if(pay)await loadCommerce();else if(clients)await loadCustomersOnly();
- if(audit)await loadAudit();initAdminNavigation();}catch(err){token='';$('loginMsg').textContent=err.message;show('login');}
+ if(audit)await loadAudit();initAdminNavigation();}catch(err){$('loginMsg').textContent=err.message;show('login');}
 }
-$('logout').addEventListener('click',()=>{token='';show('login');});
+$('logout').addEventListener('click',async()=>{
+ try{await api('/api/logout',{method:'POST',body:'{}'});currentAdminRole='';show('login');}
+ catch(err){$('loginMsg').textContent='No se pudo cerrar sesión: '+err.message;}
+});
 refreshSetup();
-const handoff=sessionStorage.getItem('fijas_admin_handoff');
-if(handoff){sessionStorage.removeItem('fijas_admin_handoff');token=handoff;dashboard();}
+(async()=>{
+ try{const s=await api('/api/session');if(s.authenticated&&s.accountType==='admin')await dashboard();}
+ catch{show('login');}
+})();
 
 const predictionForm=$('predictionForm');
 predictionForm.addEventListener('submit',async e=>{
