@@ -7,6 +7,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import {z} from 'zod';
 import {db} from './db.js';
+import {initializeDatabase} from './init-db.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
 const app=express();
@@ -33,4 +34,11 @@ function authenticate(req,res,next){const token=req.headers.authorization?.repla
 app.get('/api/admin/me',authenticate,async(req,res)=>{const [rows]=await db.execute('SELECT id,email,role,is_active FROM admins WHERE id=?',[req.auth.sub]);if(!rows[0]?.is_active)return res.status(403).json({error:'Forbidden'});res.json(rows[0]);});
 app.use((err,req,res,next)=>{console.error(err);res.status(500).json({error:'Internal error'});});
 const port=Number(process.env.PORT||3000);
-app.listen(port,'0.0.0.0',()=>console.log(`Fijas de Elite API listening on ${port}`));
+try {
+ await initializeDatabase();
+ app.listen(port,'0.0.0.0',()=>console.log(`Fijas de Elite API listening on ${port}`));
+} catch (error) {
+ console.error('Database initialization failed:', error);
+ process.exitCode = 1;
+ await db.end();
+}
