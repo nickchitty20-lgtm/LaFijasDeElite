@@ -20,10 +20,33 @@ async function loadDashboard(){
 }
 async function me(){const r=await call('/api/customers/me',null,true);$('memberships').replaceChildren();$('accountMsg').textContent=`Bienvenido, ${r.user.display_name}`;for(const m of r.memberships){const p=document.createElement('p');p.textContent=`${m.plan}: ${m.status} · Vence: ${m.ends_at||'pendiente'}`;$('memberships').append(p);}if(!r.memberships.length)$('memberships').textContent='Aún no tienes membresías registradas.';}
 $('register').addEventListener('submit',async e=>{e.preventDefault();try{await call('/api/customers/register',form('register'));$('regMsg').textContent='Cuenta creada. Ahora inicia sesión.';view('login');$('loginMsg').textContent='Cuenta creada. Inicia sesión.';}catch(err){$('regMsg').textContent=err.message;}});
-$('signin').addEventListener('submit',async e=>{e.preventDefault();try{const r=await call('/api/login',form('signin'));if(r.accountType==='admin'){sessionStorage.setItem('fijas_admin_handoff',r.token);location.replace('/admin.html');return;}token=r.token;await me();await loadCustomerPicks();await loadDashboard();document.querySelector('.auth-card').hidden=true;$('customer-area').hidden=false;document.body.classList.add('client-logged-in');clientTab('overview');}catch(err){$('loginMsg').textContent=err.message;}});
+$('signin').addEventListener('submit',async e=>{e.preventDefault();try{const r=await call('/api/login',form('signin'));if(r.accountType==='admin'){sessionStorage.setItem('fijas_admin_handoff',r.token);location.replace('/admin.html');return;}token=r.token;await me();await loadCustomerPicks();await loadDashboard();document.querySelector('.auth-card').hidden=true;$('customer-area').hidden=false;document.body.classList.add('client-logged-in');if(pendingPayPalReturn){$('payment-method').value='paypal';updatePaymentMethod();clientTab('payments');await completePayPalReturn();}else clientTab('overview');}catch(err){$('loginMsg').textContent=err.message;}});
 $('forgot').addEventListener('submit',async e=>{e.preventDefault();try{const r=await call('/api/customers/forgot-password',form('forgot'));$('forgotMsg').textContent=r.message;}catch(err){$('forgotMsg').textContent=err.message;}});
 $('reset').addEventListener('submit',async e=>{e.preventDefault();try{await call('/api/customers/reset-password',{token:new URLSearchParams(location.search).get('reset_token'),...form('reset')});history.replaceState(null,'','/clientes.html');view('login');$('loginMsg').textContent='Contraseña actualizada. Ya puedes iniciar sesión.';}catch(err){$('resetMsg').textContent=err.message;}});
-$('request').addEventListener('submit',async e=>{e.preventDefault();try{if(!token)throw Error('Primero inicia sesión');const r=await call('/api/customers/payment-requests',form('request'),true);$('requestMsg').textContent=`Solicitud #${r.payment_id} pendiente de revisión.`;await me();await loadCustomerPicks();await loadDashboard();}catch(err){$('requestMsg').textContent=err.message;}});
+$('request').addEventListener('submit',async e=>{
+ e.preventDefault();
+ const msg=$('requestMsg'),btn=$('payment-submit');
+ if(!token){msg.textContent='Primero inicia sesión.';return;}
+ const method=$('payment-method').value;
+ btn.disabled=true;msg.textContent=method==='paypal'?'Preparando checkout seguro de PayPal…':'Enviando solicitud de pago…';
+ try{
+  const planId=Number($('plans').value);
+  if(!planId)throw Error('Selecciona un plan válido.');
+  if(method==='paypal'){
+   if(!paypalAvailability?.enabled)throw Error('PayPal no está habilitado todavía. El dueño debe revisar la configuración de Railway.');
+   const r=await call('/api/customers/payments/paypal',{plan_id:planId},true);
+   // The order is created for this customer and priced by the backend, never by the browser.
+   if(!/^https:\/\//.test(r.checkout_url))throw Error('Respuesta de checkout inválida.');
+   window.location.assign(r.checkout_url);
+   return;
+  }
+  if(!['yape','plin','direct'].includes(method))throw Error('Método de pago no admitido.');
+  const r=await call('/api/customers/payment-requests',{plan_id:planId,method,reference:$('payment-reference').value.trim()},true);
+  msg.textContent=`Solicitud #${r.payment_id} pendiente de revisión. Guarda tu comprobante.`;
+  await me();await loadCustomerPicks();await loadDashboard();
+ }catch(err){msg.textContent=err.message;}
+ finally{btn.disabled=false;}
+});
 $('logout').addEventListener('click',()=>{token='';$('customer-area').hidden=true;document.body.classList.remove('client-logged-in');document.querySelector('.auth-card').hidden=false;view('login');});
 if(new URLSearchParams(location.search).has('reset_token'))view('reset');load();
 // Navegación de cliente: una sección visible a la vez, sin alterar los permisos del servidor.
@@ -38,29 +61,70 @@ function clientTab(name){
 document.querySelectorAll('[data-client-tab]').forEach(btn=>btn.addEventListener('click',()=>clientTab(btn.dataset.clientTab)));
 document.querySelectorAll('[data-client-go]').forEach(btn=>btn.addEventListener('click',()=>clientTab(btn.dataset.clientGo)));
 
-// PayPal hosted checkout. The browser never receives card details or API secrets.
-async function initPayPal(){
- const btn=$('culqi-pay'),msg=$('culqi-msg');if(!btn)return;
- try{const st=await call('/api/payments/automatic/status');btn.disabled=!st.enabled;msg.textContent=st.enabled?`PayPal ${st.mode==='sandbox'?'Sandbox (pruebas)':'Live'} · cobro en USD, tasa referencial S/${st.pen_per_usd} por US$1.`:'PayPal aún no está habilitado. El dueño puede consultar el diagnóstico en el panel administrativo.';}
- catch{msg.textContent='PayPal temporalmente no disponible.';}
-}
-$('culqi-pay')?.addEventListener('click',async()=>{
- const btn=$('culqi-pay'),msg=$('culqi-msg');if(!token){msg.textContent='Primero inicia sesión.';return;}
- const planId=Number($('plans').value);if(!planId){msg.textContent='Selecciona un plan.';return;}
- btn.disabled=true;msg.textContent='Preparando checkout seguro…';
- try{const r=await call('/api/customers/payments/paypal',{plan_id:planId},true);window.location.assign(r.checkout_url);}
- catch(e){msg.textContent=e.message;btn.disabled=false;}
-});
-$('mp-check')?.addEventListener('click',async()=>{
- const msg=$('culqi-msg');try{const r=await call('/api/customers/payments/paypal/check',{},true);msg.textContent=r.message;await me();await loadDashboard();await loadCustomerPicks();}catch(e){msg.textContent=e.message;}
-});
-initPayPal();
-const paypalParams=new URLSearchParams(location.search);
-if(paypalParams.has('paypal_return')){
- clientTab('payments');
- const order=paypalParams.get('token');
- if(paypalParams.get('paypal_return')==='success'&&order&&/^[A-Z0-9-]{8,64}$/i.test(order)){
-  call('/api/customers/payments/paypal/capture',{order_id:order},true).then(async r=>{$('culqi-msg').textContent=r.message;await me();await loadDashboard();await loadCustomerPicks();}).catch(e=>{$('culqi-msg').textContent=e.message+' Usa «Verificar pago».';});
- }else $('culqi-msg').textContent='El pago fue cancelado o no confirmado. No se activó VIP.';
+// One payment selector for PayPal and manual methods. Never send PayPal to the manual-review endpoint.
+let paypalAvailability=null;
+const paypalReturnQuery=new URLSearchParams(location.search);
+const pendingPayPalReturn=paypalReturnQuery.has('paypal_return')?{
+ status:paypalReturnQuery.get('paypal_return'),orderId:paypalReturnQuery.get('token')||''
+}:null;
+if(pendingPayPalReturn){
+ view('login');
+ $('loginMsg').textContent=pendingPayPalReturn.status==='success'
+  ?'Inicia sesión de nuevo con tu cuenta para confirmar el pago PayPal. No necesitas volver a pagar.'
+  :'Regresaste de PayPal sin confirmar un pago. Puedes iniciar sesión para intentarlo nuevamente.';
  history.replaceState(null,'',location.pathname);
 }
+function updatePaymentMethod(){
+ const isPaypal=$('payment-method').value==='paypal';
+ $('manual-payment-fields').hidden=isPaypal;
+ $('paypal-payment-fields').hidden=!isPaypal;
+ $('paypal-reconcile').hidden=!isPaypal;
+ $('payment-reference').required=!isPaypal;
+ $('payment-reference').disabled=isPaypal;
+ $('payment-submit').textContent=isPaypal?'Continuar con PayPal ↗':'Enviar pago para revisión';
+ $('payment-submit').disabled=isPaypal&&!paypalAvailability?.enabled;
+ $('requestMsg').textContent='';
+}
+$('payment-method').addEventListener('change',updatePaymentMethod);
+updatePaymentMethod();
+async function initPayPal(){
+ const info=$('paypal-status'),label=$('paypal-mode-label');
+ try{
+  const s=await call('/api/payments/automatic/status');
+  paypalAvailability=s;
+  label.textContent=s.mode==='sandbox'?'MODO DE PRUEBA · SANDBOX':'MODO LIVE';
+  info.textContent=s.enabled
+   ?`Disponible para ${s.mode==='sandbox'?'pagos ficticios Sandbox':'pagos reales'} · tasa referencial S/${s.pen_per_usd} por US$1. Confirma el equivalente en USD antes de aceptar.`
+   :'PayPal pendiente de habilitación por el dueño. Debe revisar el diagnóstico y las variables de Railway.';
+ }catch(err){paypalAvailability={enabled:false};label.textContent='NO DISPONIBLE';info.textContent='No se pudo consultar la disponibilidad de PayPal. Reintenta más tarde.';}
+ updatePaymentMethod();
+}
+$('paypal-check').addEventListener('click',async()=>{
+ const msg=$('paypal-message');
+ if(!token){msg.textContent='Primero inicia sesión.';return;}
+ msg.textContent='Comprobando el estado del último pago…';
+ try{
+  const r=await call('/api/customers/payments/paypal/check',{},true);
+  msg.textContent=r.message;
+  await me();await loadDashboard();await loadCustomerPicks();
+ }catch(e){msg.textContent=e.message;}
+});
+async function completePayPalReturn(){
+ if(!pendingPayPalReturn)return;
+ const msg=$('paypal-message');
+ if(pendingPayPalReturn.status!=='success'){
+  msg.textContent='Pago PayPal cancelado o no confirmado. No se activó ninguna membresía.';
+  return;
+ }
+ if(!/^[A-Z0-9-]{8,64}$/i.test(pendingPayPalReturn.orderId)){
+  msg.textContent='No se recibió una orden válida. Pulsa «Verificar mi último pago PayPal» si completaste el pago.';
+  return;
+ }
+ msg.textContent='Consultando PayPal y validando el cobro en el servidor…';
+ try{
+  const r=await call('/api/customers/payments/paypal/capture',{order_id:pendingPayPalReturn.orderId},true);
+  msg.textContent=r.message;
+  await me();await loadDashboard();await loadCustomerPicks();
+ }catch(e){msg.textContent=e.message+' Si pagaste, usa «Verificar mi último pago PayPal»; no realices otro pago todavía.';}
+}
+initPayPal();

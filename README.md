@@ -1,34 +1,40 @@
-# Fijas de Élite v1.8.2 — Diagnóstico Railway y PayPal
+# Fijas de Élite v1.8.3 — Métodos de pago unificados
 
-Proyecto completo de Fijas de Élite, construido sobre v1.8.1. Conserva login unificado, paneles oscuros, roles, pronósticos protegidos, Yape/Plin/transferencia manual y Checkout PayPal.
+Basado en la v1.8.2 con backend Node.js/Express, MySQL, roles, paneles premium y pronósticos protegidos.
+
+## Cambios importantes
+
+- El menú **Método de pago** del cliente incluye Yape, Plin, transferencia y **PayPal**.
+- Los métodos manuales solicitan referencia y envían una solicitud de revisión; PayPal **no** usa la ruta de pagos manuales, sino el checkout oficial del servidor.
+- El botón y los campos cambian automáticamente según el método elegido.
+- Si PayPal está deshabilitado, el usuario ve el motivo general y no puede iniciar un checkout. **Agregar PayPal al menú no activa PayPal en Railway.**
+- Al regresar de PayPal, el cliente inicia sesión otra vez (el token no se guarda en almacenamiento persistente) y solo entonces se comprueba/captura el pago contra la API de PayPal.
+- Se puede reintentar la verificación de la orden PayPal desde el panel, sin volver a pagar.
+- Se conserva el diagnóstico privado del dueño, el trust proxy de Railway y el versionado en `/health`.
 
 ## Instalación
 
-1. Subir **el contenido del ZIP** a la raíz del repositorio GitHub (no subir el ZIP como único archivo).
-2. Hacer Commit y verificar que Railway despliega el último commit, con log de nueva compilación.
-3. Abrir `https://TU-DOMINIO/health` y confirmar que la respuesta JSON incluye `"version":"1.8.2"`. Si no aparece, Railway todavía está ejecutando la versión antigua u otro servicio/repo.
-4. Iniciar sesión como **dueño**, abrir Resumen → **Diagnóstico de PayPal v1.8.2**. Ahí se indican los NOMBRES de las variables faltantes, **nunca los valores secretos**.
-5. Si aparecen todas completas, pulsar **Probar conexión con PayPal**: solo obtiene un token OAuth, no genera cobros.
-6. Probar la compra únicamente en `PAYPAL_MODE=sandbox` usando comprador Sandbox y dinero de prueba.
+1. Subir **el contenido del ZIP**, no el archivo ZIP como único elemento, a la raíz de GitHub.
+2. Esperar un nuevo despliegue **Success** en Railway.
+3. Abrir `/health` y comprobar `version: 1.8.3`.
+4. Abrir `/clientes.html`, iniciar sesión y entrar en **Comprar VIP**: seleccionar los cuatro métodos y comprobar que cambia el formulario.
+5. Si PayPal sigue deshabilitado, iniciar sesión como dueño en `/admin.html`, **Resumen → Diagnóstico de PayPal** y completar los nombres de las variables indicadas.
 
-## Variables de Railway
+## Configuración de PayPal Sandbox
 
 ```env
 PAYPAL_ENABLE=true
 PAYPAL_MODE=sandbox
-PAYPAL_CLIENT_ID=TU_CLIENT_ID_DE_SANDBOX
-PAYPAL_CLIENT_SECRET=TU_SECRET_DE_SANDBOX
+PAYPAL_CLIENT_ID=CLIENT_ID_DE_SANDBOX
+PAYPAL_CLIENT_SECRET=SECRET_DE_SANDBOX
 PAYPAL_PEN_PER_USD=3.50
 PUBLIC_BASE_URL=https://lafijasdeelite-production.up.railway.app
 ```
 
-La tasa 3.50 **es solo un ejemplo de prueba**, no el cambio oficial actual. No compartas valores secretos ni los subas a GitHub.
+**La tasa 3.50 es un ejemplo de prueba, no un tipo de cambio vigente.** No compartas credenciales ni subas secretos a GitHub. PayPal para venta de pronósticos deportivos está sujeto a sus requisitos y autorización. No activar pagos `live` sin validación comercial, pruebas completas, conciliación y manejo de disputas.
 
-## Error X-Forwarded-For
+## Limitaciones
 
-El backend incluye `app.set('trust proxy', 1)` antes de express-rate-limit. Esto es correcto si hay **un solo proxy inverso confiable** entre Railway y la app. Si el error `ERR_ERL_UNEXPECTED_X_FORWARDED_FOR` persiste **y** `/health` no muestra `version:1.8.2`, verifica el despliegue efectivo; si muestra la versión correcta, revisa que los logs provengan del mismo servicio y de un despliegue reciente.
-
-## Precauciones
-
-No activar cobros Live sin comprobar elegibilidad del negocio con PayPal, pruebas de compra end-to-end, conciliación y manejo de reembolsos/contracargos. Activar `PAYPAL_ENABLE=true` en modo Sandbox solo habilita pruebas; no implica autorización comercial.
-
+- No se ha ejecutado una compra contra el Sandbox real ni se ha verificado el despliegue público.
+- Los pagos manuales requieren que el administrador valide el abono en su cuenta; la referencia del cliente no es prueba de pago.
+- PayPal usa USD, con conversión configurada por el dueño.

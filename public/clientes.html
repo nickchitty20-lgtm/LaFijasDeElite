@@ -16,7 +16,42 @@
   <section class="client-panel" data-client-panel="overview"><div class="client-section-heading"><h3>Resumen de tu cuenta</h3><p>Consulta el estado de tu membresía y las estadísticas publicadas.</p></div><div id="vip-summary" class="vip-summary" aria-live="polite"></div><div id="vip-stats" class="vip-stats"></div><div class="client-shortcuts"><button type="button" data-client-go="predictions">Ver pronósticos ↗</button><button type="button" data-client-go="payments">Explorar planes VIP ↗</button></div></section>
   <section class="client-panel" data-client-panel="predictions" hidden><div class="client-section-heading"><h3>Pronósticos e historial</h3><p>Los pronósticos VIP se mantienen ocultos si tu membresía no está activa.</p></div><div id="customer-picks" class="customer-picks"></div></section>
   <section class="client-panel" data-client-panel="membership" hidden><div class="client-section-heading"><h3>Mi membresía</h3><p>Revisa tus planes y fechas de vencimiento.</p></div><div id="memberships" class="client-memberships"></div><button type="button" class="client-cta" data-client-go="payments">Solicitar o renovar VIP</button></section>
-  <section class="client-panel" data-client-panel="payments" hidden><div class="client-section-heading"><h3>Solicitar membresía VIP</h3><p>Los pagos por Yape, Plin o transferencia se verifican manualmente antes de activar el acceso.</p></div><div class="client-payment-layout"><div class="client-form-card"><form id="request"><label>Plan<select name="plan_id" id="plans" required></select></label><label>Método de pago<select name="method"><option value="yape">Yape</option><option value="plin">Plin</option><option value="direct">Transferencia</option></select></label><label>Referencia de pago<input name="reference" required minlength="4" maxlength="190" placeholder="Número de operación"></label><button type="submit">Enviar para revisión</button></form><p id="requestMsg" role="status"></p></div><div class="client-form-card culqi-card"><span class="eyebrow">PAGO CON TARJETA · PAYPAL</span><h4>Tarjeta de débito o crédito</h4><p>Serás redirigido a PayPal. Los cobros se muestran en USD con una tasa configurada por el dueño. El VIP se activa solo tras verificar la captura.</p><button type="button" id="culqi-pay" disabled>Pagar con PayPal</button><button type="button" id="mp-check" class="secondary" style="margin-top:8px">Verificar pago</button><p id="culqi-msg" role="status">Consultando disponibilidad…</p></div><div class="client-payment-info"><span>✦</span><h4>Acceso Élite</h4><p>Tu membresía solo se activa después de que un administrador verifique el pago. Guarda el comprobante de tu operación.</p></div></div></section>
+  <section class="client-panel" data-client-panel="payments" hidden>
+   <div class="client-section-heading"><h3>Comprar membresía VIP</h3><p>Selecciona tu plan y elige cómo deseas pagar. Necesitas una cuenta registrada para finalizar la compra.</p></div>
+   <div class="client-payment-layout">
+    <div class="client-form-card unified-checkout">
+     <span class="eyebrow">CHECKOUT SEGURO · FIJAS DE ÉLITE</span>
+     <h4>Completa tu compra</h4>
+     <form id="request">
+      <label>Plan VIP<select name="plan_id" id="plans" required></select></label>
+      <label>Método de pago
+       <select name="method" id="payment-method" required>
+        <option value="yape">Yape · Revisión manual</option>
+        <option value="plin">Plin · Revisión manual</option>
+        <option value="direct">Transferencia bancaria · Revisión manual</option>
+        <option value="paypal">PayPal · Cuenta o tarjeta (checkout)</option>
+       </select>
+      </label>
+      <div id="manual-payment-fields">
+       <label>Referencia de pago<input name="reference" id="payment-reference" required minlength="4" maxlength="190" placeholder="Número de operación o transferencia" autocomplete="off"></label>
+       <p class="checkout-helper">Paga por el medio elegido y escribe el número de operación. Un administrador verificará que el dinero realmente se haya recibido antes de activar tu VIP.</p>
+      </div>
+      <div id="paypal-payment-fields" class="paypal-payment-fields" hidden>
+       <div class="paypal-provider"><span class="paypal-provider-logo">PayPal</span><span class="paypal-sandbox-label" id="paypal-mode-label">Verificando disponibilidad…</span></div>
+       <p>Serás redirigido al checkout oficial de PayPal. El importe se convierte de soles a USD usando la tasa configurada por el dueño. La membresía se activa solo cuando nuestro servidor confirma la captura.</p>
+       <p id="paypal-status" role="status">Consultando configuración…</p>
+      </div>
+      <button type="submit" id="payment-submit">Enviar pago para revisión</button>
+      <p id="requestMsg" role="status"></p>
+     </form>
+     <div id="paypal-reconcile" class="paypal-reconcile" hidden>
+      <button type="button" id="paypal-check" class="secondary">Verificar mi último pago PayPal</button>
+      <p id="paypal-message" role="status"></p>
+     </div>
+    </div>
+    <div class="client-payment-info"><span>✦</span><h4>Tu acceso Élite</h4><p><b>Yape, Plin y transferencias:</b> se revisan manualmente, sin activar el VIP por una simple referencia.</p><p><b>PayPal:</b> checkout externo. Solo se concede acceso después de la confirmación comprobada por el servidor.</p><p class="checkout-helper">PayPal puede estar desactivado mientras el dueño termina de configurar las credenciales Sandbox.</p></div>
+   </div>
+  </section>
   <section class="client-panel" data-client-panel="notices" hidden><div class="client-section-heading"><h3>Centro de notificaciones</h3><p>Información importante sobre tu cuenta y tus pronósticos.</p></div><div id="vip-notices" class="vip-notices" aria-live="polite"></div></section>
  </div>
 </div></section></main><script src="/clientes.js" defer></script><script src="/ui-motion.js" defer></script><script src="/scroll-text.js" defer></script></body></html>

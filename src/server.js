@@ -14,7 +14,7 @@ import {db} from './db.js';
 import {initializeDatabase} from './init-db.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
-const APP_VERSION = '1.8.2';
+const APP_VERSION = '1.8.3';
 const app = express();
 // Railway terminates HTTPS behind one reverse proxy; trust only that hop.
 app.set('trust proxy', 1);
@@ -418,8 +418,16 @@ app.post('/api/customers/payments/paypal/check',paypalLimit,customerAuth,async(r
  const [[pay]]=await db.execute("SELECT external_reference,status FROM payments WHERE user_id=? AND method='card' AND external_reference IS NOT NULL ORDER BY id DESC LIMIT 1",[req.customer.id]);
  if(!pay)return res.json({status:'no_pending',message:'No hay órdenes PayPal para verificar.'});
  if(pay.status==='verified')return res.json({status:'verified',message:'Membresía VIP activa.'});
- try{const done=await reconcilePaypalOrder(pay.external_reference);res.json({status:done?'verified':'pending',message:done?'Pago confirmado. VIP activado.':'Aún no hay un pago capturado confirmado.'});}
- catch(e){console.error('paypal check',e.message);res.status(503).json({error:'No se pudo verificar el estado del pago.'});}
+ try{
+  // The order belongs to the authenticated customer. Resume capture if return processing failed.
+  const order=await paypalApi('/v2/checkout/orders/'+encodeURIComponent(pay.external_reference));
+  if(order.status==='APPROVED'){
+   const [[myPayment]]=await db.execute("SELECT id FROM payments WHERE user_id=? AND method='card' AND external_reference=? AND status='pending' LIMIT 1",[req.customer.id,pay.external_reference]);
+   if(myPayment)await paypalApi('/v2/checkout/orders/'+encodeURIComponent(pay.external_reference)+'/capture',{method:'POST',headers:{'PayPal-Request-Id':'fijas-capture-'+myPayment.id},body:'{}'});
+  }
+  const done=await reconcilePaypalOrder(pay.external_reference);
+  res.json({status:done?'verified':'pending',message:done?'Pago confirmado. VIP activado.':'Aún no hay un pago capturado confirmado.'});
+ }catch(e){console.error('paypal check',e.message);res.status(503).json({error:'No se pudo verificar el estado del pago. No pagues dos veces.'});}
 });
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../public');
