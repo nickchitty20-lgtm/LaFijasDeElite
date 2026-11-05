@@ -130,6 +130,55 @@ app.get('/api/predictions/free',async(req,res)=>{
  catch{res.status(500).json({error:'No disponible'});}
 });
 
+
+// V0.4: catálogo, clientes y solicitudes manuales. No se procesan cargos reales.
+const registerLimit=rateLimit({windowMs:15*60*1000,limit:5,standardHeaders:'draft-7',legacyHeaders:false});
+const customerRegister=z.object({email:z.string().email().max(254),password:z.string().min(12).max(128),display_name:z.string().trim().min(2).max(120)}).strict();
+const planSchema=z.object({name:z.string().trim().min(3).max(100),duration_days:z.coerce.number().int().min(1).max(365),price_pen:z.coerce.number().min(0).max(100000)}).strict();
+const paymentRequest=z.object({plan_id:z.coerce.number().int().positive(),method:z.enum(['yape','plin','direct']),reference:z.string().trim().min(4).max(190)}).strict();
+const canManagePayments=a=>['owner','general_admin','payments_admin'].includes(a.role);
+app.get('/api/plans',async(req,res)=>{try{const [plans]=await db.query('SELECT id,name,duration_days,price_pen FROM plans WHERE active=1 ORDER BY price_pen,id');res.json({plans});}catch{res.status(500).json({error:'No se pudieron consultar los planes'});}});
+app.post('/api/customers/register',registerLimit,async(req,res)=>{
+ const p=customerRegister.safeParse(req.body);if(!p.success)return res.status(400).json({error:'Revisa los datos y utiliza una contraseña de 12 caracteres como mínimo'});
+ try{const hash=await bcrypt.hash(p.data.password,12);const [r]=await db.execute('INSERT INTO users(email,display_name,password_hash) VALUES (?,?,?)',[emailKey(p.data.email),p.data.display_name,hash]);res.status(201).json({ok:true,user_id:r.insertId});}
+ catch(e){res.status(e.code==='ER_DUP_ENTRY'?409:500).json({error:e.code==='ER_DUP_ENTRY'?'Correo ya registrado':'No se pudo registrar'});}
+});
+app.post('/api/customers/login',registerLimit,async(req,res)=>{
+ const p=loginSchema.safeParse(req.body);if(!p.success)return res.status(400).json({error:'Datos inválidos'});
+ try{const [[u]]=await db.execute('SELECT id,password_hash FROM users WHERE email=?',[emailKey(p.data.email)]);const dummy='$2a$12$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';const ok=await bcrypt.compare(p.data.password,u?.password_hash||dummy);if(!u||!ok)return res.status(401).json({error:'Credenciales incorrectas'});res.json({token:jwt.sign({sub:String(u.id)},process.env.JWT_SECRET,{expiresIn:'30m',issuer:'fijas-de-elite',audience:'customer'})});}
+ catch{res.status(500).json({error:'No se pudo iniciar sesión'});}
+});
+async function customerAuth(req,res,next){const h=req.headers.authorization||'';if(!h.startsWith('Bearer '))return res.status(401).json({error:'Inicia sesión'});try{const t=jwt.verify(h.slice(7),process.env.JWT_SECRET,{issuer:'fijas-de-elite',audience:'customer'});const [[u]]=await db.execute('SELECT id,email,display_name FROM users WHERE id=?',[t.sub]);if(!u)return res.status(401).json({error:'Cuenta no disponible'});req.customer=u;next();}catch{return res.status(401).json({error:'Sesión inválida'});}}
+app.get('/api/customers/me',customerAuth,async(req,res)=>{const [memberships]=await db.execute('SELECT m.id,m.status,m.starts_at,m.ends_at,p.name AS plan FROM memberships m JOIN plans p ON p.id=m.plan_id WHERE m.user_id=? ORDER BY m.id DESC LIMIT 20',[req.customer.id]);res.json({user:req.customer,memberships});});
+app.post('/api/customers/payment-requests',customerAuth,async(req,res)=>{
+ const p=paymentRequest.safeParse(req.body);if(!p.success)return res.status(400).json({error:'Datos de solicitud inválidos'});
+ const conn=await db.getConnection();try{await conn.beginTransaction();const [[plan]]=await conn.execute('SELECT id,price_pen FROM plans WHERE id=? AND active=1',[p.data.plan_id]);if(!plan){await conn.rollback();return res.status(404).json({error:'Plan no disponible'});}
+ const [m]=await conn.execute("INSERT INTO memberships(user_id,plan_id,status) VALUES (?,?,'pending')",[req.customer.id,plan.id]);const [pay]=await conn.execute("INSERT INTO payments(user_id,membership_id,method,amount_pen,status,external_reference) VALUES (?,?,?,?, 'pending',?)",[req.customer.id,m.insertId,p.data.method,plan.price_pen,p.data.reference]);await conn.commit();res.status(201).json({payment_id:pay.insertId,status:'pending',message:'Solicitud recibida. No implica que el pago esté confirmado.'});}
+ catch(e){await conn.rollback();console.error('payment request',e.code||e.message);res.status(500).json({error:'No se pudo guardar la solicitud'});}finally{conn.release();}
+});
+app.get('/api/admin/plans',authenticate,async(req,res)=>{const [plans]=await db.query('SELECT id,name,duration_days,price_pen,active FROM plans ORDER BY id DESC LIMIT 100');res.json({plans});});
+app.post('/api/admin/plans',authenticate,async(req,res)=>{if(!canManagePayments(req.admin))return res.status(403).json({error:'Sin permisos'});const p=planSchema.safeParse(req.body);if(!p.success)return res.status(400).json({error:'Plan inválido'});try{const [r]=await db.execute('INSERT INTO plans(name,duration_days,price_pen,active) VALUES (?,?,?,1)',[p.data.name,p.data.duration_days,p.data.price_pen]);await db.execute("INSERT INTO audit_logs(actor_admin_id,action,entity_type,entity_id) VALUES (?,'plan_created','plan',?)",[req.admin.id,String(r.insertId)]);res.status(201).json({id:r.insertId});}catch{res.status(500).json({error:'No se pudo crear el plan'});}});
+app.get('/api/admin/customers',authenticate,async(req,res)=>{if(!canManagePayments(req.admin))return res.status(403).json({error:'Sin permisos'});const [users]=await db.query('SELECT id,email,display_name,created_at FROM users ORDER BY id DESC LIMIT 100');res.json({users});});
+app.get('/api/admin/payments',authenticate,async(req,res)=>{if(!canManagePayments(req.admin))return res.status(403).json({error:'Sin permisos'});const [payments]=await db.query('SELECT py.id,py.method,py.amount_pen,py.status,py.external_reference,py.created_at,u.email,p.name AS plan FROM payments py JOIN users u ON u.id=py.user_id JOIN memberships m ON m.id=py.membership_id JOIN plans p ON p.id=m.plan_id ORDER BY py.id DESC LIMIT 100');res.json({payments});});
+app.post('/api/admin/payments/:id/decision',authenticate,async(req,res)=>{
+ if(!canManagePayments(req.admin))return res.status(403).json({error:'Sin permisos'});
+ if(!/^\d{1,18}$/.test(req.params.id))return res.status(400).json({error:'ID inválido'});
+ const parsed=z.object({decision:z.enum(['verified','rejected'])}).strict().safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Decisión inválida'});
+ const conn=await db.getConnection();try{await conn.beginTransaction();const [[payment]]=await conn.execute('SELECT id,status,membership_id FROM payments WHERE id=? FOR UPDATE',[req.params.id]);if(!payment){await conn.rollback();return res.status(404).json({error:'Pago no encontrado'});}if(payment.status!=='pending'){await conn.rollback();return res.status(409).json({error:'Solicitud ya procesada'});}
+ if(parsed.data.decision==='verified'){
+ const [[membership]]=await conn.execute('SELECT m.id,m.user_id,m.plan_id,p.duration_days FROM memberships m JOIN plans p ON p.id=m.plan_id WHERE m.id=? FOR UPDATE',[payment.membership_id]);if(!membership)throw new Error('Membresía no encontrada');
+ const [[current]]=await conn.execute("SELECT MAX(ends_at) AS last_end FROM memberships WHERE user_id=? AND status='active'",[membership.user_id]);
+ const start=current?.last_end && new Date(current.last_end)>new Date()?new Date(current.last_end):new Date();
+ const end=new Date(start.getTime()+membership.duration_days*86400000);
+ await conn.execute("UPDATE memberships SET status='active',starts_at=?,ends_at=? WHERE id=?",[start,end,membership.id]);
+ }else await conn.execute("UPDATE memberships SET status='cancelled' WHERE id=? AND status='pending'",[payment.membership_id]);
+ await conn.execute('UPDATE payments SET status=?,verified_by=?,verified_at=UTC_TIMESTAMP() WHERE id=?',[parsed.data.decision,req.admin.id,payment.id]);
+ await conn.execute("INSERT INTO audit_logs(actor_admin_id,action,entity_type,entity_id,details) VALUES (?,'payment_decision','payment',?,JSON_OBJECT('decision',?))",[req.admin.id,String(payment.id),parsed.data.decision]);await conn.commit();res.json({ok:true,status:parsed.data.decision});
+ }catch(e){await conn.rollback();console.error('payment decision',e.code||e.message);res.status(500).json({error:'No se pudo procesar'});}finally{conn.release();}
+});
+// Pago automático: integración desactivada hasta configurar proveedor, firma webhook y conciliación.
+app.get('/api/payments/automatic/status',(req,res)=>res.json({enabled:false,reason:'Pasarela y webhook verificado pendientes'}));
+
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../public');
 app.use(express.static(root,{index:'index.html',dotfiles:'ignore'}));
 app.use('/api',(req,res)=>res.status(404).json({error:'Ruta no encontrada'}));

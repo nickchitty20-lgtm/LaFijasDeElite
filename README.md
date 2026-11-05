@@ -1,20 +1,16 @@
-# Fijas de Élite v0.3 — Pronósticos web + Telegram
+# Fijas de Élite v0.4 — usuarios y membresías (pruebas)
 
-Reemplaza el contenido del repositorio con este proyecto (conserva tus variables Railway). Railway desplegará automáticamente.
+Proyecto completo basado en v0.3. Subir todos los archivos a GitHub conservando carpetas. Railway reinicia y `src/init-db.js` agrega la columna `users.password_hash` sin borrar tablas. Se conservan las variables DB_*, JWT_SECRET y Telegram.
 
-## Variables nuevas en servicio LaFijasDeElite de Railway
-- `TELEGRAM_BOT_TOKEN`: token del bot creado con @BotFather (secreto).
-- `TELEGRAM_FREE_CHAT_ID`: identificador del canal gratuito (ej. `@nombrecanalpublico`).
-- `TELEGRAM_VIP_CHAT_ID`: ID numérico del canal **privado** VIP (ej. `-100...`). **No uses un canal público para VIP**.
+## Funciones
+- `/clientes.html`: registro con contraseña bcrypt, login, catálogo y solicitud de pago manual.
+- Panel: crear planes, ver clientes, revisar solicitudes y aprobar/rechazar manualmente.
+- Aprobar crea una membresía activa y calcula su vencimiento. Las decisiones quedan en `audit_logs`.
+- API `/api/payments/automatic/status` informa que la pasarela **no está implementada**. No existe cobro por tarjeta ni activación automática por Yape/Plin.
 
-Agrega el bot como administrador con permiso de publicar en cada canal. Si omites las variables, los pronósticos se publican en web y Telegram queda `not_configured`.
-
-## Funcionamiento
-- Admin dueño, general y analista pueden publicar y actualizar resultados.
-- El backend guarda el pronóstico primero en MySQL, luego intenta enviarlo por Telegram. Si Telegram falla, se registra `failed`, sin reintento automático. Evita duplicados por reenvío manual.
-- API pública `GET /api/predictions/free` expone únicamente pronósticos gratuitos.
-- Los VIP **no tienen aún portal de clientes ni control de suscripciones**; se publican en el panel admin y, si se configura, en un canal privado. La gestión de acceso y expulsión al vencer membresías sigue pendiente.
-- La hora ingresada es UTC, no hora de Lima. Los resultados se editan desde el panel, pero no se envían como actualización a Telegram.
-
-## Seguridad
-No publiques tokens ni contraseñas en GitHub. Quita `OWNER_SETUP_TOKEN` tras crear dueño. Mantén la rotación de contraseña MySQL expuesta previamente. El panel aún requiere 2FA y auditoría de seguridad antes de pagos reales.
+## Seguridad y límites
+- **Entorno de pruebas**. Antes de recibir dinero real: 2FA de admins, CSRF/cookies seguras o BFF, control de sesiones, auditoría de concurrencia, controles antifraude, política de privacidad, comprobantes y conciliación.
+- No aprobar pagos solo por código de operación: verificar el abono real en la cuenta.
+- No subir contraseñas, tokens ni capturas de credenciales a GitHub.
+- La suscripción web aún no controla automáticamente el acceso a Telegram VIP.
+- La pasarela automática necesita elegir proveedor autorizado, credenciales de prueba y webhook firmado; no se simula como si fuera real.

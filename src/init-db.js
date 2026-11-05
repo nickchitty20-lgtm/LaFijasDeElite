@@ -19,6 +19,9 @@ export async function initializeDatabase() {
     for (const [name,definition] of Object.entries(additions)) {
       if (!existing.has(name)) await connection.query(`ALTER TABLE predictions ADD COLUMN ${name} ${definition}`);
     }
+    const [userCols]=await connection.query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='users'");
+    if(!userCols.some(c=>c.COLUMN_NAME==='password_hash')) await connection.query('ALTER TABLE users ADD COLUMN password_hash VARCHAR(255) NULL');
+    console.log('Customer columns ready');
     console.log('Prediction columns ready');
     console.log(`Database schema ready (${statements.length} tables checked)`);
   } finally {
