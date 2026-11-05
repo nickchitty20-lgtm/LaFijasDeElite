@@ -1,5 +1,6 @@
 const $=id=>document.getElementById(id);
 let token='';
+let currentAdminRole='';
 async function api(url,options={}){
  const r=await fetch(url,{...options,headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{})}});
  const data=await r.json().catch(()=>({error:'Respuesta inesperada'}));
@@ -21,7 +22,7 @@ $('loginForm').addEventListener('submit',async e=>{
  try{const body=Object.fromEntries(new FormData(form));const r=await api('/api/auth/login',{method:'POST',body:JSON.stringify(body)});token=r.token;form.reset();$('loginMsg').textContent='';await dashboard();}catch(err){$('loginMsg').textContent=err.message;}
 });
 async function dashboard(){
- try{const [me,overview]=await Promise.all([api('/api/admin/me'),api('/api/admin/overview')]);$('identity').textContent=`${me.email} · ${me.role}`;for(const key of ['users','active_memberships','pending_payments','predictions'])$(key).textContent=Number(overview.stats[key]||0).toLocaleString('es-PE');show('dashboard');$('staffPanel').hidden=me.role!=='owner';
+ try{const [me,overview]=await Promise.all([api('/api/admin/me'),api('/api/admin/overview')]);currentAdminRole=me.role;$('identity').textContent=`${me.email} · ${me.role}`;for(const key of ['users','active_memberships','pending_payments','predictions'])$(key).textContent=Number(overview.stats[key]||0).toLocaleString('es-PE');show('dashboard');$('staffPanel').hidden=me.role!=='owner';
  const pred=['owner','general_admin','analyst'].includes(me.role);
  const pay=['owner','general_admin','payments_admin'].includes(me.role);
  const clients=['owner','general_admin','payments_admin','moderator'].includes(me.role);
@@ -29,7 +30,7 @@ async function dashboard(){
  for(const id of ['predictionEditor','predictionHistory'])$(id).hidden=!pred;
  for(const id of ['plansPanel','paymentsPanel'])$(id).hidden=!pay;
  $('customersPanel').hidden=!clients;$('auditPanel').hidden=!audit;
- if(me.role==='owner')await loadStaff();if(pred)await loadPredictions();
+ if($('paypalDiagnosticsPanel'))$('paypalDiagnosticsPanel').hidden=me.role!=='owner';if(me.role==='owner'){await loadStaff();await loadPaypalDiagnostics();}if(pred)await loadPredictions();
  if(pay)await loadCommerce();else if(clients)await loadCustomersOnly();
  if(audit)await loadAudit();initAdminNavigation();}catch(err){token='';$('loginMsg').textContent=err.message;show('login');}
 }
@@ -112,9 +113,25 @@ function selectAdminSection(section){
  for(const panel of document.querySelectorAll('#dashboard [data-panel]')){
    const accessId=panel.id==='predictionHistory'?'predictionEditor':panel.id;
   const guarded=['predictionEditor','predictionHistory','plansPanel','paymentsPanel','staffPanel','customersPanel','auditPanel'].includes(panel.id);
-  panel.hidden=panel.dataset.panel!==section || (guarded && !isAdminPanelAllowed(accessId));
+  panel.hidden=panel.dataset.panel!==section || (panel.id==='paypalDiagnosticsPanel' && currentAdminRole!=='owner') || (guarded && !isAdminPanelAllowed(accessId));
  }
  document.querySelector('#dashboard .heading h1').textContent=({overview:'Resumen del negocio',predictions:'Gestión de pronósticos',payments:'Solicitudes de pago',plans:'Planes y precios',customers:'Clientes registrados',staff:'Gestión de personal',audit:'Historial de actividad'})[section]||'Resumen del negocio';
 }
 function isAdminPanelAllowed(id){const button=document.querySelector(`.admin-nav button[data-access="${id}"]`);return button&&!button.hidden;}
 document.querySelectorAll('.admin-nav button[data-section]').forEach(button=>button.addEventListener('click',()=>selectAdminSection(button.dataset.section)));
+
+
+// Secure operational diagnostics: only available when server verifies owner JWT.
+async function loadPaypalDiagnostics(){
+ const el=$('paypalDiagnosticsText');if(!el)return;
+ try{
+  const st=await api('/api/admin/paypal/diagnostics');
+  el.textContent=st.ready?`✅ Configuración completa · ${st.mode} · versión ${st.version}. Puedes probar la conexión.`:`⚠️ Faltan estas variables en Railway: ${st.missing.join(', ')}. Versión: ${st.version}.`;
+ }catch(err){el.textContent='No se pudo comprobar PayPal: '+err.message;}
+}
+$('paypalDiagnosticsRefresh')?.addEventListener('click',loadPaypalDiagnostics);
+$('paypalDiagnosticsTest')?.addEventListener('click',async()=>{
+ const el=$('paypalDiagnosticsTestResult');el.textContent='Comprobando la autenticación con PayPal…';
+ try{const st=await api('/api/admin/paypal/connectivity',{method:'POST',body:'{}'});el.textContent=st.message;}
+ catch(err){el.textContent=err.message;}
+});

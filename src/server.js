@@ -14,6 +14,7 @@ import {db} from './db.js';
 import {initializeDatabase} from './init-db.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
+const APP_VERSION = '1.8.2';
 const app = express();
 // Railway terminates HTTPS behind one reverse proxy; trust only that hop.
 app.set('trust proxy', 1);
@@ -23,7 +24,7 @@ app.use(cors({origin:process.env.CORS_ORIGIN?.split(',') || false}));
 app.use(express.json({limit:'16kb'}));
 const authLimit=rateLimit({windowMs:15*60*1000,limit:10,standardHeaders:'draft-7',legacyHeaders:false});
 app.use('/api/auth',authLimit);
-app.get('/health',async(req,res)=>{try{await db.query('SELECT 1');res.json({status:'ok',database:'connected'});}catch{res.status(503).json({status:'unavailable'});}});
+app.get('/health',async(req,res)=>{try{await db.query('SELECT 1');res.json({status:'ok',database:'connected',version:APP_VERSION});}catch{res.status(503).json({status:'unavailable',version:APP_VERSION});}});
 
 const loginSchema=z.object({email:z.string().email().max(254),password:z.string().min(1).max(256)}).strict();
 const setupSchema=loginSchema.extend({setupToken:z.string().min(32).max(512),password:z.string().min(12).max(128)}).strict();
@@ -311,7 +312,19 @@ const paypalOrder=z.object({order_id:z.string().regex(/^[A-Z0-9-]{8,64}$/i)}).st
 const paypalMode=()=>process.env.PAYPAL_MODE==='live'?'live':'sandbox';
 const paypalHost=()=>paypalMode()==='live'?'https://api-m.paypal.com':'https://api-m.sandbox.paypal.com';
 const paypalRate=()=>Number(process.env.PAYPAL_PEN_PER_USD);
-const paypalReady=()=>process.env.PAYPAL_ENABLE==='true'&&Boolean(process.env.PAYPAL_CLIENT_ID)&&Boolean(process.env.PAYPAL_CLIENT_SECRET)&&Number.isFinite(paypalRate())&&paypalRate()>0&&Boolean(process.env.PUBLIC_BASE_URL);
+// Diagnostic lists only variable NAMES; never include their confidential values.
+const paypalMissing=()=>{
+ const missing=[];
+ if((process.env.PAYPAL_ENABLE||'').trim().toLowerCase()!=='true')missing.push('PAYPAL_ENABLE (debe ser true)');
+ if(!process.env.PAYPAL_CLIENT_ID?.trim())missing.push('PAYPAL_CLIENT_ID');
+ if(!process.env.PAYPAL_CLIENT_SECRET?.trim())missing.push('PAYPAL_CLIENT_SECRET');
+ if(!Number.isFinite(paypalRate())||paypalRate()<=0)missing.push('PAYPAL_PEN_PER_USD (debe ser mayor que 0)');
+ const base=process.env.PUBLIC_BASE_URL?.trim();
+ if(!base)missing.push('PUBLIC_BASE_URL');
+ else {try{const url=new URL(base);if(url.protocol!=='https:'&&url.hostname!=='localhost')missing.push('PUBLIC_BASE_URL (debe usar https)');}catch{missing.push('PUBLIC_BASE_URL (URL inválida)');}}
+ return missing;
+};
+const paypalReady=()=>paypalMissing().length===0;
 const usdFromPen=pen=>(Math.round(Number(pen)/paypalRate()*100)/100).toFixed(2);
 let paypalAccess={token:null,expires:0};
 async function paypalToken(){
@@ -325,7 +338,20 @@ async function paypalApi(route,opts={}){
  const token=await paypalToken();const r=await fetch(paypalHost()+route,{...opts,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json',...(opts.headers||{})},signal:AbortSignal.timeout(15000)});
  const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error('PayPal HTTP '+r.status);return data;
 }
-app.get('/api/payments/automatic/status',(req,res)=>res.json({enabled:paypalReady(),provider:'paypal',mode:paypalMode(),currency:'USD',pen_per_usd:paypalReady()?paypalRate():null,reason:paypalReady()?null:'Configura PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET, PAYPAL_PEN_PER_USD, PUBLIC_BASE_URL y PAYPAL_ENABLE=true'}));
+// Public status never exposes credential presence. Owners have a separate protected diagnostic.
+app.get('/api/payments/automatic/status',(req,res)=>res.json({enabled:paypalReady(),provider:'paypal',mode:paypalMode(),currency:'USD',pen_per_usd:paypalReady()?paypalRate():null,version:APP_VERSION,reason:paypalReady()?null:'Checkout deshabilitado. El dueño debe revisar la configuración en su panel.'}));
+app.get('/api/admin/paypal/diagnostics',authenticate,(req,res)=>{
+ if(req.admin.role!=='owner')return res.status(403).json({error:'Solo el dueño puede ver el diagnóstico'});
+ return res.json({version:APP_VERSION,provider:'paypal',mode:paypalMode(),ready:paypalReady(),missing:paypalMissing(),proxy_hops:app.get('trust proxy'),message:paypalReady()?'Configuración completa. Falta validar la conexión con PayPal Sandbox.':'Configura las variables indicadas en Railway y espera el despliegue.'});
+});
+const paypalConnectivityLimit=rateLimit({windowMs:15*60*1000,limit:3,standardHeaders:'draft-7',legacyHeaders:false});
+app.post('/api/admin/paypal/connectivity',paypalConnectivityLimit,authenticate,async(req,res)=>{
+ if(req.admin.role!=='owner')return res.status(403).json({error:'Solo el dueño puede comprobar PayPal'});
+ const missing=paypalMissing();
+ if(missing.length)return res.status(400).json({connected:false,missing});
+ try {await paypalToken();return res.json({connected:true,mode:paypalMode(),message:'Credenciales aceptadas por PayPal. Esto no valida la elegibilidad comercial ni realiza cobros.'});}
+ catch(e){console.error('paypal diagnostics connectivity',e.message);return res.status(503).json({connected:false,error:'No se pudo autenticar con PayPal. Verifica el modo Sandbox y las credenciales del mismo entorno. No compartas tus claves.'});}
+});
 app.post('/api/customers/payments/paypal',paypalLimit,customerAuth,async(req,res)=>{
  if(!paypalReady())return res.status(503).json({error:'PayPal todavía no está disponible'});
  const parsed=paypalPlan.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Plan inválido'});

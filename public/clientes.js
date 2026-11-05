@@ -41,7 +41,7 @@ document.querySelectorAll('[data-client-go]').forEach(btn=>btn.addEventListener(
 // PayPal hosted checkout. The browser never receives card details or API secrets.
 async function initPayPal(){
  const btn=$('culqi-pay'),msg=$('culqi-msg');if(!btn)return;
- try{const st=await call('/api/payments/automatic/status');btn.disabled=!st.enabled;msg.textContent=st.enabled?`PayPal ${st.mode==='sandbox'?'Sandbox (pruebas)':'Live'} · cobro en USD, tasa referencial S/${st.pen_per_usd} por US$1.`:'PayPal pendiente de habilitación por el dueño.';}
+ try{const st=await call('/api/payments/automatic/status');btn.disabled=!st.enabled;msg.textContent=st.enabled?`PayPal ${st.mode==='sandbox'?'Sandbox (pruebas)':'Live'} · cobro en USD, tasa referencial S/${st.pen_per_usd} por US$1.`:'PayPal aún no está habilitado. El dueño puede consultar el diagnóstico en el panel administrativo.';}
  catch{msg.textContent='PayPal temporalmente no disponible.';}
 }
 $('culqi-pay')?.addEventListener('click',async()=>{
