@@ -54,6 +54,7 @@ app.post('/api/auth/setup-owner',async(req,res)=>{
 });
 // Unified sign-in: admins use their existing account and are routed to admin dashboard.
 // No role or authorization level is accepted from the browser.
+const adminLoginLimit=rateLimit({windowMs:15*60*1000,limit:10,standardHeaders:'draft-7',legacyHeaders:false});
 const unifiedLimit=rateLimit({windowMs:15*60*1000,limit:10,standardHeaders:'draft-7',legacyHeaders:false});
 app.post('/api/login',unifiedLimit,async(req,res)=>{
  const p=loginSchema.safeParse(req.body);
@@ -64,7 +65,7 @@ app.post('/api/login',unifiedLimit,async(req,res)=>{
   const [[customer]]=await db.execute('SELECT id,password_hash FROM users WHERE email=? LIMIT 1',[email]);
   const dummy='$2a$12$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';
   const [adminValid,customerValid]=await Promise.all([
-   bcrypt.compare(p.data.password,(customer && admin?.is_active ? customer.password_hash : admin?.password_hash)||dummy),
+   bcrypt.compare(p.data.password,(customer?.password_hash || admin?.password_hash)||dummy),
    bcrypt.compare(p.data.password,customer?.password_hash||dummy)
   ]);
   if(admin?.is_active && adminValid){
@@ -76,14 +77,14 @@ app.post('/api/login',unifiedLimit,async(req,res)=>{
   return res.status(401).json({error:'Credenciales incorrectas'});
  }catch(e){console.error('unified login',e.code||e.message);return res.status(500).json({error:'No se pudo iniciar sesión'});}
 });
-app.post('/api/auth/login',async(req,res)=>{
+app.post('/api/auth/login',adminLoginLimit,async(req,res)=>{
  const p=loginSchema.safeParse(req.body);if(!p.success)return res.status(400).json({error:'Datos inválidos'});
  try{
   const [rows]=await db.execute('SELECT id,email,password_hash,role,is_active FROM admins WHERE email=? LIMIT 1',[emailKey(p.data.email)]);
   const admin=rows[0];
   // Compare against a dummy hash to reduce account enumeration timing.
   const dummy='$2a$12$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';
-  const [[linkedUser]]=await db.execute('SELECT password_hash FROM users WHERE email=? LIMIT 1',[emailKey(p.data.email)]);const valid=await bcrypt.compare(p.data.password,(linkedUser && admin?.is_active ? linkedUser.password_hash : admin?.password_hash)||dummy);
+  const [[linkedUser]]=await db.execute('SELECT password_hash FROM users WHERE email=? LIMIT 1',[emailKey(p.data.email)]);const valid=await bcrypt.compare(p.data.password,(linkedUser?.password_hash || admin?.password_hash)||dummy);
   if(!admin || !admin.is_active || !valid)return res.status(401).json({error:'Credenciales incorrectas'});
   const token=jwt.sign({sub:String(admin.id)},process.env.JWT_SECRET,{expiresIn:'20m',issuer:'fijas-de-elite',audience:'admin'});
   res.json({token,admin:{id:admin.id,email:admin.email,role:admin.role},mfaRequiredForProduction:true});
@@ -113,6 +114,10 @@ app.get('/api/admin/overview',authenticate,async(req,res)=>{
 const predictionSchema=z.object({title:z.string().trim().min(5).max(200),analysis:z.string().trim().min(10).max(8000),visibility:z.enum(['free','vip']),match_date:z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/),league:z.string().trim().min(2).max(120),market:z.string().trim().min(2).max(120),selection:z.string().trim().min(1).max(160),odds:z.coerce.number().min(1.01).max(1000)}).strict();
 const outcomeSchema=z.object({outcome:z.enum(['pending','won','lost','void'])}).strict();
 const allowedToPublish=(a)=>['owner','general_admin','analyst'].includes(a.role);
+const canViewCustomers=(a)=>['owner','general_admin','payments_admin','moderator'].includes(a.role);
+const canViewAudit=(a)=>['owner','general_admin'].includes(a.role);
+const rolePermissions={owner:['predictions:read','predictions:write','payments:read','payments:write','plans:write','customers:read','staff:write','audit:read'],general_admin:['predictions:read','predictions:write','payments:read','payments:write','plans:write','customers:read','audit:read'],payments_admin:['payments:read','payments:write','plans:write','customers:read'],analyst:['predictions:read','predictions:write'],moderator:['customers:read']};
+app.get('/api/admin/permissions',authenticate,(req,res)=>res.json({role:req.admin.role,permissions:rolePermissions[req.admin.role]||[]}));
 function escapeHtml(t){return String(t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 async function sendTelegram(row){
  const bot=process.env.TELEGRAM_BOT_TOKEN;
@@ -125,6 +130,7 @@ async function sendTelegram(row){
  return {state:'sent'};
 }
 app.get('/api/admin/predictions',authenticate,async(req,res)=>{
+ if(!allowedToPublish(req.admin))return res.status(403).json({error:'Sin permisos'});
  try{const [rows]=await db.query('SELECT id,title,analysis,visibility,outcome,published_at,league,match_date,market,selection,odds,telegram_status FROM predictions ORDER BY id DESC LIMIT 100');res.json({predictions:rows});}
  catch(e){console.error('list predictions',e.code||e.message);res.status(500).json({error:'No se pudo listar'});}
 });
@@ -219,6 +225,22 @@ app.get('/api/customers/predictions',customerAuth,async(req,res)=>{
   res.json({has_vip:vip,predictions:rows.map(p=>p.visibility==='vip'&&!vip?{id:p.id,title:p.title,league:p.league,match_date:p.match_date,visibility:'vip',locked:true}:{...p,locked:false})});
  }catch(e){console.error('customer predictions',e.code||e.message);res.status(500).json({error:'No se pudieron cargar los pronósticos'});}
 });
+// Customer-only dashboard: all figures are derived from database records.
+app.get('/api/customers/dashboard',customerAuth,async(req,res)=>{
+ try{
+  const [[membership]]=await db.execute("SELECT m.ends_at,p.name AS plan FROM memberships m JOIN plans p ON p.id=m.plan_id WHERE m.user_id=? AND m.status='active' AND m.starts_at<=UTC_TIMESTAMP() AND m.ends_at>UTC_TIMESTAMP() ORDER BY m.ends_at DESC LIMIT 1",[req.customer.id]);
+  const [[stats]]=await db.query("SELECT COUNT(*) AS total, SUM(outcome='won') AS won, SUM(outcome='lost') AS lost, SUM(outcome='pending') AS pending FROM predictions WHERE published_at IS NOT NULL AND outcome IN ('won','lost','pending')");
+  const [payments]=await db.execute("SELECT py.id,py.status,py.created_at,p.name AS plan FROM payments py JOIN memberships m ON m.id=py.membership_id JOIN plans p ON p.id=m.plan_id WHERE py.user_id=? ORDER BY py.id DESC LIMIT 5",[req.customer.id]);
+  const [recent]=await db.query("SELECT id,title,visibility,outcome,match_date FROM predictions WHERE published_at IS NOT NULL ORDER BY id DESC LIMIT 6");
+  const now=Date.now(),daysLeft=membership?Math.max(0,Math.ceil((new Date(membership.ends_at).getTime()-now)/86400000)):0;
+  const notices=[];
+  if(membership&&daysLeft<=3)notices.push({type:'expiry',message:`Tu membresía vence en ${daysLeft} día(s).`});
+  if(!membership)notices.push({type:'vip',message:'Activa una membresía para desbloquear los pronósticos VIP.'});
+  if(payments.some(p=>p.status==='pending'))notices.push({type:'payment',message:'Tienes una solicitud de pago pendiente de revisión.'});
+  if(recent.length)notices.push({type:'picks',message:'Hay pronósticos publicados. Consulta las tarjetas disponibles según tu acceso.'});
+  res.set('Cache-Control','private, no-store').json({membership:membership?{plan:membership.plan,ends_at:membership.ends_at,days_left:daysLeft}:null,stats:{total:Number(stats.total||0),won:Number(stats.won||0),lost:Number(stats.lost||0),pending:Number(stats.pending||0)},payments,notices});
+ }catch(e){console.error('customer dashboard',e.code||e.message);res.status(500).json({error:'No se pudo cargar el panel'});}
+});
 app.get('/api/customers/me',customerAuth,async(req,res)=>{const [memberships]=await db.execute('SELECT m.id,m.status,m.starts_at,m.ends_at,p.name AS plan FROM memberships m JOIN plans p ON p.id=m.plan_id WHERE m.user_id=? ORDER BY m.id DESC LIMIT 20',[req.customer.id]);res.json({user:req.customer,memberships});});
 app.post('/api/customers/payment-requests',customerAuth,async(req,res)=>{
  const p=paymentRequest.safeParse(req.body);if(!p.success)return res.status(400).json({error:'Datos de solicitud inválidos'});
@@ -226,9 +248,9 @@ app.post('/api/customers/payment-requests',customerAuth,async(req,res)=>{
  const [m]=await conn.execute("INSERT INTO memberships(user_id,plan_id,status) VALUES (?,?,'pending')",[req.customer.id,plan.id]);const [pay]=await conn.execute("INSERT INTO payments(user_id,membership_id,method,amount_pen,status,external_reference) VALUES (?,?,?,?, 'pending',?)",[req.customer.id,m.insertId,p.data.method,plan.price_pen,p.data.reference]);await conn.commit();res.status(201).json({payment_id:pay.insertId,status:'pending',message:'Solicitud recibida. No implica que el pago esté confirmado.'});}
  catch(e){await conn.rollback();console.error('payment request',e.code||e.message);res.status(500).json({error:'No se pudo guardar la solicitud'});}finally{conn.release();}
 });
-app.get('/api/admin/plans',authenticate,async(req,res)=>{const [plans]=await db.query('SELECT id,name,duration_days,price_pen,active FROM plans ORDER BY id DESC LIMIT 100');res.json({plans});});
+app.get('/api/admin/plans',authenticate,async(req,res)=>{if(!canManagePayments(req.admin))return res.status(403).json({error:'Sin permisos'});const [plans]=await db.query('SELECT id,name,duration_days,price_pen,active FROM plans ORDER BY id DESC LIMIT 100');res.json({plans});});
 app.post('/api/admin/plans',authenticate,async(req,res)=>{if(!canManagePayments(req.admin))return res.status(403).json({error:'Sin permisos'});const p=planSchema.safeParse(req.body);if(!p.success)return res.status(400).json({error:'Plan inválido'});try{const [r]=await db.execute('INSERT INTO plans(name,duration_days,price_pen,active) VALUES (?,?,?,1)',[p.data.name,p.data.duration_days,p.data.price_pen]);await db.execute("INSERT INTO audit_logs(actor_admin_id,action,entity_type,entity_id) VALUES (?,'plan_created','plan',?)",[req.admin.id,String(r.insertId)]);res.status(201).json({id:r.insertId});}catch{res.status(500).json({error:'No se pudo crear el plan'});}});
-app.get('/api/admin/customers',authenticate,async(req,res)=>{if(!canManagePayments(req.admin))return res.status(403).json({error:'Sin permisos'});const [users]=await db.query('SELECT id,email,display_name,created_at FROM users ORDER BY id DESC LIMIT 100');res.json({users});});
+app.get('/api/admin/customers',authenticate,async(req,res)=>{if(!canViewCustomers(req.admin))return res.status(403).json({error:'Sin permisos'});const [users]=await db.query('SELECT id,email,display_name,created_at FROM users ORDER BY id DESC LIMIT 100');res.json({users});});
 app.get('/api/admin/payments',authenticate,async(req,res)=>{if(!canManagePayments(req.admin))return res.status(403).json({error:'Sin permisos'});const [payments]=await db.query('SELECT py.id,py.method,py.amount_pen,py.status,py.external_reference,py.created_at,u.email,p.name AS plan FROM payments py JOIN users u ON u.id=py.user_id JOIN memberships m ON m.id=py.membership_id JOIN plans p ON p.id=m.plan_id ORDER BY py.id DESC LIMIT 100');res.json({payments});});
 app.post('/api/admin/payments/:id/decision',authenticate,async(req,res)=>{
  if(!canManagePayments(req.admin))return res.status(403).json({error:'Sin permisos'});
@@ -247,6 +269,12 @@ app.post('/api/admin/payments/:id/decision',authenticate,async(req,res)=>{
  }catch(e){await conn.rollback();console.error('payment decision',e.code||e.message);res.status(500).json({error:'No se pudo procesar'});}finally{conn.release();}
 });
 
+// Audit history: only owner and general admin may read it. Never expose passwords or tokens.
+app.get('/api/admin/audit',authenticate,async(req,res)=>{
+ if(!canViewAudit(req.admin))return res.status(403).json({error:'Sin permisos'});
+ try{const [logs]=await db.query(`SELECT l.id,l.action,l.entity_type,l.entity_id,l.details,l.created_at,a.email AS actor FROM audit_logs l LEFT JOIN admins a ON a.id=l.actor_admin_id ORDER BY l.id DESC LIMIT 100`);res.json({logs});}
+ catch(e){console.error('audit list',e.code||e.message);res.status(500).json({error:'No se pudo consultar el historial'});}
+});
 // Staff: registration always creates a customer. Only the owner may grant or revoke staff roles.
 const staffRoleSchema=z.object({role:z.enum(['general_admin','payments_admin','analyst','moderator','customer'])}).strict();
 app.get('/api/admin/staff',authenticate,async(req,res)=>{

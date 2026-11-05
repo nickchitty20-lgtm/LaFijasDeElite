@@ -14,8 +14,6 @@ $('setupForm').addEventListener('submit',async e=>{
  const body=Object.fromEntries(new FormData(form));
  try{const r=await api('/api/auth/setup-owner',{method:'POST',body:JSON.stringify(body)});$('setupMsg').textContent=r.message;form.reset();await refreshSetup();
 // One-time same-tab handoff from the unified customer/admin login.
-const handoff=sessionStorage.getItem('fijas_admin_handoff');
-if(handoff){sessionStorage.removeItem('fijas_admin_handoff');token=handoff;dashboard();}
 setTimeout(()=>show('login'),1800);}catch(err){$('setupMsg').textContent=err.message;}
 });
 $('loginForm').addEventListener('submit',async e=>{
@@ -23,10 +21,22 @@ $('loginForm').addEventListener('submit',async e=>{
  try{const body=Object.fromEntries(new FormData(form));const r=await api('/api/auth/login',{method:'POST',body:JSON.stringify(body)});token=r.token;form.reset();$('loginMsg').textContent='';await dashboard();}catch(err){$('loginMsg').textContent=err.message;}
 });
 async function dashboard(){
- try{const [me,overview]=await Promise.all([api('/api/admin/me'),api('/api/admin/overview')]);$('identity').textContent=`${me.email} · ${me.role}`;for(const key of ['users','active_memberships','pending_payments','predictions'])$(key).textContent=Number(overview.stats[key]||0).toLocaleString('es-PE');show('dashboard');$('staffPanel').hidden=me.role!=='owner';if(me.role==='owner')await loadStaff();await loadPredictions();await loadCommerce();}catch(err){token='';$('loginMsg').textContent=err.message;show('login');}
+ try{const [me,overview]=await Promise.all([api('/api/admin/me'),api('/api/admin/overview')]);$('identity').textContent=`${me.email} · ${me.role}`;for(const key of ['users','active_memberships','pending_payments','predictions'])$(key).textContent=Number(overview.stats[key]||0).toLocaleString('es-PE');show('dashboard');$('staffPanel').hidden=me.role!=='owner';
+ const pred=['owner','general_admin','analyst'].includes(me.role);
+ const pay=['owner','general_admin','payments_admin'].includes(me.role);
+ const clients=['owner','general_admin','payments_admin','moderator'].includes(me.role);
+ const audit=['owner','general_admin'].includes(me.role);
+ for(const id of ['predictionEditor','predictionHistory'])$(id).hidden=!pred;
+ for(const id of ['plansPanel','paymentsPanel'])$(id).hidden=!pay;
+ $('customersPanel').hidden=!clients;$('auditPanel').hidden=!audit;
+ if(me.role==='owner')await loadStaff();if(pred)await loadPredictions();
+ if(pay)await loadCommerce();else if(clients)await loadCustomersOnly();
+ if(audit)await loadAudit();}catch(err){token='';$('loginMsg').textContent=err.message;show('login');}
 }
 $('logout').addEventListener('click',()=>{token='';show('login');});
 refreshSetup();
+const handoff=sessionStorage.getItem('fijas_admin_handoff');
+if(handoff){sessionStorage.removeItem('fijas_admin_handoff');token=handoff;dashboard();}
 
 const predictionForm=$('predictionForm');
 predictionForm.addEventListener('submit',async e=>{
@@ -69,4 +79,15 @@ async function loadStaff(){
  btn.disabled=true;try{await api('/api/admin/staff/'+u.id+'/role',{method:'POST',body:JSON.stringify({role:select.value})});$('staffMsg').textContent='Rol actualizado. El cambio de permisos se aplica en el servidor.';await loadStaff();}catch(e){$('staffMsg').textContent=e.message;}finally{btn.disabled=false;}
  });item.append(info,select,btn);area.append(item);}
  }catch(e){area.textContent=e.message;}
+}
+
+async function loadCustomersOnly(){
+ const area=$('customerList');area.replaceChildren();
+ try{const {users}=await api('/api/admin/customers');for(const u of users){const line=document.createElement('p');line.textContent=`#${u.id} ${u.display_name||''} · ${u.email}`;area.append(line);}if(!users.length)area.textContent='Sin usuarios';}
+ catch(e){area.textContent=e.message;}
+}
+async function loadAudit(){
+ const area=$('auditList');area.replaceChildren();
+ try{const {logs}=await api('/api/admin/audit');for(const log of logs){const item=document.createElement('p');item.textContent=`${new Date(log.created_at).toLocaleString('es-PE')} · ${log.actor||'Sistema'} · ${log.action} · ${log.entity_type} #${log.entity_id||'—'}`;area.append(item);}if(!logs.length)area.textContent='Sin acciones registradas';}
+ catch(e){area.textContent=e.message;}
 }
