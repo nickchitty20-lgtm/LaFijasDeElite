@@ -1,26 +1,20 @@
-# Fijas de Élite — Panel administrativo inicial
+# Fijas de Élite v0.3 — Pronósticos web + Telegram
 
-## Qué incluye
-- Node.js/Express + MySQL en Railway
-- Creación de las 7 tablas al iniciar (se conserva `src/init-db.js`)
-- Página principal `/` con panel negro y dorado
-- Instalación de **un único dueño** con token secreto y bloqueo transaccional MySQL
-- Login con contraseña bcrypt y JWT temporal (20 minutos, solo en memoria del navegador)
-- Resumen de usuarios, membresías, pagos pendientes y pronósticos (consultas reales)
-- Ruta `/health` conservada
+Reemplaza el contenido del repositorio con este proyecto (conserva tus variables Railway). Railway desplegará automáticamente.
 
-## Despliegue en Railway
-1. **Sube TODOS los archivos y carpetas** de este ZIP a la raíz del repositorio GitHub (reemplaza los existentes). **No subas el ZIP como un único archivo.**
-2. Conserva las variables `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `NODE_ENV`, `JWT_SECRET` (mínimo 32 caracteres).
-3. En el servicio de backend de Railway, agrega `OWNER_SETUP_TOKEN` con una cadena aleatoria **de al menos 32 caracteres**. Puedes generarla localmente con `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` y pegar el resultado en Railway. **No la subas a GitHub ni la compartas.**
-4. Espera el despliegue `Success` y abre `https://TU-DOMINIO.up.railway.app/`.
-5. Pulsa **Crear primera cuenta de dueño**. Introduce tu correo, contraseña robusta (mínimo 12 caracteres) y el token de instalación.
-6. Tras el mensaje de éxito, **elimina `OWNER_SETUP_TOKEN` de las variables de Railway** y vuelve a desplegar. La ruta de instalación también se niega si ya existe un dueño.
-7. Inicia sesión y comprueba el dashboard.
+## Variables nuevas en servicio LaFijasDeElite de Railway
+- `TELEGRAM_BOT_TOKEN`: token del bot creado con @BotFather (secreto).
+- `TELEGRAM_FREE_CHAT_ID`: identificador del canal gratuito (ej. `@nombrecanalpublico`).
+- `TELEGRAM_VIP_CHAT_ID`: ID numérico del canal **privado** VIP (ej. `-100...`). **No uses un canal público para VIP**.
 
-## Seguridad y límites
-- El token inicial se compara con tiempo constante y la creación usa un bloqueo MySQL + transacción; no se puede crear un segundo dueño mediante el instalador.
-- No se guardan contraseñas en texto plano; el JWT solo se mantiene en memoria de la pestaña.
-- **Versión inicial, NO lista para operar pagos reales:** falta 2FA, protección avanzada de sesión, gestión completa de permisos, recuperación segura de cuenta, CSRF/cookies si se migra a sesiones, pruebas y auditoría de producción.
-- No hay creación pública de admins adicionales. No hay cobro automático ni conexión con Telegram todavía.
-- Cambia cualquier contraseña MySQL expuesta en capturas previas y evita mostrar valores secretos.
+Agrega el bot como administrador con permiso de publicar en cada canal. Si omites las variables, los pronósticos se publican en web y Telegram queda `not_configured`.
+
+## Funcionamiento
+- Admin dueño, general y analista pueden publicar y actualizar resultados.
+- El backend guarda el pronóstico primero en MySQL, luego intenta enviarlo por Telegram. Si Telegram falla, se registra `failed`, sin reintento automático. Evita duplicados por reenvío manual.
+- API pública `GET /api/predictions/free` expone únicamente pronósticos gratuitos.
+- Los VIP **no tienen aún portal de clientes ni control de suscripciones**; se publican en el panel admin y, si se configura, en un canal privado. La gestión de acceso y expulsión al vencer membresías sigue pendiente.
+- La hora ingresada es UTC, no hora de Lima. Los resultados se editan desde el panel, pero no se envían como actualización a Telegram.
+
+## Seguridad
+No publiques tokens ni contraseñas en GitHub. Quita `OWNER_SETUP_TOKEN` tras crear dueño. Mantén la rotación de contraseña MySQL expuesta previamente. El panel aún requiere 2FA y auditoría de seguridad antes de pagos reales.

@@ -84,6 +84,52 @@ app.get('/api/admin/overview',authenticate,async(req,res)=>{
   res.json({stats:rows[0],role:req.admin.role});
  }catch(e){console.error('overview error',e.code||e.message);res.status(500).json({error:'Error interno'});}
 });
+// Pronósticos: la publicación web se guarda primero; Telegram se intenta después.
+const predictionSchema=z.object({title:z.string().trim().min(5).max(200),analysis:z.string().trim().min(10).max(8000),visibility:z.enum(['free','vip']),match_date:z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/),league:z.string().trim().min(2).max(120),market:z.string().trim().min(2).max(120),selection:z.string().trim().min(1).max(160),odds:z.coerce.number().min(1.01).max(1000)}).strict();
+const outcomeSchema=z.object({outcome:z.enum(['pending','won','lost','void'])}).strict();
+const allowedToPublish=(a)=>['owner','general_admin','analyst'].includes(a.role);
+function escapeHtml(t){return String(t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+async function sendTelegram(row){
+ const bot=process.env.TELEGRAM_BOT_TOKEN;
+ const channel=row.visibility==='vip'?process.env.TELEGRAM_VIP_CHAT_ID:process.env.TELEGRAM_FREE_CHAT_ID;
+ if(!bot||!channel)return {state:'not_configured'};
+ const label=row.visibility==='vip'?'🔒 VIP':'⚽ GRATIS';
+ const message=`${label} | <b>${escapeHtml(row.title)}</b>\n🏆 ${escapeHtml(row.league)}\n📅 ${escapeHtml(row.match_date)} (UTC)\n🎯 ${escapeHtml(row.market)}: ${escapeHtml(row.selection)}\n📊 Cuota: ${Number(row.odds).toFixed(2)}\n\n${escapeHtml(row.analysis)}\n\nPronóstico, no garantía de resultado.`;
+ const response=await fetch(`https://api.telegram.org/bot${bot}/sendMessage`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:channel,text:message,parse_mode:'HTML',disable_web_page_preview:true}),signal:AbortSignal.timeout(12000)});
+ const result=await response.json();if(!response.ok||!result.ok)throw new Error('Telegram rejected message');
+ return {state:'sent'};
+}
+app.get('/api/admin/predictions',authenticate,async(req,res)=>{
+ try{const [rows]=await db.query('SELECT id,title,analysis,visibility,outcome,published_at,league,match_date,market,selection,odds,telegram_status FROM predictions ORDER BY id DESC LIMIT 100');res.json({predictions:rows});}
+ catch(e){console.error('list predictions',e.code||e.message);res.status(500).json({error:'No se pudo listar'});}
+});
+app.post('/api/admin/predictions',authenticate,async(req,res)=>{
+ if(!allowedToPublish(req.admin))return res.status(403).json({error:'Sin permisos para publicar'});
+ const parsed=predictionSchema.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Datos inválidos: revisa todos los campos'});
+ const p=parsed.data;
+ try{
+  const [r]=await db.execute(`INSERT INTO predictions (title,analysis,visibility,outcome,published_at,author_id,league,match_date,market,selection,odds,telegram_status) VALUES (?,?,?,'pending',UTC_TIMESTAMP(),?,?,?,?,?,?,'pending')`,[p.title,p.analysis,p.visibility,req.admin.id,p.league,p.match_date.replace('T',' ')+':00',p.market,p.selection,p.odds]);
+  await db.execute("INSERT INTO audit_logs(actor_admin_id,action,entity_type,entity_id) VALUES (?,'prediction_created','prediction',?)",[req.admin.id,String(r.insertId)]);
+  const row={...p,id:r.insertId};let telegram='not_configured';
+  try{telegram=(await sendTelegram(row)).state;}catch(e){telegram='failed';console.error('Telegram delivery failed for prediction',r.insertId,e.message);}
+  await db.execute('UPDATE predictions SET telegram_status=? WHERE id=?',[telegram,r.insertId]);
+  res.status(201).json({id:r.insertId,web:'published',telegram});
+ }catch(e){console.error('create prediction',e.code||e.message);res.status(500).json({error:'No se pudo publicar'});}
+});
+app.patch('/api/admin/predictions/:id/outcome',authenticate,async(req,res)=>{
+ if(!allowedToPublish(req.admin))return res.status(403).json({error:'Sin permisos'});
+ if(!/^\d{1,18}$/.test(req.params.id))return res.status(400).json({error:'ID inválido'});
+ const p=outcomeSchema.safeParse(req.body);if(!p.success)return res.status(400).json({error:'Resultado inválido'});
+ try{const [r]=await db.execute('UPDATE predictions SET outcome=? WHERE id=?',[p.data.outcome,req.params.id]);if(!r.affectedRows)return res.status(404).json({error:'No existe'});
+ await db.execute("INSERT INTO audit_logs(actor_admin_id,action,entity_type,entity_id,details) VALUES (?,'prediction_outcome_updated','prediction',?,JSON_OBJECT('outcome',?))",[req.admin.id,req.params.id,p.data.outcome]);res.json({ok:true});}
+ catch(e){console.error('outcome update',e.code||e.message);res.status(500).json({error:'No se pudo actualizar'});}
+});
+// Solo contenido gratuito es público. VIP necesita autenticación de clientes, pendiente.
+app.get('/api/predictions/free',async(req,res)=>{
+ try{const [rows]=await db.query("SELECT id,title,analysis,league,match_date,market,selection,odds,outcome,published_at FROM predictions WHERE visibility='free' AND published_at IS NOT NULL ORDER BY id DESC LIMIT 50");res.json({predictions:rows});}
+ catch{res.status(500).json({error:'No disponible'});}
+});
+
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../public');
 app.use(express.static(root,{index:'index.html',dotfiles:'ignore'}));
 app.use('/api',(req,res)=>res.status(404).json({error:'Ruta no encontrada'}));
