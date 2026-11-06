@@ -1,4 +1,4 @@
-import {footballApi,utcDate,upcomingFixtures,createAssessment,extractMatchWinnerOdds,kickOffString,DEFAULT_MAX_HOURS} from './football-analysis.js';
+import {footballApi,utcDate,upcomingFixtures,createAssessment,extractMatchWinnerOdds,kickOffString,DEFAULT_MAX_HOURS,headToHeadParams} from './football-analysis.js';
 import {diagnoseFootball} from './football-diagnostic.js';
 import {sendPredictionToTelegram} from './telegram-bridge.js';
 import {enqueuePredictionEvent} from './notification-center.js';
@@ -39,7 +39,8 @@ export function installFootballAutomation(app,{db,authenticate}){
    const [created]=await lock.execute('INSERT INTO football_scans (status,started_at) VALUES (?,UTC_TIMESTAMP())',['running']);
    const runId=created.insertId;
    const now=new Date();
-   let examined=0,drafts=0,published=0;
+   let examined=0,drafts=0,published=0,missingPredictions=0,discardedByFilters=0,providerErrors=0;
+   const warnings=[];
    try{
     const end=new Date(now.getTime()+DEFAULT_MAX_HOURS*3600000);
     const dates=[utcDate(now)];
@@ -52,18 +53,32 @@ export function installFootballAutomation(app,{db,authenticate}){
     let h2hQueries=0;
     for(const fixture of fixtures){
      examined++;
-     const predictionArr=await footballApi('predictions',{fixture:fixture.fixture.id});
+     let predictionArr;
+     try{predictionArr=await footballApi('predictions',{fixture:fixture.fixture.id});}
+     catch(error){
+      providerErrors++;
+      const warning=`Predicciones de ${fixture.teams.home.name} vs ${fixture.teams.away.name}: ${safeError(error)}`;
+      warnings.push(warning);console.warn('football predictions unavailable:',warning);
+      continue; // A rejected fixture must not abort all remaining fixtures.
+     }
      const pred=predictionArr[0];
-     if(!pred)continue;
+     if(!pred){missingPredictions++;continue;}
      // Preliminary assessment uses provider's own h2h when available.
      let assessment=createAssessment(fixture,pred);
      if(!assessment && candidateLooksGood<2 && h2hQueries<2){
       h2hQueries++;
       const head=Number(fixture.teams.home.id),away=Number(fixture.teams.away.id);
-      const h2h=await footballApi('fixtures/headtohead',{h2h:`${head}-${away}`,last:5});
-      assessment=createAssessment(fixture,pred,{h2h});
+      try{
+       // `last` is forbidden by API-Football Free. Limit results locally.
+       const h2h=await footballApi('fixtures/headtohead',headToHeadParams(head,away));
+       assessment=createAssessment(fixture,pred,{h2h});
+      }catch(error){
+       const warning=`Antecedentes no disponibles para ${fixture.teams.home.name} vs ${fixture.teams.away.name}: ${safeError(error)}`;
+       warnings.push(warning);console.warn('football h2h optional:',warning);
+       // H2H is supplementary; do not fail the scan because it is unavailable.
+      }
      }
-     if(!assessment)continue;
+     if(!assessment){discardedByFilters++;continue;}
      if(candidateLooksGood>=2)continue;
      candidateLooksGood++;
      // Odds are data supplied by a bookmaker; never synthesise missing prices.
@@ -80,6 +95,9 @@ export function installFootballAutomation(app,{db,authenticate}){
        assessment.analysis,JSON.stringify(assessment.raw_evidence)]);
      if(insert.affectedRows)drafts++;
     }
+    // If every provider prediction failed, keep this scan retryable instead of
+    // erroneously applying the three-hour success cooldown.
+    if(examined>0 && providerErrors===examined)throw Error(warnings[0]||'No se pudieron consultar predicciones');
     await lock.execute("UPDATE football_scans SET status='completed',finished_at=UTC_TIMESTAMP(),examined=?,drafts_created=? WHERE id=?",[examined,drafts,runId]);
     lastError='';lastSuccess=Date.now();
     // Automatic publication is opt-in and requires quoted odds and daily limits.
@@ -90,7 +108,9 @@ export function installFootballAutomation(app,{db,authenticate}){
       catch(e){console.warn('football automated publication skipped:',safeError(e));}
      }
     }
-    return {ok:true,examined,drafts_created:drafts,automatically_published:published,mode:manual?'manual':'scheduled'};
+    return {ok:true,examined,drafts_created:drafts,automatically_published:published,
+     without_prediction:missingPredictions,below_filters:discardedByFilters,
+     provider_errors:providerErrors,warnings:warnings.slice(0,3),mode:manual?'manual':'scheduled'};
    }catch(e){
     lastError=safeError(e);
     await lock.execute("UPDATE football_scans SET status='failed',finished_at=UTC_TIMESTAMP(),error_message=? WHERE id=?",[lastError,runId]);

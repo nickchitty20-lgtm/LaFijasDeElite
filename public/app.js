@@ -477,7 +477,7 @@ $('myTelegramChangeForm')?.addEventListener('submit',async event=>{
 });
 
 
-// v2.1.1 — read-only diagnostic, fixed complete scan, owner-only.
+// v2.1.2 — Free-plan compatible analysis, owner-only.
 async function loadFootballEngine(){
  const summary=$('footballEngineSummary'),list=$('footballCandidateList'),message=$('footballEngineMsg');
  if(!summary||currentAdminRole!=='owner')return;
@@ -545,7 +545,7 @@ $('footballTestButton')?.addEventListener('click',async()=>{
 });
 $('footballScanButton')?.addEventListener('click',async()=>{
  const btn=$('footballScanButton');btn.disabled=true;$('footballEngineMsg').textContent='Analizando próximos partidos…';
- try{const r=await api('/api/admin/football/scan',{method:'POST',body:'{}'});$('footballEngineMsg').textContent=r.message||`Examinados: ${r.examined||0}. Nuevos análisis: ${r.drafts_created||0}. Automáticamente publicados: ${r.automatically_published||0}.`;await loadFootballEngine();}
+ try{const r=await api('/api/admin/football/scan',{method:'POST',body:'{}'});$('footballEngineMsg').textContent=r.message||`Partidos examinados: ${r.examined||0}. Propuestas nuevas: ${r.drafts_created||0}. Sin predicción de la API: ${r.without_prediction||0}. Descartados por filtros: ${r.below_filters||0}. Errores del proveedor: ${r.provider_errors||0}.${r.warnings?.length?' Detalles: '+r.warnings.join(' · '):''} ${!r.examined?'No hubo partidos válidos entre 1 y 6 horas.':''}`;await loadFootballEngine();}
  catch(err){$('footballEngineMsg').textContent=err.message;}finally{btn.disabled=false;}
 });
 $('footballReloadButton')?.addEventListener('click',loadFootballEngine);

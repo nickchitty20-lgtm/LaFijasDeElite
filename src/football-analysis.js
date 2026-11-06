@@ -49,10 +49,20 @@ const pickForm=t=>{
  return havePct(val);
 };
 const comparisonValue=(obj,path)=>path.split('.').reduce((cur,key)=>cur?.[key],obj);
-const lastMatches=h2h=>{
- const rows=(Array.isArray(h2h)?h2h:[]).filter(x=>x?.fixture?.status?.short==='FT'||x?.fixture?.status?.short==='AET'||x?.fixture?.status?.short==='PEN');
- return rows.slice(0,5);
-};
+// The API-Football Free plan rejects the `last` query parameter.
+// Request head-to-head fixtures using only `h2h`, then select the latest
+// completed matches locally. Never assume the API response is sorted.
+export function headToHeadParams(homeId,awayId){
+ const home=Number(homeId),away=Number(awayId);
+ if(!Number.isSafeInteger(home)||home<1||!Number.isSafeInteger(away)||away<1)throw Error('IDs de equipos inválidos');
+ return {h2h:`${home}-${away}`};
+}
+export function latestCompletedHeadToHead(h2h,limit=5){
+ return (Array.isArray(h2h)?h2h:[])
+  .filter(x=>['FT','AET','PEN'].includes(x?.fixture?.status?.short)&&fixtureKickoff(x))
+  .sort((a,b)=>fixtureKickoff(b).getTime()-fixtureKickoff(a).getTime())
+  .slice(0,Math.max(0,Math.min(20,Math.floor(Number(limit)||0))));
+}
 export function createAssessment(fixture,predictionResponse,{h2h=[],injuries=[]}={}){
  const fixtureId=Number(fixture?.fixture?.id);
  const kickoff=fixtureKickoff(fixture);
@@ -68,7 +78,7 @@ export function createAssessment(fixture,predictionResponse,{h2h=[],injuries=[]}
  const attackA=havePct(comparisonValue(comparison,'att.away'));
  const defenceH=havePct(comparisonValue(comparison,'def.home'));
  const defenceA=havePct(comparisonValue(comparison,'def.away'));
- const h2hRows=lastMatches(h2h.length?h2h:predictionResponse?.h2h);
+ const h2hRows=latestCompletedHeadToHead(h2h.length?h2h:predictionResponse?.h2h);
  let evidence=0;
  if(homeForm!==null&&awayForm!==null)evidence++;
  if(attackH!==null&&attackA!==null)evidence++;

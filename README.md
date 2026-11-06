@@ -1,3 +1,25 @@
+# Fijas de Élite v2.1.2 — Corrección API-Football Free ⚽
+
+**Problema resuelto:** la versión 2.1.1 usaba `last=5` en `/fixtures/headtohead`. El plan gratuito de API-Football devuelve el error `Free plans do not have access to the Last parameter`. Esta versión usa solo `h2h=ID-ID` y filtra localmente los encuentros terminados más recientes. No exige comprar otro plan.
+
+## Instalar
+
+1. Descomprime y sube el contenido (archivos y carpetas de la raíz) a GitHub, reemplazando la versión 2.1.1.
+2. Espera que Railway muestre `Success` y verifica `/health` -> `"version":"2.1.2"`.
+3. Como dueño, abre **Análisis automático** y pulsa **Buscar partidos próximos**. Como la búsqueda fallida no aplica cooldown, podrás reintentarlo. Revisa los contadores de examinados, sin predicción, descartados y advertencias.
+4. Si encuentra propuestas de calidad, aparecerán como borradores en **Actualizar propuestas**, listos para revisión y publicación manual. **El diagnóstico** continúa siendo solo de lectura: no guarda ni anuncia nada.
+5. Para pruebas, mantén `FOOTBALL_AUTO_PUBLISH=false` mientras confirmas datos, selección y cuotas. La publicación requiere aprobación manual salvo escaneos programados con publicación habilitada y filtros cumplidos.
+
+## Limitaciones
+
+- La API puede no devolver predicciones, encuentros o cuotas para algunas ligas o temporadas del plan gratuito. Eso no se debe reemplazar con números inventados.
+- La búsqueda mira partidos entre **1 y 6 horas** de comenzar y analiza como máximo 3 por ejecución, respetando la cuota de API-Football.
+- No garantizamos un porcentaje de aciertos (y mucho menos 99%).
+- La lógica de pagos, memberships, rangos y Telegram permanece sin cambios; **no borres MySQL ni cambies tus variables existentes**.
+- Las pruebas locales simulan al proveedor; se debe confirmar el resultado de la API real en Railway.
+
+---
+
 # Fijas de Élite v2.1.1 — Diagnóstico inmediato de análisis ⚡
 
 **Corrección de un fallo real en v2.1.0:** el escáner utilizaba `DEFAULT_MAX_HOURS` sin importarlo; producía un error antes de leer los partidos. Además, el bloqueo de 180 minutos impedía otra búsqueda incluso cuando el escaneo había fallado. Ambas cosas están corregidas.
