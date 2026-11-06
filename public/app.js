@@ -27,10 +27,10 @@ async function dashboard(){
  const clients=['owner','general_admin','payments_admin','moderator'].includes(me.role);
  const audit=['owner','general_admin'].includes(me.role);
  for(const id of ['predictionEditor','predictionHistory'])$(id).hidden=!pred;
- for(const id of ['plansPanel','paymentsPanel'])$(id).hidden=!pay;
+ for(const id of ['plansPanel','paymentsPanel','vipPanel'])$(id).hidden=!pay;
  $('customersPanel').hidden=!clients;$('auditPanel').hidden=!audit;
  if($('paypalDiagnosticsPanel'))$('paypalDiagnosticsPanel').hidden=me.role!=='owner';if(me.role==='owner'){await loadStaff();await loadPaypalDiagnostics();}if(pred)await loadPredictions();
- if(pay)await loadCommerce();else if(clients)await loadCustomersOnly();
+ if(pay){await loadCommerce();await loadVipPlans();}else if(clients)await loadCustomersOnly();
  if(audit)await loadAudit();initAdminNavigation();}catch(err){$('loginMsg').textContent=err.message;show('login');}
 }
 $('logout').addEventListener('click',async()=>{
@@ -71,20 +71,143 @@ async function loadCommerce(){
  const area=$('paymentList');area.replaceChildren();try{const {payments}=await api('/api/admin/payments');if(!payments.length)area.textContent='No hay solicitudes';for(const x of payments){const d=document.createElement('div');d.className='prediction-item';const info=document.createElement('p');info.textContent=`#${x.id} ${x.email} · ${x.plan} · ${x.method==='card'?'Tarjeta / pasarela':x.method} · S/ ${x.amount_pen} · Ref: ${x.external_reference} · ${x.status}`;d.append(info);if(x.status==='pending'){for(const [action,label] of [['verified','Aprobar tras verificar'],['rejected','Rechazar']]){const b=document.createElement('button');b.className='secondary';b.textContent=label;b.addEventListener('click',async()=>{if(!confirm(action==='verified'?'¿Confirmas que comprobaste el ingreso real del dinero en tu cuenta?':'¿Rechazar esta solicitud?'))return;try{await api(`/api/admin/payments/${x.id}/decision`,{method:'POST',body:JSON.stringify({decision:action})});await loadCommerce();await dashboard();}catch(err){alert(err.message);}});d.append(b);}}area.append(d);}}catch(err){area.textContent=err.message;}
 }
 
-async function loadStaff(){
- const area=$('staffList');area.replaceChildren();
- try{const {users}=await api('/api/admin/staff');
- if(!users.length){area.textContent='No hay clientes registrados.';return;}
- for(const u of users){const item=document.createElement('div');item.className='staff-row';
- const info=document.createElement('div');const name=document.createElement('strong');name.textContent=u.display_name||'Cliente';const mail=document.createElement('small');mail.textContent=u.email;info.append(name,mail);
- const select=document.createElement('select');select.setAttribute('aria-label','Rol de '+u.email);
- for(const [value,label] of [['customer','Cliente'],['general_admin','Admin general'],['payments_admin','Admin pagos'],['analyst','Analista'],['moderator','Moderador']]){const o=document.createElement('option');o.value=value;o.textContent=label;select.append(o);}select.value=u.role;
- const btn=document.createElement('button');btn.className='secondary';btn.textContent='Guardar rol';btn.addEventListener('click',async()=>{
- if(!confirm('¿Cambiar el rol de '+u.email+' a '+select.options[select.selectedIndex].text+'?'))return;
- btn.disabled=true;try{await api('/api/admin/staff/'+u.id+'/role',{method:'POST',body:JSON.stringify({role:select.value})});$('staffMsg').textContent='Rol actualizado. El cambio de permisos se aplica en el servidor.';await loadStaff();}catch(e){$('staffMsg').textContent=e.message;}finally{btn.disabled=false;}
- });item.append(info,select,btn);area.append(item);}
- }catch(e){area.textContent=e.message;}
+// v1.8.8 · Manual VIP grant/revocation. Server verifies roles and calculates dates.
+let vipSelectedId=null;
+let vipSelectedBlocked=false;
+let vipHasActive=false;
+let vipConfirmedCount=0;
+const vipDate=value=>value?new Date(value).toLocaleString('es-PE',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):'Sin fecha';
+function vipMessage(message){$('vipManageMsg').textContent=message;}
+async function loadVipPlans(){
+ const select=$('vipPlanSelect');select.replaceChildren();
+ try{
+  const {plans}=await api('/api/admin/plans');
+  for(const p of plans.filter(p=>p.active)){
+   const opt=document.createElement('option');opt.value=String(p.id);
+   opt.textContent=`${p.name} · ${p.duration_days} días · S/${Number(p.price_pen).toFixed(2)} (asignación sin cobro)`;
+   select.append(opt);
+  }
+  if(!select.options.length){const opt=document.createElement('option');opt.textContent='No existen planes activos';opt.value='';select.append(opt);}
+ }catch(err){vipMessage('No se pudieron cargar los planes: '+err.message);}
 }
+$('vipSearchForm').addEventListener('submit',async e=>{
+ e.preventDefault();const q=$('vipSearchInput').value.trim();const area=$('vipSearchResults');
+ if(q.length<2 && !/^\d$/.test(q)){vipMessage('Escribe dos caracteres o el ID de un cliente.');return;}
+ vipSelectedId=null;$('vipCustomerDetails').hidden=true;area.textContent='Buscando clientes…';vipMessage('');
+ try{
+  const {users}=await api('/api/admin/vip/search?q='+encodeURIComponent(q));area.replaceChildren();
+  if(!users.length){area.textContent='No se encontraron clientes registrados.';return;}
+  for(const u of users){
+   const btn=document.createElement('button');btn.type='button';btn.className='vip-customer-choice';
+   const label=document.createElement('strong');label.textContent=`${u.display_name||'Cliente'} · #${u.id}`;
+   const description=document.createElement('span');description.textContent=`${u.email||'Sin correo'} · ${u.account_status==='blacklisted'?'⛔ Lista negra':u.has_vip?'VIP activo':'Cliente'}`;
+   btn.append(label,description);btn.addEventListener('click',()=>loadVipCustomer(u.id));area.append(btn);
+  }
+ }catch(err){area.textContent='No se pudo buscar: '+err.message;}
+});
+async function loadVipCustomer(id){
+ vipSelectedId=null;$('vipCustomerDetails').hidden=true;vipMessage('Cargando membresías…');
+ try{
+  const data=await api('/api/admin/vip/customers/'+encodeURIComponent(id));
+  vipSelectedId=String(data.user.id);vipSelectedBlocked=data.user.account_status==='blacklisted';vipHasActive=Boolean(data.has_vip);
+  vipConfirmedCount=Number(data.confirmed_count||0);
+  $('vipSelectedName').textContent=data.user.display_name||'Cliente #'+data.user.id;
+  $('vipSelectedEmail').textContent=`#${data.user.id} · ${data.user.email||'Sin correo'}`;
+  const status=$('vipSelectedStatus');status.className='vip-status'+(vipHasActive?' vip-status-active':vipSelectedBlocked?' vip-status-blocked':'');
+  status.textContent=vipSelectedBlocked?'⛔ Cuenta en lista negra':vipHasActive?`VIP ACTIVO · Vence ${vipDate(data.vip_until)}`:data.vip_until?`VIP programado · ${vipDate(data.vip_until)}`:'Sin VIP activo';
+  $('vipGrantButton').disabled=vipSelectedBlocked||!$('vipPlanSelect').value;
+  $('vipRevokeButton').disabled=vipConfirmedCount===0;
+  const history=$('vipMembershipHistory');history.replaceChildren();
+  if(!data.memberships.length)history.textContent='Este cliente todavía no tiene membresías.';
+  for(const m of data.memberships){
+   const row=document.createElement('div');row.className='vip-history-row';
+   const title=document.createElement('strong');title.textContent=`#${m.id} · ${m.plan} · ${m.source==='manual'?'Alta manual':'Compra'}`;
+   const info=document.createElement('span');info.textContent=`${m.status==='active'?'Confirmada':m.status==='pending'?'Pendiente':m.status==='cancelled'?'Cancelada':m.status} · ${vipDate(m.starts_at)} — ${vipDate(m.ends_at)}${m.paid?' · Pago verificado':''}`;
+   row.append(title,info);
+   if(m.status==='cancelled'&&m.revoke_reason){const why=document.createElement('small');why.textContent='Retirada: '+m.revoke_reason;row.append(why);}
+   history.append(row);
+  }
+  $('vipCustomerDetails').hidden=false;
+  vipMessage(vipSelectedBlocked?'Esta cuenta está en Rank 0. Desbloquéala en Personal antes de otorgar VIP.':data.pending_requests?`Hay ${data.pending_requests} solicitud(es) pendientes de pago que no están incluidas en el VIP confirmado.`:'');
+ }catch(err){vipMessage('No se pudo cargar el cliente: '+err.message);}
+}
+$('vipGrantForm').addEventListener('submit',async e=>{
+ e.preventDefault();if(!vipSelectedId||vipSelectedBlocked)return;
+ const planId=$('vipPlanSelect').value;const reason=$('vipGrantReason').value.trim();
+ const planLabel=$('vipPlanSelect').selectedOptions[0]?.textContent||'el plan';
+ if(reason.length<4)return vipMessage('Escribe el motivo (mínimo cuatro caracteres).');
+ if(!confirm(`¿Asignar ${planLabel} al cliente seleccionado sin registrar un pago? Quedará anotado en Actividad.`))return;
+ const button=$('vipGrantButton');button.disabled=true;vipMessage('Registrando acceso VIP…');
+ try{
+  const out=await api(`/api/admin/vip/customers/${vipSelectedId}/grant`,{method:'POST',body:JSON.stringify({plan_id:Number(planId),reason})});
+  $('vipGrantReason').value='';await loadVipCustomer(vipSelectedId);
+  vipMessage(`✅ ${out.message} Vigencia hasta: ${vipDate(out.ends_at)}.`);
+  await refreshAdminStats();
+ }catch(err){vipMessage('No se pudo otorgar VIP: '+err.message);}finally{button.disabled=vipSelectedBlocked;}
+});
+$('vipRevokeForm').addEventListener('submit',async e=>{
+ e.preventDefault();if(!vipSelectedId||vipConfirmedCount===0)return;
+ const reason=$('vipRevokeReason').value.trim();if(reason.length<4)return vipMessage('Indica el motivo del retiro.');
+ if(!confirm('¿CONFIRMAS retirar todas las membresías VIP vigentes y futuras de este cliente? Esto NO reembolsa pagos verificados ni cancela solicitudes pendientes.'))return;
+ const button=$('vipRevokeButton');button.disabled=true;vipMessage('Retirando acceso VIP…');
+ try{
+  const out=await api(`/api/admin/vip/customers/${vipSelectedId}/revoke`,{method:'POST',body:JSON.stringify({reason})});
+  $('vipRevokeReason').value='';await loadVipCustomer(vipSelectedId);
+  vipMessage(`Acceso retirado (${out.cancelled} períodos). Pagos anteriores conservados, sin reembolsos.`);
+  await refreshAdminStats();
+ }catch(err){vipMessage('No se pudo retirar VIP: '+err.message);}finally{button.disabled=vipConfirmedCount===0;}
+});
+async function refreshAdminStats(){
+ try{const {stats}=await api('/api/admin/overview');for(const key of ['users','active_memberships','pending_payments','predictions'])$(key).textContent=Number(stats[key]||0).toLocaleString('es-PE');}catch{}
+}
+
+let staffCache=[];
+function renderStaff(){
+ const area=$('staffList');area.replaceChildren();
+ const filter=$('staffFilter')?.value||'all';
+ const blacklisted=staffCache.filter(u=>u.role==='blacklist').length;
+ if($('staffCount'))$('staffCount').textContent=`${blacklisted} en lista negra · ${staffCache.length} usuarios cargados`;
+ const users=staffCache.filter(u=>filter==='all'||(filter==='blacklist'&&u.role==='blacklist')||(filter==='active'&&u.role!=='blacklist'));
+ if(!users.length){area.textContent=filter==='blacklist'?'No hay usuarios en lista negra.':'Sin usuarios para este filtro.';return;}
+ for(const u of users){
+  const item=document.createElement('div');item.className='staff-row'+(u.role==='blacklist'?' staff-blacklisted':'');
+  const info=document.createElement('div');info.className='staff-user';
+  const name=document.createElement('strong');name.textContent=u.display_name||'Cliente';
+  const mail=document.createElement('small');mail.textContent=u.email;
+  const rank=document.createElement('span');rank.className='staff-rank'+(u.role==='blacklist'?' rank-zero':'');rank.textContent=u.role==='blacklist'?'⛔ RANK 0 · LISTA NEGRA':'Rango '+u.rank+' · '+({customer:'Cliente',general_admin:'Admin general',payments_admin:'Admin pagos',analyst:'Analista',moderator:'Moderador'})[u.role];
+  info.append(name,mail,rank);
+  if(u.role==='blacklist'&&u.blacklist_reason){const reason=document.createElement('small');reason.textContent='Motivo: '+u.blacklist_reason;info.append(reason);}
+  const controls=document.createElement('div');controls.className='staff-controls';
+  const select=document.createElement('select');select.setAttribute('aria-label','Rol de '+u.email);
+  for(const [value,label] of [['customer','Rank 1 · Cliente'],['moderator','Rank 2 · Moderador'],['analyst','Rank 3 · Analista'],['payments_admin','Rank 4 · Admin de pagos'],['general_admin','Rank 5 · Admin general'],['blacklist','⛔ Rank 0 · Lista negra']]){
+   const option=document.createElement('option');option.value=value;option.textContent=label;select.append(option);
+  }
+  select.value=u.role;
+  const reason=document.createElement('input');reason.className='staff-reason';reason.type='text';reason.maxLength=350;reason.placeholder='Motivo obligatorio de lista negra';reason.setAttribute('aria-label','Motivo de sanción');
+  const syncReason=()=>{reason.hidden=select.value!=='blacklist';reason.required=select.value==='blacklist'&&u.role!=='blacklist';};
+  select.addEventListener('change',syncReason);syncReason();
+  const btn=document.createElement('button');btn.className='secondary';btn.textContent=u.role==='blacklist'?'Guardar / desbloquear':'Guardar cargo';
+  btn.addEventListener('click',async()=>{
+   if(select.value===u.role){$('staffMsg').textContent='Selecciona un cargo diferente para aplicar cambios.';return;}
+   const description=select.options[select.selectedIndex].text;
+   if(select.value==='blacklist'&&reason.value.trim().length<4){$('staffMsg').textContent='Escribe el motivo de la sanción (mínimo 4 caracteres).';reason.focus();return;}
+   const message=select.value==='blacklist'?`¿Añadir ${u.email} a lista negra? Perderá el acceso de inmediato, incluso si tiene VIP activo.`:`¿Asignar ${description} a ${u.email}? ${u.role==='blacklist'?'Esto quitará su bloqueo.':''}`;
+   if(!confirm(message))return;
+   btn.disabled=true;
+   try{
+    await api('/api/admin/staff/'+u.id+'/role',{method:'POST',body:JSON.stringify({role:select.value,...(select.value==='blacklist'?{reason:reason.value.trim()}:{})})});
+    $('staffMsg').textContent=select.value==='blacklist'?'Cuenta añadida a lista negra (Rank 0). Acceso bloqueado.':'Cargo actualizado y acceso restablecido según el rol.';
+    await loadStaff();
+   }catch(e){$('staffMsg').textContent=e.message;}finally{btn.disabled=false;}
+  });
+  controls.append(select,reason,btn);item.append(info,controls);area.append(item);
+ }
+}
+async function loadStaff(){
+ try{const {users}=await api('/api/admin/staff');staffCache=users;renderStaff();}
+ catch(e){$('staffList').textContent=e.message;}
+}
+$('staffFilter')?.addEventListener('change',renderStaff);
 
 async function loadCustomersOnly(){
  const area=$('customerList');area.replaceChildren();
@@ -93,7 +216,14 @@ async function loadCustomersOnly(){
 }
 async function loadAudit(){
  const area=$('auditList');area.replaceChildren();
- try{const {logs}=await api('/api/admin/audit');for(const log of logs){const item=document.createElement('p');item.textContent=`${new Date(log.created_at).toLocaleString('es-PE')} · ${log.actor||'Sistema'} · ${log.action} · ${log.entity_type} #${log.entity_id||'—'}`;area.append(item);}if(!logs.length)area.textContent='Sin acciones registradas';}
+ try{const {logs}=await api('/api/admin/audit');for(const log of logs){
+  const item=document.createElement('p');
+  const labels={vip_manual_granted:'VIP asignado manualmente',vip_manual_revoked:'VIP retirado manualmente'};
+  let details={};try{details=typeof log.details==='string'?JSON.parse(log.details):(log.details||{});}catch{}
+  const reason=typeof details.reason==='string'?' · Motivo: '+details.reason:'';
+  item.textContent=`${new Date(log.created_at).toLocaleString('es-PE')} · ${log.actor||'Sistema'} · ${labels[log.action]||log.action} · ${log.entity_type} #${log.entity_id||'—'}${reason}`;
+  area.append(item);
+ }if(!logs.length)area.textContent='Sin acciones registradas';}
  catch(e){area.textContent=e.message;}
 }
 
@@ -116,10 +246,10 @@ function selectAdminSection(section){
  for(const b of buttons){const on=b===selected;b.classList.toggle('active',on);b.setAttribute('aria-current',on?'page':'false');}
  for(const panel of document.querySelectorAll('#dashboard [data-panel]')){
    const accessId=panel.id==='predictionHistory'?'predictionEditor':panel.id;
-  const guarded=['predictionEditor','predictionHistory','plansPanel','paymentsPanel','staffPanel','customersPanel','auditPanel'].includes(panel.id);
+  const guarded=['predictionEditor','predictionHistory','plansPanel','paymentsPanel','vipPanel','staffPanel','customersPanel','auditPanel'].includes(panel.id);
   panel.hidden=panel.dataset.panel!==section || (panel.id==='paypalDiagnosticsPanel' && currentAdminRole!=='owner') || (guarded && !isAdminPanelAllowed(accessId));
  }
- document.querySelector('#dashboard .heading h1').textContent=({overview:'Resumen del negocio',predictions:'Gestión de pronósticos',payments:'Solicitudes de pago',plans:'Planes y precios',customers:'Clientes registrados',staff:'Gestión de personal',audit:'Historial de actividad'})[section]||'Resumen del negocio';
+ document.querySelector('#dashboard .heading h1').textContent=({overview:'Resumen del negocio',predictions:'Gestión de pronósticos',payments:'Solicitudes de pago',vip:'Gestión de membresías VIP',plans:'Planes y precios',customers:'Clientes registrados',staff:'Gestión de personal',audit:'Historial de actividad'})[section]||'Resumen del negocio';
 }
 function isAdminPanelAllowed(id){const button=document.querySelector(`.admin-nav button[data-access="${id}"]`);return button&&!button.hidden;}
 document.querySelectorAll('.admin-nav button[data-section]').forEach(button=>button.addEventListener('click',()=>selectAdminSection(button.dataset.section)));

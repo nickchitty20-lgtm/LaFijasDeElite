@@ -30,3 +30,16 @@ body.client-logged-in>header{display:none}body.client-logged-in .auth-layout{max
 
 /* Confirmed renewals are displayed immediately in the customer summary. */
 .vip-renewal-applied{color:#d8bf7c;font-weight:600;font-size:.9rem;margin-top:.7rem}
+
+/* v1.8.7: grouped VIP periods; pending applications collapsed by default */
+.client-memberships{display:grid;gap:22px}
+.membership-group{min-width:0;background:#151b23;border:1px solid #313b48;border-radius:17px;padding:18px}
+.membership-group h4,.membership-group>summary{font-size:16px;font-weight:800;color:#f1d39c;margin:0 0 14px}
+.membership-group>summary{cursor:pointer;list-style:auto;margin-bottom:0}
+.membership-group[open]>summary{margin-bottom:14px}
+.membership-cards{display:grid;gap:10px}
+.client-memberships .membership-card{padding:18px 20px;border-radius:12px;background:#202832;border:1px solid #35404d;display:grid;gap:6px}
+.membership-card strong{color:#f6f2ea}
+.membership-status{font-size:12px;font-weight:750;color:#dfc38e}
+.client-memberships .membership-card p{padding:0;margin:0;color:#aeb6c3;background:none;border:0;font-size:13px}
+.client-memberships .membership-empty{padding:10px 0;margin:0;background:none;border:0;color:#adb6c1}

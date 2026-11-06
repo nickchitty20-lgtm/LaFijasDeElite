@@ -11,6 +11,10 @@ CREATE TABLE IF NOT EXISTS users (
  telegram_id BIGINT UNIQUE NULL,
  email VARCHAR(254) UNIQUE NULL,
  display_name VARCHAR(120) NULL,
+ account_status ENUM('active','blacklisted') NOT NULL DEFAULT 'active',
+ blacklist_reason VARCHAR(350) NULL,
+ blacklisted_at DATETIME NULL,
+ blacklisted_by BIGINT UNSIGNED NULL,
  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS plans (
@@ -27,6 +31,12 @@ CREATE TABLE IF NOT EXISTS memberships (
  status ENUM('pending','active','expired','cancelled') NOT NULL DEFAULT 'pending',
  starts_at DATETIME NULL,
  ends_at DATETIME NULL,
+ source ENUM('payment','manual') NOT NULL DEFAULT 'payment',
+ granted_by BIGINT UNSIGNED NULL,
+ grant_reason VARCHAR(350) NULL,
+ revoked_at DATETIME NULL,
+ revoked_by BIGINT UNSIGNED NULL,
+ revoke_reason VARCHAR(350) NULL,
  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
  FOREIGN KEY (user_id) REFERENCES users(id),
  FOREIGN KEY (plan_id) REFERENCES plans(id),

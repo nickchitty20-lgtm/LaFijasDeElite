@@ -47,19 +47,42 @@ async function loadDashboard(){
   for(const n of r.notices){const item=document.createElement('p');item.className='vip-notice';item.textContent=n.message;notices.append(item);}
  }catch(e){summary.textContent=e.message;}
 }
+function membershipDate(value){return value?new Date(value).toLocaleDateString('es-PE',{dateStyle:'medium'}):'Sin fecha';}
+function createMembershipCard(m,label){
+ const card=document.createElement('article');card.className='membership-card';
+ const title=document.createElement('strong');title.textContent=m.plan;
+ const state=document.createElement('span');state.className='membership-status';state.textContent=label;
+ const dates=document.createElement('p');
+ dates.textContent=m.status==='pending'?'Pendiente de confirmación del pago':`Inicio: ${membershipDate(m.starts_at)} · Vencimiento: ${membershipDate(m.ends_at)}`;
+ card.append(title,state,dates);return card;
+}
+function appendMembershipGroup(root,title,items,{collapse=false,emptyText='',labelFn=()=>''}={}){
+ const section=collapse?document.createElement('details'):document.createElement('section');
+ section.className='membership-group';
+ const heading=document.createElement(collapse?'summary':'h4');heading.textContent=`${title} (${items.length})`;section.append(heading);
+ if(!items.length){const empty=document.createElement('p');empty.className='membership-empty';empty.textContent=emptyText||'Sin registros';section.append(empty);}
+ else{const cards=document.createElement('div');cards.className='membership-cards';for(const m of items)cards.append(createMembershipCard(m,labelFn(m)));section.append(cards);}
+ root.append(section);
+}
 async function me(){
  const r=await call('/api/customers/me',null,true);
- $('memberships').replaceChildren();$('accountMsg').textContent=`Bienvenido, ${r.user.display_name}`;
- const dateLabel=d=>d?new Date(d).toLocaleDateString('es-PE',{dateStyle:'medium'}):'pendiente';
+ const area=$('memberships');area.replaceChildren();$('accountMsg').textContent=`Bienvenido, ${r.user.display_name||'cliente'}`;
+ const now=Date.now();
+ const active=[],future=[],pending=[],past=[];
  for(const m of r.memberships){
-  const p=document.createElement('p');
-  const future=m.status==='active'&&m.starts_at&&new Date(m.starts_at).getTime()>Date.now();
-  const status=future?'Renovación confirmada (próxima)':({active:'Activa',pending:'Pendiente',expired:'Expirada',cancelled:'Cancelada'})[m.status]||m.status;
-  p.textContent=`${m.plan} · ${status}${future?' · Comienza: '+dateLabel(m.starts_at):''} · Vence: ${dateLabel(m.ends_at)}`;
-  $('memberships').append(p);
+  const start=m.starts_at?new Date(m.starts_at).getTime():0;
+  const end=m.ends_at?new Date(m.ends_at).getTime():0;
+  if(m.status==='pending'){pending.push(m);continue;}
+  if(m.status==='active'&&end>now&&start<=now){active.push(m);continue;}
+  if(m.status==='active'&&end>now&&start>now){future.push(m);continue;}
+  past.push(m);
  }
- if(!r.memberships.length)$('memberships').textContent='Aún no tienes membresías registradas.';
+ appendMembershipGroup(area,'VIP activo',active,{labelFn:()=>'Vigente',emptyText:'No tienes un período VIP activo.'});
+ appendMembershipGroup(area,'Renovaciones confirmadas',future,{labelFn:()=>'Confirmada · Próxima',emptyText:'Aún no tienes renovaciones futuras.'});
+ appendMembershipGroup(area,'Solicitudes pendientes',pending,{collapse:true,labelFn:()=>'Pendiente de revisión',emptyText:'No hay solicitudes pendientes.'});
+ appendMembershipGroup(area,'Historial anterior',past,{collapse:true,labelFn:m=>m.status==='cancelled'?'Cancelada':m.status==='expired'?'Expirada':'Finalizada',emptyText:'Sin períodos anteriores.'});
 }
+
 $('register').addEventListener('submit',async e=>{e.preventDefault();try{await call('/api/customers/register',form('register'));$('regMsg').textContent='Cuenta creada. Ahora inicia sesión.';view('login');$('loginMsg').textContent='Cuenta creada. Inicia sesión.';}catch(err){$('regMsg').textContent=err.message;}});
 async function enterCustomerPanel(){
  await me();await loadCustomerPicks();await loadDashboard();

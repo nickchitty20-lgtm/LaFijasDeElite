@@ -21,6 +21,34 @@ export async function initializeDatabase() {
     }
     const [userCols]=await connection.query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='users'");
     if(!userCols.some(c=>c.COLUMN_NAME==='password_hash')) await connection.query('ALTER TABLE users ADD COLUMN password_hash VARCHAR(255) NULL');
+    // Safe, additive migration: preserve all existing customers, payments and VIP periods.
+    const accountColumns = {
+      account_status: "ENUM('active','blacklisted') NOT NULL DEFAULT 'active'",
+      blacklist_reason: 'VARCHAR(350) NULL',
+      blacklisted_at: 'DATETIME NULL',
+      blacklisted_by: 'BIGINT UNSIGNED NULL'
+    };
+    for(const [column,definition] of Object.entries(accountColumns)){
+      if(!userCols.some(c=>c.COLUMN_NAME===column))
+        await connection.query(`ALTER TABLE users ADD COLUMN ${column} ${definition}`);
+    }
+
+    // Additional fields for manual VIP grants and auditable revocations.
+    // Existing memberships default to source=payment; no historical rows are deleted.
+    const [membershipCols] = await connection.query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='memberships'");
+    const membershipNames = new Set(membershipCols.map(c=>c.COLUMN_NAME));
+    const vipColumns = {
+      source: "ENUM('payment','manual') NOT NULL DEFAULT 'payment'",
+      granted_by: 'BIGINT UNSIGNED NULL',
+      grant_reason: 'VARCHAR(350) NULL',
+      revoked_at: 'DATETIME NULL',
+      revoked_by: 'BIGINT UNSIGNED NULL',
+      revoke_reason: 'VARCHAR(350) NULL'
+    };
+    for (const [column,definition] of Object.entries(vipColumns)) {
+      if(!membershipNames.has(column)) await connection.query(`ALTER TABLE memberships ADD COLUMN ${column} ${definition}`);
+    }
+
     // Planes iniciales: se insertan solo cuando no existe otro con el mismo nombre.
     // Nunca se modifican precios ni duraciones configurados por un administrador.
     const starterPlans = [

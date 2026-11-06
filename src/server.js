@@ -13,9 +13,11 @@ import {z} from 'zod';
 import {db} from './db.js';
 import {initializeDatabase} from './init-db.js';
 import {buildMembershipSummary} from './membership-summary.js';
+import {isBlacklisted,roleRank,blockedAccountResponse} from './account-policy.js';
+import {manualVipPeriod} from './manual-vip.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
-const APP_VERSION = '1.8.6';
+const APP_VERSION = '1.8.8';
 const app = express();
 // Railway terminates HTTPS behind one reverse proxy; trust only that hop.
 app.set('trust proxy', 1);
@@ -134,7 +136,7 @@ app.post('/api/login',unifiedLimit,async(req,res)=>{
  const email=emailKey(p.data.email);
  try{
   const [[admin]]=await db.execute('SELECT id,password_hash,is_active FROM admins WHERE email=? LIMIT 1',[email]);
-  const [[customer]]=await db.execute('SELECT id,password_hash FROM users WHERE email=? LIMIT 1',[email]);
+  const [[customer]]=await db.execute('SELECT id,password_hash,account_status FROM users WHERE email=? LIMIT 1',[email]);
   const dummy='$2a$12$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';
   // Assigned staff authenticate using the password from their customer account.
   const adminHash=customer?.password_hash||admin?.password_hash||dummy;
@@ -142,6 +144,7 @@ app.post('/api/login',unifiedLimit,async(req,res)=>{
    bcrypt.compare(p.data.password,adminHash),
    bcrypt.compare(p.data.password,customer?.password_hash||dummy)
   ]);
+  if(isBlacklisted(customer) && (adminValid || customerValid)) return res.status(403).json(blockedAccountResponse);
   if(admin?.is_active && adminValid){
    setSessionCookie(req,res,'admin',admin.id,adminHash);
    return res.json({accountType:'admin'});
@@ -160,8 +163,9 @@ app.post('/api/auth/login',adminLoginLimit,async(req,res)=>{
   const admin=rows[0];
   // Compare against a dummy hash to reduce account enumeration timing.
   const dummy='$2a$12$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';
-  const [[linkedUser]]=await db.execute('SELECT password_hash FROM users WHERE email=? LIMIT 1',[emailKey(p.data.email)]);const valid=await bcrypt.compare(p.data.password,(linkedUser?.password_hash || admin?.password_hash)||dummy);
+  const [[linkedUser]]=await db.execute('SELECT password_hash,account_status FROM users WHERE email=? LIMIT 1',[emailKey(p.data.email)]);const valid=await bcrypt.compare(p.data.password,(linkedUser?.password_hash || admin?.password_hash)||dummy);
   if(!admin || !admin.is_active || !valid)return res.status(401).json({error:'Credenciales incorrectas'});
+  if(isBlacklisted(linkedUser))return res.status(403).json(blockedAccountResponse);
   setSessionCookie(req,res,'admin',admin.id,linkedUser?.password_hash||admin.password_hash);
   res.json({accountType:'admin',admin:{id:admin.id,email:admin.email,role:admin.role},mfaRequiredForProduction:true});
  }catch(e){console.error('login error',e.code||e.message);res.status(500).json({error:'Error interno'});}
@@ -171,9 +175,10 @@ async function authenticate(req,res,next){
   const payload=verifyToken(req,'admin');
   if(!payload)return res.status(401).json({error:'Inicia sesión como administrador'});
   const [[admin]]=await db.execute(`SELECT a.id,a.email,a.role,a.is_active,
-   COALESCE(u.password_hash,a.password_hash) AS auth_hash
+   COALESCE(u.password_hash,a.password_hash) AS auth_hash,u.account_status
    FROM admins a LEFT JOIN users u ON u.email=a.email WHERE a.id=? LIMIT 1`,[payload.sub]);
   if(!admin?.is_active)return res.status(403).json({error:'Acceso denegado'});
+  if(isBlacklisted(admin))return res.status(403).json(blockedAccountResponse);
   if(!sessionStillValid(payload,admin.auth_hash))return res.status(401).json({error:'La contraseña cambió. Inicia sesión otra vez.'});
   const {auth_hash,...safeAdmin}=admin;
   req.admin=safeAdmin;next();
@@ -186,13 +191,13 @@ app.get('/api/session',async(req,res)=>{
  try{
   const payload=jwt.verify(raw,process.env.JWT_SECRET,{issuer:'fijas-de-elite'});
   if(payload.aud==='admin'){
-   const [[a]]=await db.execute(`SELECT a.is_active,COALESCE(u.password_hash,a.password_hash) AS auth_hash
+   const [[a]]=await db.execute(`SELECT a.is_active,COALESCE(u.password_hash,a.password_hash) AS auth_hash,u.account_status
     FROM admins a LEFT JOIN users u ON u.email=a.email WHERE a.id=? LIMIT 1`,[payload.sub]);
-   return res.json({authenticated:Boolean(a?.is_active && sessionStillValid(payload,a.auth_hash)),accountType:a?.is_active && sessionStillValid(payload,a.auth_hash)?'admin':null});
+   return res.json({authenticated:Boolean(a?.is_active && !isBlacklisted(a) && sessionStillValid(payload,a.auth_hash)),accountType:a?.is_active && !isBlacklisted(a) && sessionStillValid(payload,a.auth_hash)?'admin':null});
   }
   if(payload.aud==='customer'){
-   const [[u]]=await db.execute('SELECT password_hash FROM users WHERE id=? LIMIT 1',[payload.sub]);
-   return res.json({authenticated:Boolean(u && sessionStillValid(payload,u.password_hash)),accountType:u && sessionStillValid(payload,u.password_hash)?'customer':null});
+   const [[u]]=await db.execute('SELECT password_hash,account_status FROM users WHERE id=? LIMIT 1',[payload.sub]);
+   return res.json({authenticated:Boolean(u && !isBlacklisted(u) && sessionStillValid(payload,u.password_hash)),accountType:u && !isBlacklisted(u) && sessionStillValid(payload,u.password_hash)?'customer':null});
   }
  }catch(e){if(e.code)console.error('session check',e.code);}
  res.json({authenticated:false,accountType:null});
@@ -215,7 +220,7 @@ const outcomeSchema=z.object({outcome:z.enum(['pending','won','lost','void'])}).
 const allowedToPublish=(a)=>['owner','general_admin','analyst'].includes(a.role);
 const canViewCustomers=(a)=>['owner','general_admin','payments_admin','moderator'].includes(a.role);
 const canViewAudit=(a)=>['owner','general_admin'].includes(a.role);
-const rolePermissions={owner:['predictions:read','predictions:write','payments:read','payments:write','plans:write','customers:read','staff:write','audit:read'],general_admin:['predictions:read','predictions:write','payments:read','payments:write','plans:write','customers:read','audit:read'],payments_admin:['payments:read','payments:write','plans:write','customers:read'],analyst:['predictions:read','predictions:write'],moderator:['customers:read']};
+const rolePermissions={owner:['predictions:read','predictions:write','payments:read','payments:write','memberships:write','plans:write','customers:read','staff:write','audit:read'],general_admin:['predictions:read','predictions:write','payments:read','payments:write','memberships:write','plans:write','customers:read','audit:read'],payments_admin:['payments:read','payments:write','memberships:write','plans:write','customers:read'],analyst:['predictions:read','predictions:write'],moderator:['customers:read']};
 app.get('/api/admin/permissions',authenticate,(req,res)=>res.json({role:req.admin.role,permissions:rolePermissions[req.admin.role]||[]}));
 function escapeHtml(t){return String(t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 async function sendTelegram(row){
@@ -276,7 +281,7 @@ app.post('/api/customers/register',registerLimit,async(req,res)=>{
 });
 app.post('/api/customers/login',registerLimit,async(req,res)=>{
  const p=loginSchema.safeParse(req.body);if(!p.success)return res.status(400).json({error:'Datos inválidos'});
- try{const [[u]]=await db.execute('SELECT id,password_hash FROM users WHERE email=?',[emailKey(p.data.email)]);const dummy='$2a$12$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';const ok=await bcrypt.compare(p.data.password,u?.password_hash||dummy);if(!u||!ok)return res.status(401).json({error:'Credenciales incorrectas'});setSessionCookie(req,res,'customer',u.id,u.password_hash);res.json({accountType:'customer'});}
+ try{const [[u]]=await db.execute('SELECT id,password_hash,account_status FROM users WHERE email=?',[emailKey(p.data.email)]);const dummy='$2a$12$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';const ok=await bcrypt.compare(p.data.password,u?.password_hash||dummy);if(!u||!ok)return res.status(401).json({error:'Credenciales incorrectas'});if(isBlacklisted(u))return res.status(403).json(blockedAccountResponse);setSessionCookie(req,res,'customer',u.id,u.password_hash);res.json({accountType:'customer'});}
  catch{res.status(500).json({error:'No se pudo iniciar sesión'});}
 });
 // Password recovery: hashed, single-use, expiring tokens; no account enumeration.
@@ -317,9 +322,10 @@ async function customerAuth(req,res,next){
  try{
   const t=verifyToken(req,'customer');
   if(!t)return res.status(401).json({error:'Inicia sesión'});
-  const [[u]]=await db.execute('SELECT id,email,display_name,password_hash FROM users WHERE id=?',[t.sub]);
+  const [[u]]=await db.execute('SELECT id,email,display_name,password_hash,account_status FROM users WHERE id=?',[t.sub]);
   if(!u||!sessionStillValid(t,u.password_hash))return res.status(401).json({error:'Sesión vencida o cuenta no disponible'});
-  const {password_hash,...customer}=u;
+  if(isBlacklisted(u))return res.status(403).json(blockedAccountResponse);
+  const {password_hash,account_status,...customer}=u;
   req.customer=customer;next();
  }catch{return res.status(401).json({error:'Sesión inválida o vencida'});}
 }
@@ -355,7 +361,15 @@ app.get('/api/customers/dashboard',customerAuth,async(req,res)=>{
   res.set('Cache-Control','private, no-store').json({membership,stats:{total:Number(stats.total||0),won:Number(stats.won||0),lost:Number(stats.lost||0),pending:Number(stats.pending||0)},payments,notices});
  }catch(e){console.error('customer dashboard',e.code||e.message);res.status(500).json({error:'No se pudo cargar el panel'});}
 });
-app.get('/api/customers/me',customerAuth,async(req,res)=>{const [memberships]=await db.execute('SELECT m.id,m.status,m.starts_at,m.ends_at,p.name AS plan FROM memberships m JOIN plans p ON p.id=m.plan_id WHERE m.user_id=? ORDER BY m.id DESC LIMIT 20',[req.customer.id]);res.json({user:req.customer,memberships});});
+app.get('/api/customers/me',customerAuth,async(req,res)=>{
+ try{
+  const base='SELECT m.id,m.status,m.starts_at,m.ends_at,p.name AS plan FROM memberships m JOIN plans p ON p.id=m.plan_id';
+  const [confirmed]=await db.execute(`${base} WHERE m.user_id=? AND m.status='active' ORDER BY m.ends_at DESC LIMIT 40`,[req.customer.id]);
+  const [pending]=await db.execute(`${base} WHERE m.user_id=? AND m.status='pending' ORDER BY m.id DESC LIMIT 20`,[req.customer.id]);
+  const [history]=await db.execute(`${base} WHERE m.user_id=? AND m.status IN ('expired','cancelled') ORDER BY m.id DESC LIMIT 20`,[req.customer.id]);
+  res.set('Cache-Control','private, no-store').json({user:req.customer,memberships:[...confirmed,...pending,...history]});
+ }catch(e){console.error('customer membership list',e.code||e.message);res.status(500).json({error:'No se pudieron consultar tus membresías'});}
+});
 app.post('/api/customers/payment-requests',customerAuth,async(req,res)=>{
  const p=paymentRequest.safeParse(req.body);if(!p.success)return res.status(400).json({error:'Datos de solicitud inválidos'});
  const conn=await db.getConnection();try{await conn.beginTransaction();const [[plan]]=await conn.execute('SELECT id,price_pen FROM plans WHERE id=? AND active=1',[p.data.plan_id]);if(!plan){await conn.rollback();return res.status(404).json({error:'Plan no disponible'});}
@@ -385,6 +399,104 @@ app.post('/api/admin/payments/:id/decision',authenticate,async(req,res)=>{
  }catch(e){await conn.rollback();console.error('payment decision',e.code||e.message);res.status(500).json({error:'No se pudo procesar'});}finally{conn.release();}
 });
 
+// Manual VIP management: no fake payment is created. Only authorized payment staff
+// can grant or revoke entitlements, with a required explanation and audit trail.
+const vipTargetId=id=>/^\d{1,18}$/.test(String(id));
+const vipReason=z.string().trim().min(4).max(350);
+const manualVipGrantSchema=z.object({plan_id:z.coerce.number().int().positive(),reason:vipReason}).strict();
+const manualVipRevokeSchema=z.object({reason:vipReason}).strict();
+
+app.get('/api/admin/vip/search',authenticate,async(req,res)=>{
+ if(!canManagePayments(req.admin))return res.status(403).json({error:'Sin permisos para gestionar VIP'});
+ const query=typeof req.query.q==='string'?req.query.q.trim():'';
+ if(!query || query.length>120 || (query.length<2 && !/^\d$/.test(query)))
+  return res.status(400).json({error:'Escribe al menos dos caracteres, o el ID del cliente'});
+ try{
+  // Search is bounded and parameterized; never disclose password hashes or sessions.
+  const matches=`%${query.replace(/[!%_]/g,'!$&')}%`;
+  const [users]=await db.execute(`SELECT u.id,u.email,u.display_name,u.account_status,
+   EXISTS(SELECT 1 FROM memberships m WHERE m.user_id=u.id AND m.status='active'
+    AND m.starts_at<=UTC_TIMESTAMP() AND m.ends_at>UTC_TIMESTAMP()) AS has_vip
+   FROM users u WHERE u.email LIKE ? ESCAPE '!' OR u.display_name LIKE ? ESCAPE '!'
+    OR u.id=? ORDER BY u.id DESC LIMIT 25`,[matches,matches,/^\d{1,18}$/.test(query)?query:'0']);
+  res.json({users:users.map(u=>({...u,has_vip:Boolean(u.has_vip)}))});
+ }catch(e){console.error('vip search',e.code||e.message);res.status(500).json({error:'No se pudo buscar clientes'});}
+});
+app.get('/api/admin/vip/customers/:id',authenticate,async(req,res)=>{
+ if(!canManagePayments(req.admin))return res.status(403).json({error:'Sin permisos para gestionar VIP'});
+ if(!vipTargetId(req.params.id))return res.status(400).json({error:'ID inválido'});
+ try{
+  const [[user]]=await db.execute('SELECT id,email,display_name,account_status FROM users WHERE id=? LIMIT 1',[req.params.id]);
+  if(!user)return res.status(404).json({error:'Cliente no encontrado'});
+  const [[status]]=await db.execute(`SELECT
+   EXISTS(SELECT 1 FROM memberships WHERE user_id=? AND status='active' AND starts_at<=UTC_TIMESTAMP() AND ends_at>UTC_TIMESTAMP()) AS has_vip,
+   (SELECT MAX(ends_at) FROM memberships WHERE user_id=? AND status='active' AND ends_at>UTC_TIMESTAMP()) AS vip_until,
+   (SELECT COUNT(*) FROM memberships WHERE user_id=? AND status='pending') AS pending_requests,
+   (SELECT COUNT(*) FROM memberships WHERE user_id=? AND status='active' AND ends_at>UTC_TIMESTAMP()) AS confirmed_count`,[user.id,user.id,user.id,user.id]);
+  const [memberships]=await db.execute(`SELECT m.id,m.status,m.source,m.starts_at,m.ends_at,m.created_at,
+   m.grant_reason,m.revoked_at,m.revoke_reason,p.name AS plan,
+   EXISTS(SELECT 1 FROM payments py WHERE py.membership_id=m.id AND py.status='verified') AS paid
+   FROM memberships m JOIN plans p ON p.id=m.plan_id
+   WHERE m.user_id=? ORDER BY m.id DESC LIMIT 35`,[user.id]);
+  res.json({user,has_vip:Boolean(status.has_vip),vip_until:status.vip_until,
+   pending_requests:Number(status.pending_requests||0),confirmed_count:Number(status.confirmed_count||0),
+   memberships:memberships.map(m=>({...m,paid:Boolean(m.paid)}))});
+ }catch(e){console.error('vip detail',e.code||e.message);res.status(500).json({error:'No se pudo consultar la membresía'});}
+});
+app.post('/api/admin/vip/customers/:id/grant',authenticate,async(req,res)=>{
+ if(!canManagePayments(req.admin))return res.status(403).json({error:'Sin permisos para otorgar VIP'});
+ if(!vipTargetId(req.params.id))return res.status(400).json({error:'ID inválido'});
+ const parsed=manualVipGrantSchema.safeParse(req.body);
+ if(!parsed.success)return res.status(400).json({error:'Selecciona un plan y escribe un motivo (4 a 350 caracteres)'});
+ const conn=await db.getConnection();
+ try{
+  await conn.beginTransaction();
+  // Serializing on the customer prevents two manual grants from losing renewal days.
+  const [[user]]=await conn.execute('SELECT id,account_status,password_hash FROM users WHERE id=? FOR UPDATE',[req.params.id]);
+  if(!user||!user.password_hash){await conn.rollback();return res.status(404).json({error:'El cliente debe estar registrado'});}
+  if(isBlacklisted(user)){await conn.rollback();return res.status(403).json({error:'La cuenta está en lista negra. Debes desbloquearla primero'});}
+  const [[plan]]=await conn.execute('SELECT id,name,duration_days FROM plans WHERE id=? AND active=1 LIMIT 1',[parsed.data.plan_id]);
+  if(!plan){await conn.rollback();return res.status(404).json({error:'Plan VIP no disponible'});}
+  const [[last]]=await conn.execute("SELECT MAX(ends_at) AS last_end FROM memberships WHERE user_id=? AND status='active'",[user.id]);
+  const {start,end}=manualVipPeriod(last?.last_end,Number(plan.duration_days));
+  const [result]=await conn.execute(`INSERT INTO memberships
+   (user_id,plan_id,status,starts_at,ends_at,source,granted_by,grant_reason)
+   VALUES (?,?,'active',?,?,'manual',?,?)`,[user.id,plan.id,start,end,req.admin.id,parsed.data.reason]);
+  await conn.execute(`INSERT INTO audit_logs(actor_admin_id,action,entity_type,entity_id,details)
+   VALUES (?,'vip_manual_granted','membership',?,JSON_OBJECT('user_id',?,'plan_id',?,'days',?,'reason',?))`,
+   [req.admin.id,String(result.insertId),String(user.id),String(plan.id),Number(plan.duration_days),parsed.data.reason]);
+  await conn.commit();
+  res.status(201).json({ok:true,membership_id:result.insertId,plan:plan.name,starts_at:start,ends_at:end,
+   message:'VIP concedido manualmente. No se registró ningún pago.'});
+ }catch(e){try{await conn.rollback();}catch{}console.error('vip grant',e.code||e.message);res.status(500).json({error:'No se pudo asignar el VIP'});}
+ finally{conn.release();}
+});
+app.post('/api/admin/vip/customers/:id/revoke',authenticate,async(req,res)=>{
+ if(!canManagePayments(req.admin))return res.status(403).json({error:'Sin permisos para retirar VIP'});
+ if(!vipTargetId(req.params.id))return res.status(400).json({error:'ID inválido'});
+ const parsed=manualVipRevokeSchema.safeParse(req.body);
+ if(!parsed.success)return res.status(400).json({error:'Indica el motivo del retiro (4 a 350 caracteres)'});
+ const conn=await db.getConnection();
+ try{
+  await conn.beginTransaction();
+  const [[user]]=await conn.execute('SELECT id FROM users WHERE id=? FOR UPDATE',[req.params.id]);
+  if(!user){await conn.rollback();return res.status(404).json({error:'Cliente no encontrado'});}
+  // Cancel ALL current and future confirmed VIP, irrespective of payment source.
+  // Keep the original payments as-is: a revocation is NOT a refund.
+  const [result]=await conn.execute(`UPDATE memberships SET status='cancelled',revoked_at=UTC_TIMESTAMP(),
+   revoked_by=?,revoke_reason=? WHERE user_id=? AND status='active' AND ends_at>UTC_TIMESTAMP()`,
+   [req.admin.id,parsed.data.reason,user.id]);
+  if(result.affectedRows===0){await conn.rollback();return res.status(409).json({error:'Este cliente no tiene VIP vigente ni renovaciones confirmadas'});}
+  await conn.execute(`INSERT INTO audit_logs(actor_admin_id,action,entity_type,entity_id,details)
+   VALUES (?,'vip_manual_revoked','user',?,JSON_OBJECT('reason',?,'memberships_cancelled',?))`,
+   [req.admin.id,String(user.id),parsed.data.reason,result.affectedRows]);
+  await conn.commit();
+  res.json({ok:true,cancelled:result.affectedRows,
+   message:'Acceso VIP retirado. Los pagos anteriores se conservan y NO se reembolsaron.'});
+ }catch(e){try{await conn.rollback();}catch{}console.error('vip revoke',e.code||e.message);res.status(500).json({error:'No se pudo retirar el VIP'});}
+ finally{conn.release();}
+});
+
 // Audit history: only owner and general admin may read it. Never expose passwords or tokens.
 app.get('/api/admin/audit',authenticate,async(req,res)=>{
  if(!canViewAudit(req.admin))return res.status(403).json({error:'Sin permisos'});
@@ -392,10 +504,16 @@ app.get('/api/admin/audit',authenticate,async(req,res)=>{
  catch(e){console.error('audit list',e.code||e.message);res.status(500).json({error:'No se pudo consultar el historial'});}
 });
 // Staff: registration always creates a customer. Only the owner may grant or revoke staff roles.
-const staffRoleSchema=z.object({role:z.enum(['general_admin','payments_admin','analyst','moderator','customer'])}).strict();
+const staffRoleSchema=z.object({
+ role:z.enum(['general_admin','payments_admin','analyst','moderator','customer','blacklist']),
+ reason:z.string().trim().max(350).optional()
+}).strict();
 app.get('/api/admin/staff',authenticate,async(req,res)=>{
  if(req.admin.role!=='owner')return res.status(403).json({error:'Solo el dueño puede gestionar el personal'});
- try{const [rows]=await db.query(`SELECT u.id,u.email,u.display_name,COALESCE(IF(a.is_active=1,a.role,NULL),'customer') AS role FROM users u LEFT JOIN admins a ON a.email=u.email ORDER BY u.id DESC LIMIT 200`);res.json({users:rows});}
+ try{const [rows]=await db.query(`SELECT u.id,u.email,u.display_name,u.account_status,u.blacklist_reason,u.blacklisted_at,
+   CASE WHEN u.account_status='blacklisted' THEN 'blacklist' ELSE COALESCE(IF(a.is_active=1,a.role,NULL),'customer') END AS role
+   FROM users u LEFT JOIN admins a ON a.email=u.email ORDER BY u.id DESC LIMIT 200`);
+   res.json({users:rows.map(u=>({...u,rank:roleRank(u.role)}))});}
  catch(e){console.error('staff list',e.code||e.message);res.status(500).json({error:'No se pudo consultar el personal'});}
 });
 app.post('/api/admin/staff/:id/role',authenticate,async(req,res)=>{
@@ -408,12 +526,22 @@ app.post('/api/admin/staff/:id/role',authenticate,async(req,res)=>{
   if(!u||!u.password_hash){await conn.rollback();return res.status(404).json({error:'El usuario debe registrarse primero'});}
   const [[a]]=await conn.execute('SELECT id,role FROM admins WHERE email=? FOR UPDATE',[u.email]);
   if(a?.role==='owner'){await conn.rollback();return res.status(403).json({error:'No se puede modificar al dueño'});}
-  if(parsed.data.role==='customer'){
+  if(parsed.data.role==='blacklist'){
+   const reason=parsed.data.reason?.trim()||'';
+   if(reason.length<4){await conn.rollback();return res.status(400).json({error:'Especifica un motivo de lista negra (mínimo 4 caracteres)'});}
+   // Disable any administrative privileges, including currently issued sessions.
    if(a)await conn.execute('UPDATE admins SET is_active=0 WHERE id=?',[a.id]);
-  }else if(a){await conn.execute('UPDATE admins SET role=?,is_active=1 WHERE id=?',[parsed.data.role,a.id]);}
-  else await conn.execute('INSERT INTO admins(email,password_hash,role,is_active) VALUES (?,?,?,1)',[u.email,u.password_hash,parsed.data.role]);
-  await conn.execute("INSERT INTO audit_logs(actor_admin_id,action,entity_type,entity_id,details) VALUES (?,'staff_role_changed','user',?,JSON_OBJECT('role',?))",[req.admin.id,String(u.id),parsed.data.role]);
-  await conn.commit();res.json({ok:true,role:parsed.data.role});
+   await conn.execute("UPDATE users SET account_status='blacklisted',blacklist_reason=?,blacklisted_at=UTC_TIMESTAMP(),blacklisted_by=? WHERE id=?",[reason,req.admin.id,u.id]);
+  }else{
+   // An explicit change by the owner lifts the block and restores the selected role.
+   await conn.execute("UPDATE users SET account_status='active',blacklist_reason=NULL,blacklisted_at=NULL,blacklisted_by=NULL WHERE id=?",[u.id]);
+   if(parsed.data.role==='customer'){
+    if(a)await conn.execute('UPDATE admins SET is_active=0 WHERE id=?',[a.id]);
+   }else if(a)await conn.execute('UPDATE admins SET role=?,is_active=1 WHERE id=?',[parsed.data.role,a.id]);
+   else await conn.execute('INSERT INTO admins(email,password_hash,role,is_active) VALUES (?,?,?,1)',[u.email,u.password_hash,parsed.data.role]);
+  }
+  await conn.execute("INSERT INTO audit_logs(actor_admin_id,action,entity_type,entity_id,details) VALUES (?,'staff_role_changed','user',?,JSON_OBJECT('role',?,'rank',?,'reason',?))",[req.admin.id,String(u.id),parsed.data.role,roleRank(parsed.data.role),parsed.data.role==='blacklist'?parsed.data.reason?.trim():null]);
+  await conn.commit();res.json({ok:true,role:parsed.data.role,rank:roleRank(parsed.data.role)});
  }catch(e){await conn.rollback();console.error('staff update',e.code||e.message);res.status(500).json({error:'No se pudo cambiar el rol'});}finally{conn.release();}
 });
 
