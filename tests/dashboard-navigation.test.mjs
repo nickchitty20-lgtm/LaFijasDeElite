@@ -6,8 +6,8 @@ const client=readFileSync(new URL('../public/clientes.html',import.meta.url),'ut
 const adminJS=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
 const customerJS=readFileSync(new URL('../public/clientes.js',import.meta.url),'utf8');
 const server=readFileSync(new URL('../src/server.js',import.meta.url),'utf8');
-test('el panel de dueño conserva los 11 módulos',()=>{
- for(const key of ['overview','predictions','payments','finance','vip','plans','customers','staff','audit','telegram','mytelegram']){
+test('el panel de dueño conserva los 11 módulos y el analizador deportivo',()=>{
+ for(const key of ['overview','predictions','football','payments','finance','vip','plans','customers','staff','audit','telegram','mytelegram']){
   assert.match(html,new RegExp(`data-section="${key}"`));
   assert.match(html,new RegExp(`data-panel="${key}"`));
  }
@@ -28,10 +28,10 @@ test('errores secundarios no cierran la sesión administrativa',()=>{
  assert.match(customerJS,/Promise\.allSettled\(\[loadCustomerPicks\(\)/);
 });
 test('la version y recursos del dashboard evitan caches cruzadas',()=>{
- assert.match(server,/APP_VERSION = '2\.0\.4'/);
+ assert.match(server,/APP_VERSION = '2\.1\.0'/);
  assert.match(server,/Cache-Control/);
- assert.match(html,/app\.js\?v=2\.0\.4/);
- assert.match(client,/clientes\.js\?v=2\.0\.4/);
+ assert.match(html,/app\.js\?v=2\.1\.0/);
+ assert.match(client,/clientes\.js\?v=2\.1\.0/);
 });
 test('sigue presente la desvinculacion sin expulsion',()=>{
  assert.match(client,/telegramUnlinkButton/);

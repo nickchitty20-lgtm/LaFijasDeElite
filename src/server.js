@@ -21,12 +21,14 @@ import {paypalReadiness,validatePaypalCapture,refundState,usdCents,captureIdFrom
 import {sendPredictionToTelegram} from './telegram-bridge.js';
 import {installTelegramRoutes} from './telegram-routes.js';
 import {installNotificationCenter,enqueueVipActivation,enqueuePredictionEvent} from './notification-center.js';
+import {installFootballAutomation} from './football-automation.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
-const APP_VERSION = '2.0.4';
+const APP_VERSION = '2.1.0';
 const app = express();
 let telegramVipControl=null;
 let notificationControl=null;
+let footballControl=null;
 // Railway terminates HTTPS behind one reverse proxy; trust only that hop.
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
@@ -937,6 +939,7 @@ app.get('/api/admin/finance',authenticate,async(req,res)=>{
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../public');
 telegramVipControl=installTelegramRoutes(app,{db,customerAuth,authenticate,limit:apiRateLimit({windowMs:15*60*1000,limit:10,standardHeaders:'draft-7',legacyHeaders:false})});
 notificationControl=installNotificationCenter(app,{db,customerAuth,limit:apiRateLimit({windowMs:15*60*1000,limit:15,standardHeaders:'draft-7',legacyHeaders:false})});
+footballControl=installFootballAutomation(app,{db,authenticate});
 app.use(express.static(root,{index:'index.html',dotfiles:'ignore',setHeaders(res,servedPath){
  if(/\.(?:html|js|css)$/i.test(servedPath))res.setHeader('Cache-Control','no-store');
 }}));
@@ -945,6 +948,7 @@ app.use((req,res)=>res.status(404).send('Not Found'));
 const port=Number(process.env.PORT||3000);
 try{await initializeDatabase();await db.query(`CREATE TABLE IF NOT EXISTS customer_password_resets (user_id BIGINT UNSIGNED NOT NULL PRIMARY KEY, token_hash CHAR(64) NOT NULL UNIQUE, expires_at DATETIME NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE) ENGINE=InnoDB`);app.listen(port,'0.0.0.0',()=>{
  console.log(`Fijas de Elite API listening on ${port}`);
+ footballControl?.start();
  // Start durable opt-in notification outbox after database migration.
  if(process.env.TELEGRAM_BOT_TOKEN){
   setImmediate(()=>notificationControl?.tick().catch(error=>console.error('notification startup worker',error.code||error.message)));

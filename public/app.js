@@ -43,7 +43,7 @@ async function dashboard(){
   }),
   loadMyTelegram()
  ];
- if(me.role==='owner')jobs.push(loadStaff(),loadPaypalDiagnostics(),loadTelegramAdmin());
+ if(me.role==='owner')jobs.push(loadStaff(),loadPaypalDiagnostics(),loadTelegramAdmin(),loadFootballEngine());
  if(pred)jobs.push(loadPredictions());
  if(pay)jobs.push(loadCommerce(),loadVipPlans(),loadFinance());
  else if(clients)jobs.push(loadCustomersOnly());
@@ -281,7 +281,7 @@ async function loadAudit(){
 // Cada cargo ve solamente sus módulos autorizados; la navegación no depende
 // de la propiedad hidden del panel (que cambia cada vez que elegimos una pestaña).
 const ADMIN_SECTIONS_BY_ROLE={
- owner:['overview','predictions','payments','finance','vip','plans','customers','staff','audit','telegram','mytelegram'],
+ owner:['overview','predictions','football','payments','finance','vip','plans','customers','staff','audit','telegram','mytelegram'],
  general_admin:['overview','predictions','payments','finance','vip','plans','customers','audit','mytelegram'],
  payments_admin:['overview','payments','finance','vip','plans','customers','mytelegram'],
  analyst:['overview','predictions','mytelegram'],
@@ -315,7 +315,7 @@ function selectAdminSection(section){
   const ownOnly=panel.id==='paypalDiagnosticsPanel';
   panel.hidden=panel.dataset.panel!==section||!allowed.has(panel.dataset.panel)||(ownOnly&&currentAdminRole!=='owner');
  }
- document.querySelector('#dashboard .heading h1').textContent=({overview:'Resumen del negocio',predictions:'Gestión de pronósticos',payments:'Solicitudes de pago',finance:'Finanzas y conciliación',vip:'Gestión de membresías VIP',plans:'Planes y precios',customers:'Clientes registrados',staff:'Gestión de personal',audit:'Historial de actividad',telegram:'Telegram y suscriptores VIP',mytelegram:'Mi Telegram VIP'})[section]||'Resumen del negocio';
+ document.querySelector('#dashboard .heading h1').textContent=({overview:'Resumen del negocio',predictions:'Gestión de pronósticos',payments:'Solicitudes de pago',finance:'Finanzas y conciliación',vip:'Gestión de membresías VIP',plans:'Planes y precios',customers:'Clientes registrados',staff:'Gestión de personal',audit:'Historial de actividad',telegram:'Telegram y suscriptores VIP',mytelegram:'Mi Telegram VIP',football:'Análisis automático de fútbol'})[section]||'Resumen del negocio';
 }
 document.querySelectorAll('.admin-nav button[data-section]').forEach(button=>button.addEventListener('click',()=>selectAdminSection(button.dataset.section)));
 
@@ -475,3 +475,54 @@ $('myTelegramChangeForm')?.addEventListener('submit',async event=>{
   form.reset();form.hidden=true;renderMyTelegramLink(r.url,'Abrir bot en NUEVO Telegram ↗','El anterior fue retirado.');await loadMyTelegram();
  }catch(e){$('myTelegramResult').textContent=e.message;}
 });
+
+
+// v2.1.0 — evidence-based football scouting, owner-only.
+async function loadFootballEngine(){
+ const summary=$('footballEngineSummary'),list=$('footballCandidateList'),message=$('footballEngineMsg');
+ if(!summary||currentAdminRole!=='owner')return;
+ try{
+  const [status,result]=await Promise.all([api('/api/admin/football/status'),api('/api/admin/football/candidates')]);
+  summary.replaceChildren();
+  const stats=[
+   ['Fuente de datos',status.configured?'Conectada':'Sin API key'],
+   ['Búsqueda automática',status.auto_scan?'Activada':'Desactivada'],
+   ['Publicación automática',status.auto_publish?'Activada':'Solo revisión'],
+   ['Propuestas pendientes',status.drafts],
+   ['Publicadas',status.published],
+   ['Resultados ganados / perdidos',`${status.won} / ${status.lost}`],
+   ['Acierto observado',status.accuracy==null?'Sin suficientes resultados':`${status.accuracy}%`]
+  ];
+  for(const [title,value] of stats){const div=document.createElement('div');const small=document.createElement('small');small.textContent=title;const strong=document.createElement('strong');strong.textContent=String(value);div.append(small,strong);summary.append(div);}
+  list.replaceChildren();
+  if(!result.candidates.length){list.textContent='No hay propuestas todavía. Configura tu API key y busca partidos.';return;}
+  for(const c of result.candidates){
+   const item=document.createElement('article');item.className='football-candidate';
+   const title=document.createElement('h3');title.textContent=`${c.home_team} vs ${c.away_team}`;
+   const info=document.createElement('p');info.className='football-meta';info.textContent=`${c.league} · ${new Date(c.kickoff).toLocaleString('es-PE')} · ${c.visibility.toUpperCase()} · ${c.status}`;
+   const pick=document.createElement('p');pick.textContent=`Selección: ${c.selection} · Estimación del proveedor: ${c.provider_probability}% · Cuota: ${c.odds==null?'No disponible':c.odds}`;
+   const detail=document.createElement('details');const heading=document.createElement('summary');heading.textContent='Leer análisis y riesgos';const paragraph=document.createElement('p');paragraph.textContent=c.analysis;paragraph.className='football-analysis';detail.append(heading,paragraph);
+   item.append(title,info,pick,detail);
+   if(c.status==='draft'){
+    const actions=document.createElement('div');actions.className='football-candidate-actions';
+    for(const [action,label] of [['publish','Aprobar y publicar'],['discard','Descartar']]){
+     const button=document.createElement('button');button.className=action==='discard'?'secondary':'';button.textContent=label;
+     button.addEventListener('click',async()=>{
+      if(!confirm(action==='publish'?`¿Publicar esta selección ${c.visibility.toUpperCase()} en web y Telegram?`:'¿Descartar propuesta?'))return;
+      button.disabled=true;
+      try{const response=await api(`/api/admin/football/candidates/${c.id}/${action}`,{method:'POST',body:'{}'});message.textContent=action==='publish'?`Resultado: ${response.published?'publicado':'sin cambios'}. Telegram: ${response.telegram||'—'}`:'Propuesta descartada';await loadFootballEngine();if(action==='publish')await loadPredictions();}
+      catch(error){message.textContent=error.message;button.disabled=false;}
+     });actions.append(button);
+    }
+    item.append(actions);
+   }
+   list.append(item);
+  }
+ }catch(err){message.textContent=err.message;}
+}
+$('footballScanButton')?.addEventListener('click',async()=>{
+ const btn=$('footballScanButton');btn.disabled=true;$('footballEngineMsg').textContent='Analizando próximos partidos…';
+ try{const r=await api('/api/admin/football/scan',{method:'POST',body:'{}'});$('footballEngineMsg').textContent=r.message||`Examinados: ${r.examined||0}. Nuevos análisis: ${r.drafts_created||0}. Automáticamente publicados: ${r.automatically_published||0}.`;await loadFootballEngine();}
+ catch(err){$('footballEngineMsg').textContent=err.message;}finally{btn.disabled=false;}
+});
+$('footballReloadButton')?.addEventListener('click',loadFootballEngine);

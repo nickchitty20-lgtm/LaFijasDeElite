@@ -11,8 +11,11 @@ export function telegramPublicNotice(p,base){
  const location=`${base.replace(/\/$/,'')}/clientes.html`;
  return `${label}\n🏆 Liga: ${h(p.league)}\n\n🔐 Consulta los detalles iniciando sesión en Fijas de Élite.\n${h(location)}\n\nLos pronósticos no garantizan resultados.`;
 }
+export function telegramFreeAutoPost(p){
+ return `⚽ <b>FIJAS DE ÉLITE · GRATIS</b>\n<b>${h(p.title)}</b>\n🏆 ${h(p.league)}\n📅 ${h(p.match_date)} UTC\n🎯 ${h(p.market)}: <b>${h(p.selection)}</b>\n\n${h(String(p.analysis||'').slice(0,1150))}\n\nAnálisis estadístico, no garantía. Pronósticos con riesgo de fallo.`;
+}
 export function telegramVipPost(p){
- return `♛ <b>FIJAS DE ÉLITE · VIP</b>\n<b>${h(p.title)}</b>\n🏆 ${h(p.league)}\n📅 ${h(p.match_date)} UTC\n🎯 <b>${h(p.market)}:</b> ${h(p.selection)}\n📊 Cuota: ${Number(p.odds).toFixed(2)}\n\n<b>Análisis:</b>\n${h(p.analysis)}\n\nInformación deportiva, no una garantía de resultado.`;
+ return `♛ <b>FIJAS DE ÉLITE · VIP</b>\n<b>${h(p.title)}</b>\n🏆 ${h(p.league)}\n📅 ${h(p.match_date)} UTC\n🎯 <b>${h(p.market)}:</b> ${h(p.selection)}\n📊 Cuota: ${p.odds!=null && Number.isFinite(Number(p.odds))?Number(p.odds).toFixed(2):'No disponible (sin cuota verificada)'}\n\n<b>Análisis:</b>\n${h(p.analysis)}\n\nInformación deportiva, no una garantía de resultado.`;
 }
 export async function telegramApi(method,payload={},env=process.env){
  if(!env.TELEGRAM_BOT_TOKEN)throw Error('Bot de Telegram no configurado');
@@ -38,7 +41,7 @@ export async function sendPredictionToTelegram(p,env=process.env){
  }
  if(!publicChat)return {state:'not_configured'};
  // The open community never receives complete free picks or VIP picks.
- await telegramApi('sendMessage',{chat_id:publicChat,text:telegramPublicNotice(p,env.PUBLIC_BASE_URL||'https://lafijasdeelite-production.up.railway.app'),parse_mode:'HTML',disable_web_page_preview:true},env);
+ await telegramApi('sendMessage',{chat_id:publicChat,text:(p.auto_generated&&env.FOOTBALL_PUBLIC_FREE_PICKS==='true'?telegramFreeAutoPost(p):telegramPublicNotice(p,env.PUBLIC_BASE_URL||'https://lafijasdeelite-production.up.railway.app')),parse_mode:'HTML',disable_web_page_preview:true},env);
  return {state:'sent'};
 }
 

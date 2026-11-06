@@ -1,3 +1,33 @@
+# Fijas de Élite v2.1.0 — Motor de análisis automático de fútbol
+
+## Alcance real de esta versión
+- Selección automatizada de partidos que comienzan en 1–6 horas mediante **API-Football**.
+- Análisis reproducible de probabilidades 1X2 del proveedor, forma reciente, comparaciones de ataque/defensa, antecedentes e indicadores disponibles. **No se fabrican noticias, lesiones, cuotas ni porcentajes**.
+- Preparación de propuestas en MySQL y aprobación desde **Dashboard → Análisis automático**, solo por el dueño.
+- Publicación en web y Telegram, con control de duplicados, límites por día y publicación automática **opcional y apagada por defecto**.
+- En canal VIP se publica la selección y el análisis. En el grupo público se puede publicar alguna selección gratuita completa solo si el dueño lo habilita (`FOOTBALL_PUBLIC_FREE_PICKS=true`); el panel web sigue pidiendo cuenta para consultar los pronósticos.
+- Estadísticas de aciertos observados una vez que **se registran** los resultados; el asentamiento automático de resultados no está incluido todavía y hay que marcarlos desde Gestión de pronósticos. Nunca se promete 99 % de acierto.
+
+## Variables adicionales de Railway
+```
+FOOTBALL_API_KEY=TU_CLAVE_DE_API_FOOTBALL
+FOOTBALL_AUTO_SCAN=false
+FOOTBALL_AUTO_PUBLISH=false
+FOOTBALL_PUBLIC_FREE_PICKS=false
+```
+1. Regístrate en https://www.api-football.com/ y copia tu clave desde `My Access`. No la subas a GitHub.
+2. Añádela en Railway, haz deploy y entra como dueño a **Análisis automático**. Pulsa **Buscar partidos próximos**. La aplicación limita a un escaneo cada **3 horas**, incluida ejecución manual; usa un bloqueo MySQL para evitar escaneos paralelos.
+3. Revisa las propuestas y, si lo deseas, aprueba individualmente las selecciones y análisis. La fuente externa puede no ofrecer datos suficientes o cuotas, por lo que puede no haber propuestas.
+4. Para búsqueda programada activa `FOOTBALL_AUTO_SCAN=true`. Cada **4 horas** examina una ventana de partidos de 1–6 horas, siempre dentro del cupo de la API.
+5. **Opcional y bajo responsabilidad del dueño:** solo tras comprobar resultados y datos, activa `FOOTBALL_AUTO_PUBLISH=true`. Entonces las propuestas con cuota verificable pueden publicarse sin revisión (máx. 1 gratis y 2 VIP al día, con umbrales de evidencia). Las propuestas sin cuota quedan como borradores.
+6. Si quieres que el grupo público vea **algunos pronósticos gratuitos completos** en lugar de solo avisos de la web, activa `FOOTBALL_PUBLIC_FREE_PICKS=true`. Este contenido será visible a cualquiera en el grupo; los pronósticos VIP siguen privados.
+
+**Importante:** la probabilidad que devuelve la API es un pronóstico no calibrado. No es una tasa de acierto medida. El sistema podría producir 0 pronósticos algunos días. Su objetivo es ofrecer razonamientos auditables, no garantizar ganancias. No contiene modelo propio reentrenado ni investigación de prensa en tiempo real. Se recomienda ampliar cobertura y calibración con historial antes de activar publicación automática.
+
+**Base de datos:** solo agrega `football_candidates` y `football_scans`. No borra datos actuales. Antes de desplegar, respalda MySQL.
+
+---
+
 # Fijas de Élite v2.0.4
 
 **Nuevo:** el dueño puede forzar la desvinculación de Telegram y permitir que el cliente vincule otra cuenta sin expulsar al usuario anterior del canal VIP. Ver [VERSION.md](VERSION.md) para instrucciones y limitaciones.

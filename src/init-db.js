@@ -68,6 +68,40 @@ export async function initializeDatabase() {
     const [indices] = await connection.query("SHOW INDEX FROM payments WHERE Key_name = 'uq_paypal_capture_id'");
     if (!indices.length) await connection.query('CREATE UNIQUE INDEX uq_paypal_capture_id ON payments(paypal_capture_id)');
 
+    // v2.1.0: evidence-backed football proposals, safe additive tables.
+    await connection.query(`CREATE TABLE IF NOT EXISTS football_scans (
+      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      status ENUM('running','completed','failed') NOT NULL DEFAULT 'running',
+      started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      finished_at DATETIME NULL,
+      examined INT UNSIGNED NOT NULL DEFAULT 0,
+      drafts_created INT UNSIGNED NOT NULL DEFAULT 0,
+      error_message VARCHAR(200) NULL
+    ) ENGINE=InnoDB`);
+    await connection.query(`CREATE TABLE IF NOT EXISTS football_candidates (
+      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      provider VARCHAR(40) NOT NULL,
+      fixture_id BIGINT UNSIGNED NOT NULL,
+      visibility ENUM('free','vip') NOT NULL,
+      home_team VARCHAR(120) NOT NULL,
+      away_team VARCHAR(120) NOT NULL,
+      league VARCHAR(120) NOT NULL,
+      kickoff DATETIME NOT NULL,
+      market VARCHAR(120) NOT NULL,
+      selection VARCHAR(160) NOT NULL,
+      provider_probability DECIMAL(5,2) NOT NULL,
+      odds DECIMAL(8,2) NULL,
+      analysis TEXT NOT NULL,
+      evidence_json JSON NOT NULL,
+      status ENUM('draft','published','discarded') NOT NULL DEFAULT 'draft',
+      prediction_id BIGINT UNSIGNED NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      published_at DATETIME NULL,
+      UNIQUE KEY uq_football_fixture (provider,fixture_id),
+      INDEX idx_football_pending (status,kickoff),
+      FOREIGN KEY (prediction_id) REFERENCES predictions(id)
+    ) ENGINE=InnoDB`);
+
     // v1.9.1: Telegram identity linking and time-limited join requests.
     // Never stores bot credentials or plaintext one-time linking codes.
     await connection.query(`CREATE TABLE IF NOT EXISTS telegram_links (
