@@ -230,7 +230,16 @@ export function installFootballAutomation(app,{db,authenticate}){
  });
  app.get('/api/admin/football/candidates',authenticate,async(req,res)=>{
   if(!isOwner(req))return res.status(403).json({error:'Solo creador'});
-  try{const [rows]=await db.query('SELECT id,fixture_id,visibility,home_team,away_team,league,kickoff,market,selection,provider_probability,odds,analysis,status,prediction_id,created_at FROM football_candidates ORDER BY id DESC LIMIT 30');res.json({candidates:rows});}
+  try{
+   const [rows]=await db.query('SELECT id,fixture_id,visibility,home_team,away_team,league,kickoff,market,selection,provider_probability,odds,analysis,evidence_json,status,prediction_id,created_at FROM football_candidates ORDER BY id DESC LIMIT 30');
+   const candidates=rows.map(row=>{
+    let evidence={};
+    try{evidence=typeof row.evidence_json==='string'?JSON.parse(row.evidence_json):row.evidence_json||{};}catch{}
+    const {evidence_json,...publicRow}=row;
+    return {...publicRow,goal_projection:evidence.goals||null};
+   });
+   res.json({candidates});
+  }
   catch(e){res.status(500).json({error:'No se pudieron cargar los análisis'});}
  });
  // Read-only live diagnostic: independent of the 3-hour full-scan cooldown.

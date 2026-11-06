@@ -24,7 +24,7 @@ import {installNotificationCenter,enqueueVipActivation,enqueuePredictionEvent} f
 import {installFootballAutomation} from './football-automation.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
-const APP_VERSION = '2.1.3';
+const APP_VERSION = '2.1.4';
 const app = express();
 let telegramVipControl=null;
 let notificationControl=null;

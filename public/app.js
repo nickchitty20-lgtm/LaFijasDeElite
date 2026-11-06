@@ -510,7 +510,25 @@ async function loadFootballEngine(){
    const title=document.createElement('h3');title.textContent=`${c.home_team} vs ${c.away_team}`;
    const info=document.createElement('p');info.className='football-meta';info.textContent=`${c.league} · ${new Date(c.kickoff).toLocaleString('es-PE')} · ${c.visibility.toUpperCase()} · ${c.status}`;
    const pick=document.createElement('p');pick.textContent=`Selección: ${c.selection} · Estimación del proveedor: ${c.provider_probability}% · Cuota: ${c.odds==null?'No disponible':c.odds}`;
-   const detail=document.createElement('details');const heading=document.createElement('summary');heading.textContent='Leer análisis y riesgos';const paragraph=document.createElement('p');paragraph.textContent=c.analysis;paragraph.className='football-analysis';detail.append(heading,paragraph);
+   const goals=c.goal_projection;
+   if(goals){
+    const goalBox=document.createElement('div');goalBox.className='football-goals-preview';
+    const headingGoals=document.createElement('strong');headingGoals.textContent='⚽ Goles y marcador orientativo';goalBox.append(headingGoals);
+    const goalRows=[
+     [goals.home||'Local',goals.home_line?.label],
+     [goals.away||'Visitante',goals.away_line?.label],
+     ['Total',goals.total_line?.label],
+    ];
+    for(const [label,value] of goalRows){if(!value)continue;const line=document.createElement('p');line.textContent=`${label}: ${value}`;goalBox.append(line);}
+    const score=document.createElement('p');score.className='football-score';
+    score.textContent=goals.illustrative_score!=null?
+      `Escenario: ${goals.illustrative_score} · Diferencia: ${goals.illustrative_margin} ${goals.illustrative_margin===1?'gol':'goles'}`:
+      'Marcador exacto: sin estimación por falta de datos suficientes.';
+    goalBox.append(score);
+    const disclaimer=document.createElement('small');disclaimer.textContent='Proyecciones orientativas; no garantizan el resultado. El mercado recomendado sigue siendo 1X2.';goalBox.append(disclaimer);
+    item.append(goalBox);
+   }
+   const detail=document.createElement('details');const heading=document.createElement('summary');heading.textContent='Leer análisis, datos y riesgos';const paragraph=document.createElement('p');paragraph.textContent=c.analysis;paragraph.className='football-analysis';detail.append(heading,paragraph);
    item.append(title,info,pick,detail);
    if(c.status==='draft'){
     const actions=document.createElement('div');actions.className='football-candidate-actions';

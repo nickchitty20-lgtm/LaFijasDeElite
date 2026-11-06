@@ -1,3 +1,21 @@
+# Fijas de Élite v2.1.4 — Proyección de goles y escenarios de marcador ⚽
+
+Esta actualización se aplica sobre v2.1.3. En **Análisis automático**, los candidatos nuevos incluyen un panel de goles por equipo, goles totales y, **solo con tres o más enfrentamientos directos válidos**, un escenario ilustrativo de marcador (p. ej., 2-1) y el margen de victoria. No garantiza que se produzca ese resultado.
+
+La fuente `/predictions` de API-Football entrega límites de tipo *más/menos goles*, no probabilidades calibradas de marcadores exactos; la interfaz no transforma esos límites en una supuesta certeza. En caso de datos ausentes, muestra «sin estimación».
+
+Las proyecciones se incorporan al **texto del análisis almacenado en MySQL** para nuevas propuestas, y por tanto se muestran a clientes con permiso y al canal VIP al publicarse. Las propuestas **ya creadas** permanecen tal como estaban: haz un escaneo nuevo cuando el límite de uso lo permita. No se recomienda introducir datos falsos ni re-publicar las mismas selecciones.
+
+## Instalación
+1. Copia el contenido de este proyecto en GitHub conservando las carpetas `src`, `public`, `sql` y `tests`.
+2. Espera Railway Success y verifica `/health`: `2.1.4`.
+3. En **Análisis automático**, busca partidos cuando el escáner esté disponible. Consulta los nuevos detalles de goles en las propuestas.
+4. Mantén `FOOTBALL_AUTO_PUBLISH=false` hasta comprobar el rendimiento real.
+
+No requiere nuevas variables de Railway ni cambios destructivos en MySQL. **Los escenarios de marcador y los porcentajes del proveedor no equivalen a una tasa de acierto demostrada.**
+
+---
+
 # Fijas de Élite v2.1.3 — Análisis real y propuestas
 
 **Qué cambia frente a v2.1.2**

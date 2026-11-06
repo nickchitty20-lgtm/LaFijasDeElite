@@ -1,11 +1,8 @@
-# Versión 2.1.3
+# Fijas de Élite v2.1.4 — Detalle de goles y marcador orientativo
 
-Análisis manual de partidos sin esperar el cooldown automático. Dos ejecuciones diarias, informe de descartes, hasta cinco partidos revisados y guardado de borradores válidos sin publicar. Validar en Railway con datos reales.
-
-# Fijas de Élite v2.1.3 — Compatible con API-Football Free
-
-- Corrige el error `Free plans do not have access to the Last parameter` en la búsqueda completa: ahora `fixtures/headtohead` se consulta con `h2h` y los 5 encuentros anteriores se eligen en el backend.
-- Los fallos de datos complementarios H2H no bloquean el análisis del partido.
-- Si la consulta de predicciones falla para un partido, se continúa con los siguientes; si fallan todas, el escaneo se marca como fallido y se puede reintentar sin el bloqueo de 3 horas.
-- La web informa partidos examinados, descartados, sin predicción y errores del proveedor.
-- No modifica MySQL, pagos, Telegram ni membresías; publicación automática sigue controlada por `FOOTBALL_AUTO_PUBLISH`.
+- Líneas de goles de API-Football: por equipo y total; se muestran sin convertirlas en un marcador exacto.
+- Cuando hay por lo menos tres enfrentamientos directos completos, se muestra un escenario de marcador y la diferencia de goles basada en un cálculo exploratorio Poisson (no calibrado, no apuesta recomendada).
+- Con antecedentes insuficientes, el sistema lo indica explícitamente y no inventa un resultado.
+- Las notas se guardan junto al análisis en MySQL y aparecen al publicarse en la web y Telegram VIP.
+- El mercado aprobado continúa siendo 1X2. No se generan cuotas falsas ni pronósticos de goleadores sin datos.
+- No altera cookies, membresías, PayPal, Telegram ni la protección móvil.

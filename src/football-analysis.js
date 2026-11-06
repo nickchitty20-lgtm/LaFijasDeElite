@@ -1,3 +1,4 @@
+import {goalProjection,goalAnalysisLines} from './football-goals.js';
 /**
  * Evidence-first football analysis. No LLM-generated facts and no fabricated odds.
  * API-Football: https://www.api-football.com/documentation_v3
@@ -99,6 +100,10 @@ export function createAssessment(fixture,predictionResponse,{h2h=[],injuries=[]}
  if(attackH!==null&&attackA!==null)lines.push(`Comparación de ataque (indicador del proveedor): local ${fmt(attackH)}, visitante ${fmt(attackA)}.`);
  if(defenceH!==null&&defenceA!==null)lines.push(`Comparación defensiva (indicador del proveedor): local ${fmt(defenceH)}, visitante ${fmt(defenceA)}.`);
  if(h2hRows.length>=2)lines.push(`Enfrentamientos previos consultados: ${h2hRows.length} partidos finalizados; estos antecedentes no determinan el resultado futuro.`);
+ // Secondary goal notes are not additional betting picks; the official
+ // market remains 1X2 and the source goal lines are not exact scores.
+ const goals=goalProjection(fixture,predictionResponse,h2hRows);
+ lines.push(...goalAnalysisLines(goals));
  const injuryCount=Array.isArray(injuries)?injuries.length:null;
  if(injuryCount!==null&&injuryCount>0)lines.push(`El proveedor registra ${injuryCount} incidencias de bajas/lesiones asociadas al partido; confirma su vigencia antes de apostar.`);
  else lines.push('Lesiones y alineaciones: no se consideran confirmadas con la información disponible; revisar antes del inicio.');
@@ -109,7 +114,7 @@ export function createAssessment(fixture,predictionResponse,{h2h=[],injuries=[]}
   analysis:lines.join('\n\n').slice(0,7900),odds:null,
   raw_evidence:{percent:pick.percent,margin:pick.margin,home_form:homeForm,away_form:awayForm,
    attack:{home:attackH,away:attackA},defence:{home:defenceH,away:defenceA},h2h_count:h2hRows.length,
-   injuries_reported:injuryCount,source:'API-Football /predictions, /fixtures/headtohead, /injuries'}
+   injuries_reported:injuryCount,goals,source:'API-Football /predictions, /fixtures/headtohead, /injuries'}
  };
 }
 export function kickOffString(date){return date.toISOString().slice(0,19).replace('T',' ');}

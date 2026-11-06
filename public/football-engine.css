@@ -22,3 +22,10 @@
 .football-diagnostic-result strong{color:#e6c77f}.football-diagnostic-result p{font-size:13px;line-height:1.5;margin:8px 0}.football-diagnostic-result b{color:#d4dce6}.football-diagnostic-result .football-diagnostic-note{color:#e8bf75;margin-top:15px}
 
 #footballScanAllowance{color:#b9c6d3;font-size:13px;margin:10px 0 2px}#footballScanReport p{font-size:13px;line-height:1.55;margin:7px 0}#footballScanButton:disabled{opacity:.55;cursor:not-allowed}
+
+/* v2.1.4: estimaciones de goles (solo valores provenientes de API/H2H) */
+.football-goals-preview{margin-top:14px;padding:14px;border:1px solid #66522f;background:#221e18;border-radius:12px;min-width:0;overflow-wrap:anywhere}
+.football-goals-preview>strong{display:block;color:#f3d39a;margin-bottom:9px;font-size:14px}
+.football-goals-preview p{margin:5px 0;color:#d8d3c8;font-size:13px}
+.football-goals-preview .football-score{color:#ebc478;font-weight:700}
+.football-goals-preview small{color:#aaa49b;font-size:11px;line-height:1.5;display:block;margin-top:7px}
