@@ -16,15 +16,18 @@ import {buildMembershipSummary} from './membership-summary.js';
 import {isBlacklisted,roleRank,blockedAccountResponse} from './account-policy.js';
 import {manualVipPeriod} from './manual-vip.js';
 import {evaluateMembershipArchive} from './membership-archive-policy.js';
+import {paypalReadiness,validatePaypalCapture,refundState,usdCents,captureIdFromRefund} from './paypal-rules.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
-const APP_VERSION = '1.8.9';
+const APP_VERSION = '1.9.0';
 const app = express();
 // Railway terminates HTTPS behind one reverse proxy; trust only that hop.
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
 app.use(helmet({contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'"],styleSrc:["'self'"],connectSrc:["'self'"],imgSrc:["'self'","data:"],objectSrc:["'none'"]}}}));
 app.use(cors({origin:process.env.CORS_ORIGIN?.split(',') || false}));
+// Preserve PayPal's exact signed bytes before the JSON parser runs.
+app.use('/api/payments/paypal/webhook',express.raw({type:'application/json',limit:'128kb'}));
 app.use(express.json({limit:'16kb'}));
 
 // Persistent same-site sessions, no JWT exposed to browser JavaScript.
@@ -69,6 +72,7 @@ function sessionStillValid(payload,hash){
 // Accept requests only from this origin; PayPal returns via a top-level GET (SameSite=Lax).
 app.use('/api',(req,res,next)=>{
  res.set('Cache-Control','no-store');
+ if(req.path==='/payments/paypal/webhook' && req.method==='POST')return next(); // Webhook uses PayPal cryptographic signature.
  if(['GET','HEAD','OPTIONS'].includes(req.method))return next();
  const origin=req.get('Origin');
  const requestOrigin=`${req.protocol}://${req.get('host')}`;
@@ -358,6 +362,8 @@ app.get('/api/customers/dashboard',customerAuth,async(req,res)=>{
   if(membership&&daysLeft<=3)notices.push({type:'expiry',message:`Tu membresía vence en ${daysLeft} día(s).`});
   if(!membership)notices.push({type:'vip',message:'Activa una membresía para desbloquear los pronósticos VIP.'});
   if(payments.some(p=>p.status==='pending'))notices.push({type:'payment',message:'Tienes una solicitud de pago pendiente de revisión.'});
+  const [alerts]=await db.execute('SELECT kind,message,created_at FROM customer_notifications WHERE user_id=? ORDER BY id DESC LIMIT 4',[req.customer.id]);
+  for(const alert of alerts)notices.push({type:alert.kind,message:alert.message});
   if(recent.length)notices.push({type:'picks',message:'Hay pronósticos publicados. Consulta las tarjetas disponibles según tu acceso.'});
   res.set('Cache-Control','private, no-store').json({membership,stats:{total:Number(stats.total||0),won:Number(stats.won||0),lost:Number(stats.lost||0),pending:Number(stats.pending||0)},payments,notices});
  }catch(e){console.error('customer dashboard',e.code||e.message);res.status(500).json({error:'No se pudo cargar el panel'});}
@@ -599,30 +605,21 @@ const paypalCreateLimit=apiRateLimit({windowMs:15*60*1000,limit:6,standardHeader
 const paypalConfirmLimit=apiRateLimit({windowMs:15*60*1000,limit:15,standardHeaders:'draft-7',legacyHeaders:false});
 const paypalPlan=z.object({plan_id:z.coerce.number().int().positive()}).strict();
 const paypalOrder=z.object({order_id:z.string().regex(/^[A-Z0-9-]{8,64}$/i)}).strict();
-const paypalMode=()=>process.env.PAYPAL_MODE==='live'?'live':'sandbox';
+const paypalMode=()=>paypalReadiness(process.env).mode;
 const paypalHost=()=>paypalMode()==='live'?'https://api-m.paypal.com':'https://api-m.sandbox.paypal.com';
 const paypalRate=()=>Number(process.env.PAYPAL_PEN_PER_USD);
-// Diagnostic lists only variable NAMES; never include their confidential values.
-const paypalMissing=()=>{
- const missing=[];
- if((process.env.PAYPAL_ENABLE||'').trim().toLowerCase()!=='true')missing.push('PAYPAL_ENABLE (debe ser true)');
- if(!process.env.PAYPAL_CLIENT_ID?.trim())missing.push('PAYPAL_CLIENT_ID');
- if(!process.env.PAYPAL_CLIENT_SECRET?.trim())missing.push('PAYPAL_CLIENT_SECRET');
- if(!Number.isFinite(paypalRate())||paypalRate()<=0)missing.push('PAYPAL_PEN_PER_USD (debe ser mayor que 0)');
- const base=process.env.PUBLIC_BASE_URL?.trim();
- if(!base)missing.push('PUBLIC_BASE_URL');
- else {try{const url=new URL(base);if(url.protocol!=='https:'&&url.hostname!=='localhost')missing.push('PUBLIC_BASE_URL (debe usar https)');}catch{missing.push('PUBLIC_BASE_URL (URL inválida)');}}
- return missing;
-};
+// Live defaults OFF until PayPal's webhook ID and explicit owner release are set.
+const paypalMissing=()=>paypalReadiness(process.env).missing;
 const paypalReady=()=>paypalMissing().length===0;
 const usdFromPen=pen=>(Math.round(Number(pen)/paypalRate()*100)/100).toFixed(2);
-let paypalAccess={token:null,expires:0};
+let paypalAccess={token:null,expires:0,mode:null,key:null};
 async function paypalToken(){
- if(paypalAccess.token&&paypalAccess.expires>Date.now()+30000)return paypalAccess.token;
+ const key=crypto.createHash('sha256').update(paypalMode()+':'+(process.env.PAYPAL_CLIENT_ID||'')+':'+(process.env.PAYPAL_CLIENT_SECRET||'')).digest('hex');
+ if(paypalAccess.token&&paypalAccess.mode===paypalMode()&&paypalAccess.key===key&&paypalAccess.expires>Date.now()+30000)return paypalAccess.token;
  const credentials=Buffer.from(process.env.PAYPAL_CLIENT_ID+':'+process.env.PAYPAL_CLIENT_SECRET).toString('base64');
  const r=await fetch(paypalHost()+'/v1/oauth2/token',{method:'POST',headers:{Authorization:'Basic '+credentials,'Content-Type':'application/x-www-form-urlencoded'},body:'grant_type=client_credentials',signal:AbortSignal.timeout(12000)});
  if(!r.ok)throw new Error('PayPal auth HTTP '+r.status);
- const d=await r.json();paypalAccess={token:d.access_token,expires:Date.now()+Number(d.expires_in||300)*1000};return d.access_token;
+ const d=await r.json();paypalAccess={token:d.access_token,expires:Date.now()+Number(d.expires_in||300)*1000,mode:paypalMode(),key};return d.access_token;
 }
 async function paypalApi(route,opts={}){
  const token=await paypalToken();const r=await fetch(paypalHost()+route,{...opts,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json',...(opts.headers||{})},signal:AbortSignal.timeout(15000)});
@@ -632,7 +629,7 @@ async function paypalApi(route,opts={}){
 app.get('/api/payments/automatic/status',(req,res)=>res.json({enabled:paypalReady(),provider:'paypal',mode:paypalMode(),currency:'USD',pen_per_usd:paypalReady()?paypalRate():null,version:APP_VERSION,reason:paypalReady()?null:'Checkout deshabilitado. El dueño debe revisar la configuración en su panel.'}));
 app.get('/api/admin/paypal/diagnostics',authenticate,(req,res)=>{
  if(req.admin.role!=='owner')return res.status(403).json({error:'Solo el dueño puede ver el diagnóstico'});
- return res.json({version:APP_VERSION,provider:'paypal',mode:paypalMode(),ready:paypalReady(),missing:paypalMissing(),proxy_hops:app.get('trust proxy'),message:paypalReady()?'Configuración completa. Falta validar la conexión con PayPal Sandbox.':'Configura las variables indicadas en Railway y espera el despliegue.'});
+ return res.json({version:APP_VERSION,provider:'paypal',mode:paypalMode(),ready:paypalReady(),missing:paypalMissing(),proxy_hops:app.get('trust proxy'),message:paypalReady()?'Configuración preparada para '+paypalMode()+'. Comprueba la conexión y los webhooks antes de cobrar.':'Configura las variables indicadas en Railway. Live permanece bloqueado hasta la activación explícita.'});
 });
 const paypalConnectivityLimit=apiRateLimit({windowMs:15*60*1000,limit:3,standardHeaders:'draft-7',legacyHeaders:false});
 app.post('/api/admin/paypal/connectivity',paypalConnectivityLimit,authenticate,async(req,res)=>{
@@ -640,7 +637,7 @@ app.post('/api/admin/paypal/connectivity',paypalConnectivityLimit,authenticate,a
  const missing=paypalMissing();
  if(missing.length)return res.status(400).json({connected:false,missing});
  try {await paypalToken();return res.json({connected:true,mode:paypalMode(),message:'Credenciales aceptadas por PayPal. Esto no valida la elegibilidad comercial ni realiza cobros.'});}
- catch(e){console.error('paypal diagnostics connectivity',e.message);return res.status(503).json({connected:false,error:'No se pudo autenticar con PayPal. Verifica el modo Sandbox y las credenciales del mismo entorno. No compartas tus claves.'});}
+ catch(e){console.error('paypal diagnostics connectivity',e.message);return res.status(503).json({connected:false,error:'No se pudo autenticar con PayPal. Verifica el entorno PayPal y las credenciales correspondientes. No compartas tus claves.'});}
 });
 app.post('/api/customers/payments/paypal',paypalCreateLimit,customerAuth,async(req,res)=>{
  if(!paypalReady())return res.status(503).json({error:'PayPal todavía no está disponible'});
@@ -650,56 +647,58 @@ app.post('/api/customers/payments/paypal',paypalCreateLimit,customerAuth,async(r
   if(!plan)return res.status(404).json({error:'Plan no disponible'});
   const usd=usdFromPen(plan.price_pen);if(Number(usd)<0.01)return res.status(400).json({error:'Monto inválido'});
   const conn=await db.getConnection();let paymentId;
-  try{await conn.beginTransaction();const [m]=await conn.execute("INSERT INTO memberships(user_id,plan_id,status) VALUES (?,?,'pending')",[req.customer.id,plan.id]);const [pay]=await conn.execute("INSERT INTO payments(user_id,membership_id,method,amount_pen,status) VALUES (?,?,'card',?,'pending')",[req.customer.id,m.insertId,plan.price_pen]);paymentId=pay.insertId;await conn.commit();}
+  try{await conn.beginTransaction();const [m]=await conn.execute("INSERT INTO memberships(user_id,plan_id,status) VALUES (?,?,'pending')",[req.customer.id,plan.id]);const [pay]=await conn.execute("INSERT INTO payments(user_id,membership_id,method,amount_pen,status,paypal_environment,paypal_amount_usd) VALUES (?,?,'card',?,'pending',?,?)",[req.customer.id,m.insertId,plan.price_pen,paypalMode(),usd]);paymentId=pay.insertId;await conn.commit();}
   catch(e){await conn.rollback();throw e;}finally{conn.release();}
   const base=process.env.PUBLIC_BASE_URL.replace(/\/$/,'');
   const order=await paypalApi('/v2/checkout/orders',{method:'POST',headers:{'PayPal-Request-Id':'fijas-order-'+paymentId},body:JSON.stringify({intent:'CAPTURE',purchase_units:[{reference_id:String(paymentId),custom_id:String(paymentId),description:'Fijas de Élite - '+plan.name,amount:{currency_code:'USD',value:usd}}],application_context:{return_url:base+'/clientes.html?paypal_return=success',cancel_url:base+'/clientes.html?paypal_return=cancel',user_action:'PAY_NOW'}})});
   const approve=order.links?.find(x=>x.rel==='approve'&&x.href?.startsWith('https://'))?.href;
   if(!approve||!order.id)throw new Error('PayPal order incomplete');
   // Store PayPal order id before redirect; use a compare-and-swap to avoid accidental overwrite.
-  await db.execute("UPDATE payments SET external_reference=? WHERE id=? AND status='pending' AND external_reference IS NULL",[order.id,paymentId]);
+  const [saved]=await db.execute("UPDATE payments SET external_reference=? WHERE id=? AND status='pending' AND paypal_environment=? AND external_reference IS NULL",[order.id,paymentId,paypalMode()]);
+  if(saved.affectedRows!==1)throw new Error('Unable to link PayPal order');
   res.json({checkout_url:approve,order_id:order.id,amount_usd:usd,pen_per_usd:paypalRate(),status:'pending'});
  }catch(e){console.error('paypal create',e.message);res.status(503).json({error:'No se pudo preparar PayPal. No se activó VIP.'});}
 });
 async function reconcilePaypalOrder(orderId){
  const order=await paypalApi('/v2/checkout/orders/'+encodeURIComponent(orderId));
- if(order.id!==orderId||order.status!=='COMPLETED')return false;
- const units=order.purchase_units||[];if(units.length!==1)return false;
- const u=units[0];const captures=u.payments?.captures||[];
- if(captures.length!==1||captures[0].status!=='COMPLETED'||captures[0].amount?.currency_code!=='USD')return false;
- const paymentId=u.custom_id;if(!/^\d{1,20}$/.test(String(paymentId)))return false;
+ const customId=order?.purchase_units?.[0]?.custom_id;
+ if(!/^\d{1,20}$/.test(String(customId)))return false;
  const conn=await db.getConnection();
  try{
   await conn.beginTransaction();
-  const [[pay]]=await conn.execute("SELECT id,user_id,membership_id,amount_pen,status,external_reference FROM payments WHERE id=? AND method='card' FOR UPDATE",[paymentId]);
-  if(!pay||pay.external_reference!==orderId){await conn.rollback();return false;}
-  if(pay.status==='verified'){
-   const [[existing]]=await conn.execute("SELECT id FROM memberships WHERE id=? AND user_id=? AND status='active' AND archived_at IS NULL LIMIT 1",[pay.membership_id,pay.user_id]);
-   await conn.rollback();return Boolean(existing);
+  const [[pay]]=await conn.execute(`SELECT id,user_id,membership_id,amount_pen,status,external_reference,
+   paypal_environment,paypal_amount_usd,paypal_capture_id
+   FROM payments WHERE id=? AND method='card' FOR UPDATE`,[customId]);
+  if(!pay||pay.external_reference!==orderId||pay.paypal_environment!==paypalMode()){
+   await conn.rollback();return false;
+  }
+  const capture=validatePaypalCapture(order,orderId,pay.id,pay.paypal_amount_usd);
+  if(!capture){await conn.rollback();return false;}
+  if(pay.paypal_capture_id && pay.paypal_capture_id!==capture.captureId){await conn.rollback();return false;}
+  if(pay.status==='verified'||pay.status==='refunded'){
+   await conn.rollback();return true; // Already reconciled: never grant a second VIP period.
   }
   if(pay.status!=='pending'){await conn.rollback();return false;}
-  // The exact USD amount was fixed at order creation. Compare capture and order amounts.
-  if(u.amount?.currency_code!=='USD'||Number(captures[0].amount.value)!==Number(u.amount.value)){await conn.rollback();return false;}
   const [[member]]=await conn.execute("SELECT m.id,m.user_id,p.duration_days FROM memberships m JOIN plans p ON p.id=m.plan_id WHERE m.id=? AND m.status='pending' AND m.archived_at IS NULL FOR UPDATE",[pay.membership_id]);
-  if(!member||Number(member.user_id)!==Number(pay.user_id)){await conn.rollback();return false;}
-  // Row-lock the customer: distinct PayPal orders cannot extend the same expiry
-  // concurrently from an identical old end date. Confirmation remains idempotent.
+  if(!member||String(member.user_id)!==String(pay.user_id)){await conn.rollback();return false;}
   await conn.execute('SELECT id FROM users WHERE id=? FOR UPDATE',[pay.user_id]);
   const [[current]]=await conn.execute("SELECT MAX(ends_at) AS last_end FROM memberships WHERE user_id=? AND status='active' AND archived_at IS NULL",[pay.user_id]);
   const start=current?.last_end&&new Date(current.last_end)>new Date()?new Date(current.last_end):new Date();
   const end=new Date(start.getTime()+Number(member.duration_days)*86400000);
   await conn.execute("UPDATE memberships SET status='active',starts_at=?,ends_at=? WHERE id=? AND status='pending' AND archived_at IS NULL",[start,end,member.id]);
-  await conn.execute("UPDATE payments SET status='verified',verified_at=UTC_TIMESTAMP() WHERE id=? AND status='pending'",[pay.id]);
-  await conn.execute("INSERT INTO audit_logs(action,entity_type,entity_id,details) VALUES ('paypal_captured','payment',?,JSON_OBJECT('paypal_order_id',?))",[String(pay.id),orderId]);
+  const [updated]=await conn.execute("UPDATE payments SET status='verified',verified_at=UTC_TIMESTAMP(),paypal_capture_id=?,paypal_financial_state='captured' WHERE id=? AND status='pending' AND paypal_environment=?",[capture.captureId,pay.id,paypalMode()]);
+  if(updated.affectedRows!==1)throw new Error('Capture reconciliation conflict');
+  await conn.execute("INSERT INTO customer_notifications(user_id,payment_id,kind,message) VALUES (?,?,'paypal_confirmed',?) ON DUPLICATE KEY UPDATE id=id",[pay.user_id,pay.id,'Pago PayPal confirmado. Tu membresía VIP fue activada o renovada.']);
+  await conn.execute("INSERT INTO audit_logs(action,entity_type,entity_id,details) VALUES ('paypal_captured','payment',?,JSON_OBJECT('paypal_order_id',?,'environment',?,'usd',?))",[String(pay.id),orderId,paypalMode(),capture.amountUsd]);
   await conn.commit();return true;
- }catch(e){await conn.rollback();throw e;}finally{conn.release();}
+ }catch(e){try{await conn.rollback();}catch{}throw e;}finally{conn.release();}
 }
 app.post('/api/customers/payments/paypal/capture',paypalConfirmLimit,customerAuth,async(req,res)=>{
  if(!paypalReady())return res.status(503).json({error:'PayPal no disponible'});
  const parsed=paypalOrder.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Orden inválida'});
  const id=parsed.data.order_id;
  try{
-  const [[pay]]=await db.execute("SELECT id,status FROM payments WHERE user_id=? AND method='card' AND external_reference=? LIMIT 1",[req.customer.id,id]);
+  const [[pay]]=await db.execute("SELECT id,status FROM payments WHERE user_id=? AND method='card' AND paypal_environment=? AND external_reference=? LIMIT 1",[req.customer.id,paypalMode(),id]);
   if(!pay)return res.status(404).json({error:'Orden no encontrada'});
   if(pay.status==='verified')return res.json({status:'verified',message:'Este pago ya estaba confirmado. La renovación debe aparecer en «Mi membresía» y en la fecha total de vencimiento.'});
   const order=await paypalApi('/v2/checkout/orders/'+encodeURIComponent(id));
@@ -713,19 +712,188 @@ app.post('/api/customers/payments/paypal/capture',paypalConfirmLimit,customerAut
 // Manual reconciliation by the authenticated customer (never trust redirect query as proof).
 app.post('/api/customers/payments/paypal/check',paypalConfirmLimit,customerAuth,async(req,res)=>{
  if(!paypalReady())return res.status(503).json({error:'PayPal no disponible'});
- const [[pay]]=await db.execute("SELECT external_reference,status FROM payments WHERE user_id=? AND method='card' AND external_reference IS NOT NULL ORDER BY (status='pending') DESC,id DESC LIMIT 1",[req.customer.id]);
+ const [[pay]]=await db.execute("SELECT external_reference,status FROM payments WHERE user_id=? AND method='card' AND paypal_environment=? AND external_reference IS NOT NULL ORDER BY (status='pending') DESC,id DESC LIMIT 1",[req.customer.id]);
  if(!pay)return res.json({status:'no_pending',message:'No hay órdenes PayPal para verificar.'});
  if(pay.status==='verified')return res.json({status:'verified',message:'Tu último pago PayPal ya estaba confirmado. La fecha de vencimiento actualizada se muestra en «Mi membresía».'});
  try{
   // The order belongs to the authenticated customer. Resume capture if return processing failed.
   const order=await paypalApi('/v2/checkout/orders/'+encodeURIComponent(pay.external_reference));
   if(order.status==='APPROVED'){
-   const [[myPayment]]=await db.execute("SELECT id FROM payments WHERE user_id=? AND method='card' AND external_reference=? AND status='pending' LIMIT 1",[req.customer.id,pay.external_reference]);
+   const [[myPayment]]=await db.execute("SELECT id FROM payments WHERE user_id=? AND method='card' AND paypal_environment=? AND external_reference=? AND status='pending' LIMIT 1",[req.customer.id,paypalMode(),pay.external_reference]);
    if(myPayment)await paypalApi('/v2/checkout/orders/'+encodeURIComponent(pay.external_reference)+'/capture',{method:'POST',headers:{'PayPal-Request-Id':'fijas-capture-'+myPayment.id},body:'{}'});
   }
   const done=await reconcilePaypalOrder(pay.external_reference);
   res.json({status:done?'verified':'pending',message:done?'Pago confirmado. VIP activado.':'Aún no hay un pago capturado confirmado.'});
  }catch(e){console.error('paypal check',e.message);res.status(503).json({error:'No se pudo verificar el estado del pago. No pagues dos veces.'});}
+});
+
+
+// PayPal server-to-server webhooks (signed and deduplicated). Client redirects and
+// client-supplied body fields NEVER grant VIP access.
+const PAYPAL_EVENT_TYPES = new Set([
+ 'CHECKOUT.ORDER.APPROVED','PAYMENT.CAPTURE.COMPLETED','PAYMENT.CAPTURE.DENIED','PAYMENT.CAPTURE.REFUNDED','PAYMENT.CAPTURE.REVERSED',
+ 'CUSTOMER.DISPUTE.CREATED','CUSTOMER.DISPUTE.UPDATED','CUSTOMER.DISPUTE.RESOLVED'
+]);
+async function verifyPaypalWebhook(req,event){
+ if(!process.env.PAYPAL_WEBHOOK_ID?.trim())return false;
+ const names=['paypal-transmission-id','paypal-transmission-time','paypal-transmission-sig','paypal-cert-url','paypal-auth-algo'];
+ if(names.some(n=>!req.get(n)))return false;
+ const verification=await paypalApi('/v1/notifications/verify-webhook-signature',{method:'POST',body:JSON.stringify({
+  transmission_id:req.get('paypal-transmission-id'),transmission_time:req.get('paypal-transmission-time'),
+  transmission_sig:req.get('paypal-transmission-sig'),cert_url:req.get('paypal-cert-url'),
+  auth_algo:req.get('paypal-auth-algo'),webhook_id:process.env.PAYPAL_WEBHOOK_ID,
+  webhook_event:event
+ })});
+ return verification.verification_status==='SUCCESS';
+}
+async function recordPaypalIncident({eventId,captureId,kind,resourceId=null,amountUsd=null,notes=''}){
+ const conn=await db.getConnection();
+ try{
+  await conn.beginTransaction();
+  const [[pay]]=await conn.execute(`SELECT id,user_id,membership_id,status,paypal_environment,
+   paypal_amount_usd,paypal_capture_id,paypal_financial_state
+   FROM payments WHERE paypal_capture_id=? AND method='card' FOR UPDATE`,[captureId]);
+  if(!pay || pay.paypal_environment!==paypalMode()){await conn.rollback();return 'unmatched';}
+  const [[previous]]=await conn.execute(`SELECT id FROM paypal_incidents WHERE event_id=? OR (payment_id=? AND kind='refund' AND resource_id=?) LIMIT 1`,[eventId,pay.id,resourceId]);
+  if(previous){await conn.rollback();return 'processed';}
+  await conn.execute('INSERT INTO paypal_incidents(payment_id,event_id,resource_id,kind,amount_usd,notes) VALUES (?,?,?,?,?,?)',
+   [pay.id,eventId,resourceId,kind,amountUsd,notes.slice(0,250)]);
+  let state='captured',notification='';
+  if(kind==='refund'){
+   const [[sums]]=await conn.execute("SELECT COALESCE(SUM(amount_usd),0) AS refunded_usd FROM paypal_incidents WHERE payment_id=? AND kind='refund'",[pay.id]);
+   state=refundState(String(sums.refunded_usd),pay.paypal_amount_usd);
+   if(state==='review')state='partially_refunded'; // uncertain totals: require manual review, do not revoke.
+   notification=state==='refunded'?'PayPal confirmó un reembolso completo. El acceso VIP asociado se retiró.':'PayPal registró un reembolso parcial. Tu membresía será revisada.';
+  } else if(kind==='reversal'){
+   state='reversed';notification='PayPal notificó la reversión de tu pago. Tu membresía asociada fue cancelada.';
+  } else {
+   state='disputed';notification='PayPal registró una disputa sobre tu pago. El equipo revisará la operación.';
+  }
+  if(pay.status==='refunded' && state==='disputed')state=pay.paypal_financial_state; // Do not erase an already settled full refund.
+  await conn.execute('UPDATE payments SET paypal_financial_state=?,paypal_issue_at=UTC_TIMESTAMP() WHERE id=?',[state,pay.id]);
+  if(state==='refunded'||state==='reversed'){
+   await conn.execute("UPDATE payments SET status='refunded' WHERE id=? AND status='verified'",[pay.id]);
+   await conn.execute("UPDATE memberships SET status='cancelled',revoked_at=UTC_TIMESTAMP(),revoke_reason='PayPal: reembolso o reversión confirmado' WHERE id=? AND status='active' AND archived_at IS NULL",[pay.membership_id]);
+  }
+  await conn.execute('INSERT INTO customer_notifications(user_id,payment_id,kind,message) VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE message=VALUES(message)',
+   [pay.user_id,pay.id,kind==='refund'?('paypal_'+state):('paypal_'+kind),notification]);
+  await conn.execute("INSERT INTO audit_logs(action,entity_type,entity_id,details) VALUES ('paypal_financial_incident','payment',?,JSON_OBJECT('kind',?,'state',?,'environment',?,'event_id',?))",
+   [String(pay.id),kind,state,paypalMode(),eventId]);
+  await conn.commit();return 'processed';
+ }catch(e){try{await conn.rollback();}catch{}throw e;}finally{conn.release();}
+}
+async function processPayPalEvent(event){
+ const type=event.event_type,resource=event.resource||{};
+ if(type==='CHECKOUT.ORDER.APPROVED'){
+  const orderId=resource.id;
+  if(!orderId || !/^[A-Z0-9-]{8,64}$/i.test(orderId))return 'unmatched';
+  const [[pay]]=await db.execute("SELECT id,status,paypal_amount_usd FROM payments WHERE external_reference=? AND paypal_environment=? AND method='card' LIMIT 1",[orderId,paypalMode()]);
+  if(!pay)return 'unmatched';
+  if(pay.status==='verified'||pay.status==='refunded')return 'processed';
+  if(pay.status!=='pending')return 'ignored';
+  const order=await paypalApi('/v2/checkout/orders/'+encodeURIComponent(orderId));
+  if(order.status==='APPROVED'){
+   const unit=order.purchase_units?.[0];
+   if(order.purchase_units?.length!==1||String(unit?.custom_id)!==String(pay.id)||
+      unit?.amount?.currency_code!=='USD'||usdCents(unit.amount.value)!==usdCents(pay.paypal_amount_usd))return 'unmatched';
+   await paypalApi('/v2/checkout/orders/'+encodeURIComponent(orderId)+'/capture',{
+    method:'POST',headers:{'PayPal-Request-Id':'fijas-capture-'+pay.id},body:'{}'});
+  }
+  return await reconcilePaypalOrder(orderId)?'processed':'unmatched';
+ }
+ if(type==='PAYMENT.CAPTURE.DENIED'){
+  const orderId=resource.supplementary_data?.related_ids?.order_id;
+  if(!orderId)return 'unmatched';
+  const conn=await db.getConnection();
+  try{
+   await conn.beginTransaction();
+   const [[pay]]=await conn.execute("SELECT id,user_id,membership_id,status FROM payments WHERE external_reference=? AND paypal_environment=? AND method='card' FOR UPDATE",[orderId,paypalMode()]);
+   if(!pay){await conn.rollback();return 'unmatched';}
+   if(pay.status==='pending'){
+    await conn.execute("UPDATE payments SET status='rejected' WHERE id=?",[pay.id]);
+    await conn.execute("UPDATE memberships SET status='cancelled' WHERE id=? AND status='pending'",[pay.membership_id]);
+    await conn.execute("INSERT INTO customer_notifications(user_id,payment_id,kind,message) VALUES (?,?,'paypal_denied',?) ON DUPLICATE KEY UPDATE id=id",[pay.user_id,pay.id,'PayPal rechazó la captura del pago. No se activó VIP.']);
+   }
+   await conn.commit();return 'processed';
+  }catch(e){try{await conn.rollback();}catch{}throw e;}finally{conn.release();}
+ }
+ if(type==='PAYMENT.CAPTURE.COMPLETED'){
+  const orderId=resource.supplementary_data?.related_ids?.order_id;
+  if(!orderId)return 'unmatched';
+  const [[local]]=await db.execute("SELECT id FROM payments WHERE external_reference=? AND paypal_environment=? AND method='card' LIMIT 1",[orderId,paypalMode()]);
+  if(!local)return 'unmatched';
+  const applied=await reconcilePaypalOrder(orderId);
+  // Failed reconciliation might mean an amount mismatch or archived membership.
+  // Do not acknowledge as a successful VIP activation; flag it for owner review.
+  return applied?'processed':'unmatched';
+ }
+ if(type==='PAYMENT.CAPTURE.REFUNDED'){
+  if(!/^[A-Z0-9-]{5,100}$/i.test(resource.id||''))return 'unmatched';
+  const refund=await paypalApi('/v2/payments/refunds/'+encodeURIComponent(resource.id));
+  if(refund.status!=='COMPLETED')return 'ignored';
+  if(refund.amount?.currency_code!=='USD'||usdCents(refund.amount.value)===null)return 'unmatched';
+  const captureId=captureIdFromRefund(refund)||captureIdFromRefund(resource);
+  if(!captureId)return 'unmatched';
+  return recordPaypalIncident({eventId:event.id,captureId,resourceId:refund.id,kind:'refund',amountUsd:refund.amount.value,
+   notes:'PayPal refund '+resource.id});
+ }
+ if(type==='PAYMENT.CAPTURE.REVERSED'){
+  if(!/^[A-Z0-9-]{5,100}$/i.test(resource.id||''))return 'unmatched';
+  return recordPaypalIncident({eventId:event.id,captureId:resource.id,kind:'reversal',notes:'Captura revertida'});
+ }
+ if(type.startsWith('CUSTOMER.DISPUTE.')){
+  // Disputes do not automatically erase historical entitlements or refund money.
+  const captureId=(resource.disputed_transactions||[]).map(t=>t.seller_transaction_id).find(Boolean);
+  if(!captureId)return 'unmatched';
+  return recordPaypalIncident({eventId:event.id,captureId,kind:'dispute',notes:type});
+ }
+ return 'ignored';
+}
+app.post('/api/payments/paypal/webhook',async(req,res)=>{
+ if(!Buffer.isBuffer(req.body))return res.status(415).json({error:'Content-Type inválido'});
+ if(req.body.length>128*1024)return res.status(413).end();
+ let event;
+ try{event=JSON.parse(req.body.toString('utf8'));}catch{return res.status(400).json({error:'JSON inválido'});}
+ if(!event?.id||typeof event.id!=='string'||event.id.length>100||!event.event_type)return res.status(400).end();
+ try{
+  if(!await verifyPaypalWebhook(req,event))return res.status(401).json({error:'Firma PayPal inválida'});
+  const mode=paypalMode();
+  const [[seen]]=await db.execute('SELECT event_id FROM paypal_webhook_events WHERE environment=? AND event_id=? LIMIT 1',[mode,event.id]);
+  if(seen)return res.status(200).json({ok:true,duplicate:true});
+  const outcome=PAYPAL_EVENT_TYPES.has(event.event_type)?await processPayPalEvent(event):'ignored';
+  await db.execute('INSERT IGNORE INTO paypal_webhook_events(environment,event_id,event_type,outcome) VALUES (?,?,?,?)',
+   [mode,event.id,String(event.event_type).slice(0,100),outcome]);
+  res.json({ok:true});
+ }catch(e){console.error('PayPal webhook handling',e.code||e.message);res.status(503).json({error:'Webhook temporalmente no procesado; PayPal puede reintentarlo'});}
+});
+
+// Financial reporting never mixes Sandbox payments with Live revenue or manually confirmed PEN.
+app.get('/api/admin/finance',authenticate,async(req,res)=>{
+ if(!canManagePayments(req.admin))return res.status(403).json({error:'Sin permisos para ver finanzas'});
+ try{
+  const [[sales]]=await db.query(`SELECT
+   (SELECT COALESCE(SUM(paypal_amount_usd),0) FROM payments WHERE method='card' AND paypal_environment='live' AND status IN('verified','refunded') AND paypal_capture_id IS NOT NULL) AS live_gross_usd,
+   (SELECT COALESCE(SUM(paypal_amount_usd),0) FROM payments WHERE method='card' AND paypal_environment='sandbox' AND status IN('verified','refunded') AND paypal_capture_id IS NOT NULL) AS sandbox_test_gross_usd,
+   (SELECT COALESCE(SUM(amount_pen),0) FROM payments WHERE method<>'card' AND status='verified') AS manual_verified_pen,
+   (SELECT COUNT(*) FROM payments WHERE method='card' AND paypal_environment='legacy') AS historical_unclassified,
+   (SELECT COUNT(*) FROM payments WHERE method='card' AND paypal_environment='live' AND status='pending') AS live_pending,
+   (SELECT COUNT(*) FROM payments WHERE method='card' AND paypal_financial_state='disputed') AS disputed_count`);
+  const [[refunds]]=await db.query(`SELECT COALESCE(SUM(CASE WHEN py.paypal_environment='live' THEN pi.amount_usd ELSE 0 END),0) AS live_refunds_usd,
+   COALESCE(SUM(CASE WHEN py.paypal_environment='sandbox' THEN pi.amount_usd ELSE 0 END),0) AS sandbox_refunds_usd
+   FROM paypal_incidents pi JOIN payments py ON py.id=pi.payment_id WHERE pi.kind='refund'`);
+  const [byPlan]=await db.query(`SELECT p.name AS plan,COUNT(*) AS payments,COALESCE(SUM(py.paypal_amount_usd),0) AS gross_usd
+   FROM payments py JOIN memberships m ON m.id=py.membership_id JOIN plans p ON p.id=m.plan_id
+   WHERE py.method='card' AND py.paypal_environment='live' AND py.status IN('verified','refunded') AND py.paypal_capture_id IS NOT NULL
+   GROUP BY p.id,p.name ORDER BY gross_usd DESC`);
+  const [incidents]=await db.query(`SELECT pi.id,pi.kind,pi.amount_usd,pi.notes,pi.created_at,py.id AS payment_id,
+   py.paypal_environment,py.paypal_financial_state,u.email
+   FROM paypal_incidents pi JOIN payments py ON py.id=pi.payment_id JOIN users u ON u.id=py.user_id
+   ORDER BY pi.id DESC LIMIT 30`);
+  const [unmatched]=await db.query(`SELECT environment,event_type,event_id,received_at
+   FROM paypal_webhook_events WHERE outcome='unmatched' ORDER BY received_at DESC LIMIT 15`);
+  res.json({mode:paypalMode(),stats:{...sales,...refunds},byPlan,incidents,unmatched,
+   note:'Importes brutos antes de comisiones e impuestos. Los reembolsos figuran por separado. No sumar USD y PEN ni tratar Sandbox/legacy como ingresos reales.'});
+ }catch(e){console.error('financial dashboard',e.code||e.message);res.status(500).json({error:'No se pudo cargar el control financiero'});}
 });
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../public');

@@ -27,10 +27,10 @@ async function dashboard(){
  const clients=['owner','general_admin','payments_admin','moderator'].includes(me.role);
  const audit=['owner','general_admin'].includes(me.role);
  for(const id of ['predictionEditor','predictionHistory'])$(id).hidden=!pred;
- for(const id of ['plansPanel','paymentsPanel','vipPanel'])$(id).hidden=!pay;
+ for(const id of ['plansPanel','paymentsPanel','vipPanel','financePanel'])$(id).hidden=!pay;
  $('customersPanel').hidden=!clients;$('auditPanel').hidden=!audit;
  if($('paypalDiagnosticsPanel'))$('paypalDiagnosticsPanel').hidden=me.role!=='owner';if(me.role==='owner'){await loadStaff();await loadPaypalDiagnostics();}if(pred)await loadPredictions();
- if(pay){await loadCommerce();await loadVipPlans();}else if(clients)await loadCustomersOnly();
+ if(pay){await loadCommerce();await loadVipPlans();await loadFinance();}else if(clients)await loadCustomersOnly();
  if(audit)await loadAudit();initAdminNavigation();}catch(err){$('loginMsg').textContent=err.message;show('login');}
 }
 $('logout').addEventListener('click',async()=>{
@@ -265,10 +265,10 @@ function selectAdminSection(section){
  for(const b of buttons){const on=b===selected;b.classList.toggle('active',on);b.setAttribute('aria-current',on?'page':'false');}
  for(const panel of document.querySelectorAll('#dashboard [data-panel]')){
    const accessId=panel.id==='predictionHistory'?'predictionEditor':panel.id;
-  const guarded=['predictionEditor','predictionHistory','plansPanel','paymentsPanel','vipPanel','staffPanel','customersPanel','auditPanel'].includes(panel.id);
+  const guarded=['predictionEditor','predictionHistory','plansPanel','paymentsPanel','vipPanel','staffPanel','customersPanel','auditPanel','financePanel'].includes(panel.id);
   panel.hidden=panel.dataset.panel!==section || (panel.id==='paypalDiagnosticsPanel' && currentAdminRole!=='owner') || (guarded && !isAdminPanelAllowed(accessId));
  }
- document.querySelector('#dashboard .heading h1').textContent=({overview:'Resumen del negocio',predictions:'Gestión de pronósticos',payments:'Solicitudes de pago',vip:'Gestión de membresías VIP',plans:'Planes y precios',customers:'Clientes registrados',staff:'Gestión de personal',audit:'Historial de actividad'})[section]||'Resumen del negocio';
+ document.querySelector('#dashboard .heading h1').textContent=({overview:'Resumen del negocio',predictions:'Gestión de pronósticos',payments:'Solicitudes de pago',finance:'Finanzas y conciliación',vip:'Gestión de membresías VIP',plans:'Planes y precios',customers:'Clientes registrados',staff:'Gestión de personal',audit:'Historial de actividad'})[section]||'Resumen del negocio';
 }
 function isAdminPanelAllowed(id){const button=document.querySelector(`.admin-nav button[data-access="${id}"]`);return button&&!button.hidden;}
 document.querySelectorAll('.admin-nav button[data-section]').forEach(button=>button.addEventListener('click',()=>selectAdminSection(button.dataset.section)));
@@ -288,3 +288,30 @@ $('paypalDiagnosticsTest')?.addEventListener('click',async()=>{
  try{const st=await api('/api/admin/paypal/connectivity',{method:'POST',body:'{}'});el.textContent=st.message;}
  catch(err){el.textContent=err.message;}
 });
+
+// v1.9.0: finance dashboard. All text comes from textContent, never HTML from API.
+async function loadFinance(){
+ const summary=$('financeCards'),plans=$('financePlans'),incidents=$('financeIncidents'),unmatched=$('financeUnmatched'),msg=$('financeMsg');
+ if(!summary)return;
+ try{
+  const r=await api('/api/admin/finance');
+  for(const node of [summary,plans,incidents,unmatched])node.replaceChildren();
+  const metrics=[
+   ['Ventas PayPal Live (bruto)',`US$ ${Number(r.stats.live_gross_usd||0).toFixed(2)}`],
+   ['Reembolsos Live',`US$ ${Number(r.stats.live_refunds_usd||0).toFixed(2)}`],
+   ['Pagos Yape/Plin/banco verificados',`S/ ${Number(r.stats.manual_verified_pen||0).toFixed(2)}`],
+   ['Sandbox · NO son ingresos',`US$ ${Number(r.stats.sandbox_test_gross_usd||0).toFixed(2)}`],
+   ['Órdenes Live pendientes',String(r.stats.live_pending||0)],
+   ['Operaciones anteriores sin entorno',String(r.stats.historical_unclassified||0)]
+  ];
+  for(const [name,value] of metrics){const tile=document.createElement('article');tile.className='finance-tile';const k=document.createElement('small');k.textContent=name;const v=document.createElement('strong');v.textContent=value;tile.append(k,v);summary.append(tile);}
+  if(!r.byPlan.length)plans.textContent='Todavía no hay cobros PayPal Live conciliados.';
+  for(const p of r.byPlan){const item=document.createElement('p');item.className='finance-line';item.textContent=`${p.plan} · ${p.payments} venta(s) · US$ ${Number(p.gross_usd).toFixed(2)} bruto`;plans.append(item);}
+  if(!r.incidents.length)incidents.textContent='No se registraron reembolsos ni disputas.';
+  for(const p of r.incidents){const item=document.createElement('p');item.className='finance-line';item.textContent=`${p.kind.toUpperCase()} · ${p.email} · Pago #${p.payment_id} · ${p.paypal_environment} · ${p.paypal_financial_state}${p.amount_usd!=null?' · US$ '+Number(p.amount_usd).toFixed(2):''}`;incidents.append(item);}
+  if(!r.unmatched.length)unmatched.textContent='Sin eventos pendientes de revisión.';
+  for(const ev of r.unmatched){const item=document.createElement('p');item.className='finance-line';item.textContent=`${ev.environment} · ${ev.event_type} · ${ev.event_id}`;unmatched.append(item);}
+  msg.textContent=`Modo actual: ${r.mode.toUpperCase()}. ${r.note}`;
+ }catch(err){summary.textContent='No se pudieron cargar los datos.';msg.textContent=err.message;}
+}
+$('financeRefresh')?.addEventListener('click',loadFinance);

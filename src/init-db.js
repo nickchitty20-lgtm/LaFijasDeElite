@@ -52,6 +52,22 @@ export async function initializeDatabase() {
       if(!membershipNames.has(column)) await connection.query(`ALTER TABLE memberships ADD COLUMN ${column} ${definition}`);
     }
 
+    // Payment provenance: old Sandbox records stay legacy. NEVER label them Live.
+    const [paymentCols] = await connection.query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='payments'");
+    const paymentNames = new Set(paymentCols.map(c=>c.COLUMN_NAME));
+    const financialColumns = {
+      paypal_environment: "ENUM('legacy','sandbox','live') NOT NULL DEFAULT 'legacy'",
+      paypal_amount_usd: 'DECIMAL(10,2) NULL',
+      paypal_capture_id: 'VARCHAR(100) NULL',
+      paypal_financial_state: "ENUM('none','captured','partially_refunded','refunded','disputed','reversed') NOT NULL DEFAULT 'none'",
+      paypal_issue_at: 'DATETIME NULL'
+    };
+    for (const [column, definition] of Object.entries(financialColumns)) {
+      if (!paymentNames.has(column)) await connection.query(`ALTER TABLE payments ADD COLUMN ${column} ${definition}`);
+    }
+    const [indices] = await connection.query("SHOW INDEX FROM payments WHERE Key_name = 'uq_paypal_capture_id'");
+    if (!indices.length) await connection.query('CREATE UNIQUE INDEX uq_paypal_capture_id ON payments(paypal_capture_id)');
+
     // Planes iniciales: se insertan solo cuando no existe otro con el mismo nombre.
     // Nunca se modifican precios ni duraciones configurados por un administrador.
     const starterPlans = [

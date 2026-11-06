@@ -1,3 +1,113 @@
+# FIJAS DE ÉLITE v1.9.0 — PAYPAL PRODUCCIÓN (DESACTIVADO POR DEFECTO)
+
+Este proyecto completo se basa en v1.8.9. **Se entrega con Live BLOQUEADO por defecto.**
+No se ha validado con la cuenta de Railway ni PayPal del propietario. No publiques un checkout
+Live antes de realizar las comprobaciones y obtener aprobación expresa del proveedor
+para vender pronósticos o asesoramiento relacionado con apuestas.
+
+## Novedades
+
+- **Separación irrevocable de entornos:** cada nueva orden PayPal se guarda como `sandbox` o `live`.
+  Las órdenes de versiones anteriores se migran como `legacy` y **no** figuran en ventas Live.
+  No se borran cuentas, pronósticos, membresías ni pagos anteriores.
+- **Captura comprobada:** la orden, su ID local, el importe exacto en USD y el ID de captura
+  se cotejan contra PayPal en el backend; nunca se confía en un retorno del navegador.
+  Las renovaciones son transaccionales e idempotentes.
+- **Webhook seguro:** `/api/payments/paypal/webhook` valida la firma de cada evento mediante
+  PayPal, guarda su identificador para evitar duplicados y concilia capturas de órdenes aprobadas
+  incluso si el cliente no vuelve a la web.
+- **Reembolsos y disputas:** los reembolsos totales confirmados revocan el período correspondiente
+  y conservan el historial de cobro; los parciales y disputas quedan destacados para revisión
+  humana. **No se inicia ningún reembolso desde nuestra API.**
+- **Notificaciones dentro del portal:** avisos de compra confirmada, reembolso, rechazo de captura
+  y disputa; el panel Admin > Finanzas lista importes Live en USD, Sandbox en USD, solicitudes
+  manuales verificadas en PEN, incidencias y eventos no conciliados. Los totales son **brutos**:
+  no descuentan comisiones, impuestos, tasas bancarias ni disputas sin resolver.
+- Registro de auditoría y protecciones de lista negra, rangos, membresías manuales,
+  paneles oscuros y pronósticos anteriores preservados.
+
+## Despliegue seguro — orden obligatorio
+
+1. **Haz un backup de MySQL.** Sube todos los archivos a GitHub y espera Railway `Success`.
+   Verifica `GET /health` ⇒ `"version":"1.9.0"`.
+2. Conserva `PAYPAL_MODE=sandbox`, configura Client ID y Secret Sandbox en Railway.
+   Usa `PAYPAL_ENABLE=true` únicamente si deseas que funcione Sandbox.
+3. En **PayPal Developer → aplicación Sandbox → Webhooks**, registra:
+   `https://lafijasdeelite-production.up.railway.app/api/payments/paypal/webhook`
+   (ajusta el dominio si cambiaste la web).
+   Elige eventos `CHECKOUT.ORDER.APPROVED`, `PAYMENT.CAPTURE.COMPLETED`,
+   `PAYMENT.CAPTURE.DENIED`, `PAYMENT.CAPTURE.REFUNDED`,
+   `PAYMENT.CAPTURE.REVERSED`, `CUSTOMER.DISPUTE.CREATED`,
+   `CUSTOMER.DISPUTE.UPDATED` y `CUSTOMER.DISPUTE.RESOLVED` (según disponibilidad).
+   Copia el **Webhook ID** de esa app a `PAYPAL_WEBHOOK_ID`. No es el Client ID.
+4. Prueba con dos cuentas ficticias Sandbox distintas (vendedor y comprador):
+   compra, renovación, cerrar navegador antes del retorno, captura duplicada,
+   reembolso total, reembolso parcial y consulta de auditoría. En `Admin → Finanzas`,
+   confirma que todas figuren como **Sandbox**, nunca Live.
+   **Ojo:** el simulador de webhooks puede no superar la verificación remota de firmas;
+   para probar el flujo completo usa eventos de transacciones reales en Sandbox.
+5. Completa la verificación de cuenta empresarial real y comprueba por escrito con PayPal
+   que la actividad de análisis/pronósticos deportivos es admisible.
+   Revisa el reembolso/contracargo y la política comercial; estas operaciones pueden requerir
+   atención del equipo de soporte.
+6. Antes de Live, configura en PayPal Developer **la aplicación Live**, con Client ID, Secret
+   y **Webhook ID Live diferente**. Registra la MISMA URL en la app Live con los eventos indicados.
+   **Nunca mezcles claves de Sandbox y Live.** Configura `PUBLIC_BASE_URL` por HTTPS y una
+   tasa de cambio `PAYPAL_PEN_PER_USD` validada para presentar precios correctos en USD.
+7. **Último paso, solo tras todos los controles anteriores**: establece `PAYPAL_MODE=live`,
+   `PAYPAL_ENABLE=true`, `PAYPAL_WEBHOOK_ID=ID_DE_WEBHOOK_LIVE` y
+   `PAYPAL_LIVE_RELEASE_ACK=true` junto con las credenciales Live en Railway.
+   Esta última variable es una confirmación explícita: de lo contrario, el checkout Live
+   permanecerá deshabilitado incluso si la autenticación funciona.
+8. Haz una compra Live pequeña con una cuenta compradora distinta de la vendedora.
+   Verifica el pago en PayPal Business, el ID de captura en MySQL, la membresía y la
+   sección financiera. **Nunca repitas el cobro si la confirmación se retrasa.**
+
+### Variables en Railway (ejemplo sin secretos)
+
+```env
+NODE_ENV=production
+PUBLIC_BASE_URL=https://lafijasdeelite-production.up.railway.app
+PAYPAL_MODE=sandbox
+PAYPAL_ENABLE=false
+PAYPAL_CLIENT_ID=TU_CLIENT_ID_DEL_ENTORNO
+PAYPAL_CLIENT_SECRET=TU_SECRET_DEL_ENTORNO
+PAYPAL_WEBHOOK_ID=ID_DEL_WEBHOOK_DEL_ENTORNO
+PAYPAL_PEN_PER_USD=3.50
+PAYPAL_LIVE_RELEASE_ACK=false
+```
+
+**Nota:** el valor `3.50` es solo un ejemplo, no una cotización vigente.
+Una tasa mal elegida puede cobrar más o menos de lo anunciado. Las claves de Live,
+JWT_SECRET y MySQL deben permanecer en variables privadas; no se suben a GitHub.
+
+## Limitaciones y seguridad pendiente
+
+- Los reembolsos parciales y las disputas se marcan para revisión; **no** se resuelven ni
+  reembolsan automáticamente, ni representan devolución inmediata de dinero.
+- Un reembolso total o reversión de un pago nuevo elimina el acceso de **ese** período,
+  pero no reestructura automáticamente la duración de otros períodos ya adquiridos.
+- Las membresías VIP de prueba que ya fueron activadas en versiones anteriores pueden
+  continuar activas en Live. Revisa esas cuentas y utiliza «Gestionar VIP» para retirar
+  períodos de prueba si corresponde, **sin borrar su registro de pago**.
+- Los pagos PayPal antiguos quedan como `legacy` (origen no comprobado), no se clasifican
+  retrospectivamente como Live. El administrador debe revisarlos si hubo cobros históricos.
+- Los registros de pagos manuales incluyen solicitudes históricas; no deben asumirse
+  como ingresos reales sin revisar depósitos en Yape/Plin/banco.
+- El **2FA, revisión de seguridad independiente, seguimiento de eventos no conciliados,
+  copias de seguridad, política de reembolsos y conciliación con los extractos oficiales**
+  siguen siendo tareas operativas antes de una apertura pública masiva.
+- Para evitar dobles reembolsos, ejecuta devoluciones desde el sistema oficial PayPal,
+  no desde este backend; sus webhooks actualizarán la contabilidad.
+
+## Pruebas automáticas
+
+`npm test` — pruebas de renovación, permisos, archivado, validación monetaria, separación
+Live/Sandbox y escenarios de captura y reembolso. También ejecutar `node --check src/server.js`.
+**No equivale a una prueba real de PayPal Live ni de Railway/MySQL.**
+
+---
+
 # Fijas de Élite v1.8.9 — Eliminar una membresía individual
 
 Esta versión conserva todo lo incluido hasta la v1.8.8 y agrega la acción **Eliminar esta membresía**, dentro de **Admin → Gestionar VIP → Buscar cliente → Últimas membresías**.

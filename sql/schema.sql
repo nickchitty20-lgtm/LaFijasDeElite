@@ -80,3 +80,37 @@ CREATE TABLE IF NOT EXISTS audit_logs (
  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
  FOREIGN KEY (actor_admin_id) REFERENCES admins(id)
 );
+
+-- v1.9.0: verified PayPal events, incident review and internal client alerts.
+CREATE TABLE IF NOT EXISTS paypal_webhook_events (
+ environment ENUM('sandbox','live') NOT NULL,
+ event_id VARCHAR(100) NOT NULL,
+ event_type VARCHAR(100) NOT NULL,
+ outcome ENUM('processed','unmatched','ignored') NOT NULL DEFAULT 'processed',
+ received_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ PRIMARY KEY (environment,event_id)
+);
+CREATE TABLE IF NOT EXISTS paypal_incidents (
+ id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ payment_id BIGINT UNSIGNED NOT NULL,
+ event_id VARCHAR(100) NOT NULL,
+ resource_id VARCHAR(100) NULL,
+ kind ENUM('refund','dispute','reversal') NOT NULL,
+ amount_usd DECIMAL(10,2) NULL,
+ notes VARCHAR(250) NULL,
+ created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ UNIQUE KEY uq_paypal_incident_event (event_id),
+ UNIQUE KEY uq_paypal_refund_resource (payment_id,kind,resource_id),
+ FOREIGN KEY (payment_id) REFERENCES payments(id)
+);
+CREATE TABLE IF NOT EXISTS customer_notifications (
+ id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ user_id BIGINT UNSIGNED NOT NULL,
+ payment_id BIGINT UNSIGNED NULL,
+ kind VARCHAR(40) NOT NULL,
+ message VARCHAR(300) NOT NULL,
+ created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ UNIQUE KEY uq_client_notification (payment_id,kind),
+ FOREIGN KEY (user_id) REFERENCES users(id),
+ FOREIGN KEY (payment_id) REFERENCES payments(id)
+);
