@@ -1,3 +1,34 @@
+# Fijas de Élite v1.8.9 — Eliminar una membresía individual
+
+Esta versión conserva todo lo incluido hasta la v1.8.8 y agrega la acción **Eliminar esta membresía**, dentro de **Admin → Gestionar VIP → Buscar cliente → Últimas membresías**.
+
+## Funcionalidad
+
+- Solo el **dueño** puede eliminar una membresía individual; analistas, moderadores y admins de pagos no pueden hacerlo.
+- Solicita motivo y una segunda confirmación.
+- Elimina **del panel** la membresía indicada mediante archivado lógico; la fila queda guardada para auditoría.
+- Corta el acceso de ese período (sin borrar otras renovaciones); si existen renovaciones futuras estas conservan sus fechas originales.
+- Si la solicitud Yape/Plin/transferencia aún está pendiente, pasa su pago a `rejected` para impedir una aprobación posterior.
+- Si hay una orden PayPal **pendiente de confirmar**, no deja eliminar hasta resolverla en PayPal.
+- Los pagos ya `verified` permanecen inalterados, y la eliminación **no reembolsa** automáticamente. El historial financiero y los registros de auditoría se mantienen.
+- Los períodos archivados ya no se contabilizan para VIP ni aparecen en la lista de membresías del cliente. El cliente puede seguir viendo su historial de pagos.
+- Agrega a MySQL de modo automático `archived_at`, `archived_by`, `archive_reason`, sin borrar tablas ni datos.
+
+## Instalación
+
+1. Subir todos los archivos del ZIP al repositorio GitHub reemplazando la versión previa.
+2. Railway despliega con las mismas variables y MySQL.
+3. Comprobar `/health` con `version: 1.8.9`.
+4. Entrar como dueño al panel y usar **Gestionar VIP**. Probar primero con una cuenta de prueba.
+
+No cambies PayPal de Sandbox a Live sin verificar requisitos comerciales, conciliación, reembolsos y manejo de disputas.
+
+## Alcance de las pruebas
+
+Se ejecutaron pruebas de helpers y sintaxis JavaScript. No se dispone de tu MySQL ni de tu Railway para probar la migración en producción. Se recomienda respaldo previo de MySQL.
+
+---
+
 # Fijas de Élite v1.8.8 — Gestión VIP manual
 
 **Nueva versión:** desde Administración → **Gestionar VIP**, los cargos **Dueño**, **Admin general** y **Admin de pagos** pueden buscar a un cliente registrado por nombre, correo o ID y seleccionar:

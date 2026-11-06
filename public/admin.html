@@ -21,7 +21,7 @@
    <form id="vipGrantForm" class="vip-action vip-grant"><div class="vip-action-head"><span>✦</span><h3>Agregar o renovar VIP</h3></div><p>Si tiene VIP vigente, los días del nuevo plan se sumarán al vencimiento final.</p><label for="vipPlanSelect">Plan VIP</label><select id="vipPlanSelect" required></select><label for="vipGrantReason">Motivo administrativo</label><input id="vipGrantReason" minlength="4" maxlength="350" required placeholder="Ej.: beneficio autorizado por el dueño"><button id="vipGrantButton" type="submit">✦ Asignar VIP</button></form>
    <form id="vipRevokeForm" class="vip-action vip-revoke"><div class="vip-action-head"><span>⊘</span><h3>Retirar acceso VIP</h3></div><p>Retira el VIP actual y las renovaciones confirmadas. <strong>No elimina pagos ni genera reembolsos.</strong></p><label for="vipRevokeReason">Motivo del retiro</label><input id="vipRevokeReason" minlength="4" maxlength="350" required placeholder="Ej.: acceso revocado por el dueño"><button id="vipRevokeButton" class="vip-danger" type="submit">Retirar VIP</button></form>
   </div>
-  <h3 class="vip-history-title">Últimas membresías</h3><div id="vipMembershipHistory" class="vip-history"></div>
+  <h3 class="vip-history-title">Últimas membresías</h3><p class="vip-history-help">El dueño puede eliminar un período específico (confirmado o pendiente). El acceso se revoca para ese período, pero el registro financiero y la auditoría se conservan. Órdenes PayPal en proceso no pueden eliminarse.</p><div id="vipMembershipHistory" class="vip-history"></div>
  </div>
  <p id="vipManageMsg" class="vip-feedback" role="status" aria-live="polite"></p>
 </div>

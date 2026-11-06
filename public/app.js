@@ -125,6 +125,25 @@ async function loadVipCustomer(id){
    const info=document.createElement('span');info.textContent=`${m.status==='active'?'Confirmada':m.status==='pending'?'Pendiente':m.status==='cancelled'?'Cancelada':m.status} · ${vipDate(m.starts_at)} — ${vipDate(m.ends_at)}${m.paid?' · Pago verificado':''}`;
    row.append(title,info);
    if(m.status==='cancelled'&&m.revoke_reason){const why=document.createElement('small');why.textContent='Retirada: '+m.revoke_reason;row.append(why);}
+   if(currentAdminRole==='owner'){
+    const erase=document.createElement('button');erase.type='button';erase.className='vip-archive-button';
+    erase.textContent='Eliminar esta membresía';
+    erase.setAttribute('aria-label',`Eliminar membresía #${m.id} del cliente ${data.user.display_name||data.user.id}`);
+    erase.addEventListener('click',async()=>{
+     if(!vipSelectedId)return;
+     const reason=prompt(`¿Por qué deseas eliminar la membresía #${m.id} (${m.plan})?\nEl acceso de este período se retirará. Los pagos existentes NO se borrarán ni reembolsarán.\n\nEscribe un motivo (mínimo 4 caracteres):`);
+     if(reason===null)return;
+     if(reason.trim().length<4||reason.trim().length>350)return vipMessage('El motivo debe tener entre 4 y 350 caracteres.');
+     if(!confirm(`¿CONFIRMAS eliminar SOLO la membresía #${m.id}?\n${m.paid?'Tiene un pago verificado que se conservará.':''}\nLa operación quedará registrada en Actividad.`))return;
+     erase.disabled=true;vipMessage('Eliminando membresía seleccionada…');
+     const selected=vipSelectedId;
+     try{
+      const out=await api(`/api/admin/vip/customers/${selected}/memberships/${m.id}/archive`,{method:'POST',body:JSON.stringify({reason:reason.trim()})});
+      await loadVipCustomer(selected);vipMessage('✅ '+out.message);await refreshAdminStats();
+     }catch(err){vipMessage('No se pudo eliminar: '+err.message);erase.disabled=false;}
+    });
+    row.append(erase);
+   }
    history.append(row);
   }
   $('vipCustomerDetails').hidden=false;

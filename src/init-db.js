@@ -43,7 +43,10 @@ export async function initializeDatabase() {
       grant_reason: 'VARCHAR(350) NULL',
       revoked_at: 'DATETIME NULL',
       revoked_by: 'BIGINT UNSIGNED NULL',
-      revoke_reason: 'VARCHAR(350) NULL'
+      revoke_reason: 'VARCHAR(350) NULL',
+      archived_at: 'DATETIME NULL',
+      archived_by: 'BIGINT UNSIGNED NULL',
+      archive_reason: 'VARCHAR(350) NULL'
     };
     for (const [column,definition] of Object.entries(vipColumns)) {
       if(!membershipNames.has(column)) await connection.query(`ALTER TABLE memberships ADD COLUMN ${column} ${definition}`);
