@@ -1,3 +1,32 @@
+# Fijas de Élite v2.0.3 — Corrección móvil
+
+- Se elimina el desbordamiento horizontal del documento en todas las páginas (`/`, `/clientes.html`, `/admin.html`).
+- Tarjetas, formularios y grids se adaptan a móviles estrechos; los menús conservan scroll horizontal interno.
+- Todos los módulos y la desvinculación de Telegram de v2.0.2 se conservan.
+- Verificar `/health` → `2.0.3`.
+
+---
+
+# Fijas de Élite v2.0.2 — Dashboard restaurado
+
+Restauración de secciones en los paneles del dueño, personal y clientes. No cambia pagos, rangos, Telegram ni datos existentes.
+
+- El menú administrativo se calcula desde los permisos del cargo, nunca desde qué panel está oculto por una pestaña.
+- Resumen, pronósticos, pagos, finanzas, VIP, planes, clientes, personal, actividad y Telegram siguen accesibles según el cargo.
+- Carga de información secundaria tolerante a errores: no desaparece el dashboard si un módulo responde mal.
+- Cliente: se muestra el menú inmediatamente después de verificar su cuenta; las consultas de notificaciones/Telegram no bloquean su panel.
+- Recursos HTML, CSS y JavaScript evitan mezclar versiones por caché.
+- Mantiene «Desvincular Telegram sin expulsar» de v2.0.1.
+
+## Instalación
+
+1. Respaldar MySQL.
+2. Reemplazar todos los archivos del repositorio GitHub con los del ZIP, no solo server.js.
+3. Comprobar que Railway muestra **Success** y `/health` versión `2.0.2`.
+4. Cerrar y volver a abrir `/admin.html` o `/clientes.html`; en caso necesario `Ctrl+F5`.
+5. Probar todos los módulos del menú de dueño y cliente. Los demás cargos seguirán viendo solamente módulos autorizados.
+
+**No borrar la base MySQL ni las variables de Railway.** La corrección es del frontend y carga de datos; los pagos siguen con la configuración existente.
 # v2.0.1 — Centro de notificaciones
 
 Base: Fijas de Élite v1.9.5. Esta versión NO cambia las credenciales PayPal, sus reglas de pago, los rangos ni las invitaciones privadas del bot.

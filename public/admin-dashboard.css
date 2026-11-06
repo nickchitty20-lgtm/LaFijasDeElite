@@ -108,3 +108,6 @@
 
 #dashboard form[hidden]{display:none!important}
 #dashboard .admin-nav{min-height:0;overflow-y:auto;align-content:start}
+
+/* v2.0.2 — hidden must win over navigation/layout display rules */
+#dashboard [hidden]{display:none!important}

@@ -20,18 +20,41 @@ $('loginForm').addEventListener('submit',async e=>{
  e.preventDefault();const form=e.currentTarget;$('loginMsg').textContent='Comprobando acceso...';
  try{const body=Object.fromEntries(new FormData(form));const r=await api('/api/auth/login',{method:'POST',body:JSON.stringify(body)});form.reset();$('loginMsg').textContent='';await dashboard();}catch(err){$('loginMsg').textContent=err.message;}
 });
+// La navegación depende del cargo, NUNCA de si una tarjeta estaba oculta por otra pestaña.
 async function dashboard(){
- try{const [me,overview]=await Promise.all([api('/api/admin/me'),api('/api/admin/overview')]);currentAdminRole=me.role;$('identity').textContent=`${me.email} · ${me.role}`;for(const key of ['users','active_memberships','pending_payments','predictions'])$(key).textContent=Number(overview.stats[key]||0).toLocaleString('es-PE');show('dashboard');$('staffPanel').hidden=me.role!=='owner';
+ let me;
+ try{
+  me=await api('/api/admin/me');
+ }catch(err){$('loginMsg').textContent=err.message;show('login');return;}
+ currentAdminRole=me.role;
+ $('identity').textContent=`${me.email} · ${me.role}`;
+ show('dashboard');
+ // Restaurar el menú de inmediato, aun si alguna consulta secundaria falla.
+ initAdminNavigation();
  const pred=['owner','general_admin','analyst'].includes(me.role);
  const pay=['owner','general_admin','payments_admin'].includes(me.role);
  const clients=['owner','general_admin','payments_admin','moderator'].includes(me.role);
  const audit=['owner','general_admin'].includes(me.role);
- for(const id of ['predictionEditor','predictionHistory'])$(id).hidden=!pred;
- for(const id of ['plansPanel','paymentsPanel','vipPanel','financePanel'])$(id).hidden=!pay;
- $('customersPanel').hidden=!clients;$('auditPanel').hidden=!audit;
- if($('paypalDiagnosticsPanel'))$('paypalDiagnosticsPanel').hidden=me.role!=='owner';if($('telegramPanel'))$('telegramPanel').hidden=me.role!=='owner';if(me.role==='owner'){await loadStaff();await loadPaypalDiagnostics();await loadTelegramAdmin();}if(pred)await loadPredictions();
- if(pay){await loadCommerce();await loadVipPlans();await loadFinance();}else if(clients)await loadCustomersOnly();
- if(audit)await loadAudit();initAdminNavigation();await loadMyTelegram();}catch(err){$('loginMsg').textContent=err.message;show('login');}
+ const jobs=[
+  api('/api/admin/overview').then(overview=>{
+   for(const key of ['users','active_memberships','pending_payments','predictions']){
+    $(key).textContent=Number(overview.stats?.[key]||0).toLocaleString('es-PE');
+   }
+  }),
+  loadMyTelegram()
+ ];
+ if(me.role==='owner')jobs.push(loadStaff(),loadPaypalDiagnostics(),loadTelegramAdmin());
+ if(pred)jobs.push(loadPredictions());
+ if(pay)jobs.push(loadCommerce(),loadVipPlans(),loadFinance());
+ else if(clients)jobs.push(loadCustomersOnly());
+ if(audit)jobs.push(loadAudit());
+ const results=await Promise.allSettled(jobs);
+ const failed=results.filter(x=>x.status==='rejected');
+ if(failed.length){
+  console.warn('Algunas secciones no pudieron cargar:',failed.map(x=>x.reason?.message||'error'));
+  $('dashMsg').textContent='Algunos datos no pudieron actualizarse. Puedes seguir navegando por las secciones y volver a intentarlo.';
+ }else{$('dashMsg').textContent='';}
+ // No ocultar el dashboard completo por errores de una sección.
 }
 $('logout').addEventListener('click',async()=>{
  try{await api('/api/logout',{method:'POST',body:'{}'});currentAdminRole='';show('login');}
@@ -255,33 +278,46 @@ async function loadAudit(){
  catch(e){area.textContent=e.message;}
 }
 
-// Navegación de una sola sección a la vez, respetando permisos del servidor.
+// Cada cargo ve solamente sus módulos autorizados; la navegación no depende
+// de la propiedad hidden del panel (que cambia cada vez que elegimos una pestaña).
+const ADMIN_SECTIONS_BY_ROLE={
+ owner:['overview','predictions','payments','finance','vip','plans','customers','staff','audit','telegram','mytelegram'],
+ general_admin:['overview','predictions','payments','finance','vip','plans','customers','audit','mytelegram'],
+ payments_admin:['overview','payments','finance','vip','plans','customers','mytelegram'],
+ analyst:['overview','predictions','mytelegram'],
+ moderator:['overview','customers','mytelegram']
+};
 let activeAdminSection='overview';
+function adminAllowedSections(){return new Set(ADMIN_SECTIONS_BY_ROLE[currentAdminRole]||['overview']);}
 function initAdminNavigation(){
- const buttons=[...document.querySelectorAll('.admin-nav button[data-section]')];
- for(const button of buttons){
-  const access=button.dataset.access;
-  button.hidden=Boolean(access && $(access).hidden);
+ const allowed=adminAllowedSections();
+ for(const button of document.querySelectorAll('.admin-nav button[data-section]')){
+  button.hidden=!allowed.has(button.dataset.section);
  }
- if(!buttons.some(b=>b.dataset.section===activeAdminSection&&!b.hidden))activeAdminSection='overview';
+ if(!allowed.has(activeAdminSection))activeAdminSection='overview';
  selectAdminSection(activeAdminSection);
 }
 function selectAdminSection(section){
- const buttons=[...document.querySelectorAll('.admin-nav button[data-section]')];
- const selected=buttons.find(b=>b.dataset.section===section&&!b.hidden);
+ const allowed=adminAllowedSections();
+ if(!allowed.has(section))return;
+ const selected=document.querySelector(`.admin-nav button[data-section="${section}"]`);
  if(!selected)return;
  activeAdminSection=section;
- for(const b of buttons){const on=b===selected;b.classList.toggle('active',on);b.setAttribute('aria-current',on?'page':'false');}
- for(const panel of document.querySelectorAll('#dashboard [data-panel]')){
-   const accessId=panel.id==='predictionHistory'?'predictionEditor':panel.id;
-  const guarded=['predictionEditor','predictionHistory','plansPanel','paymentsPanel','vipPanel','staffPanel','customersPanel','auditPanel','financePanel','telegramPanel'].includes(panel.id);
-  panel.hidden=panel.dataset.panel!==section || (panel.id==='paypalDiagnosticsPanel' && currentAdminRole!=='owner') || (guarded && !isAdminPanelAllowed(accessId));
+ for(const button of document.querySelectorAll('.admin-nav button[data-section]')){
+  const visible=allowed.has(button.dataset.section);
+  button.hidden=!visible;
+  const active=visible&&button===selected;
+  button.classList.toggle('active',active);
+  if(active)button.setAttribute('aria-current','page');
+  else button.removeAttribute('aria-current');
  }
- document.querySelector('#dashboard .heading h1').textContent=({overview:'Resumen del negocio',predictions:'Gestión de pronósticos',payments:'Solicitudes de pago',finance:'Finanzas y conciliación',vip:'Gestión de membresías VIP',plans:'Planes y precios',customers:'Clientes registrados',staff:'Gestión de personal',audit:'Historial de actividad',telegram:'Telegram y suscriptores VIP',mytelegram:'Mi Telegram VIP' })[section]||'Resumen del negocio';
+ for(const panel of document.querySelectorAll('#dashboard [data-panel]')){
+  const ownOnly=panel.id==='paypalDiagnosticsPanel';
+  panel.hidden=panel.dataset.panel!==section||!allowed.has(panel.dataset.panel)||(ownOnly&&currentAdminRole!=='owner');
+ }
+ document.querySelector('#dashboard .heading h1').textContent=({overview:'Resumen del negocio',predictions:'Gestión de pronósticos',payments:'Solicitudes de pago',finance:'Finanzas y conciliación',vip:'Gestión de membresías VIP',plans:'Planes y precios',customers:'Clientes registrados',staff:'Gestión de personal',audit:'Historial de actividad',telegram:'Telegram y suscriptores VIP',mytelegram:'Mi Telegram VIP'})[section]||'Resumen del negocio';
 }
-function isAdminPanelAllowed(id){const button=document.querySelector(`.admin-nav button[data-access="${id}"]`);return button&&!button.hidden;}
 document.querySelectorAll('.admin-nav button[data-section]').forEach(button=>button.addEventListener('click',()=>selectAdminSection(button.dataset.section)));
-
 
 // Secure operational diagnostics: only available when server verifies owner JWT.
 async function loadPaypalDiagnostics(){
@@ -335,7 +371,7 @@ async function loadTelegramAdmin(){
   $('telegramCoverage').textContent=`Telegram informa ${s.telegram_member_count??'—'} miembros; IDs de miembros conocidos: ${s.tracked_members}. Desvinculados pendientes de salida: ${s.detached_pending}. El bot no puede descargar la lista total: revisa manualmente usuarios antiguos no registrados.`;
  }catch(error){$('telegramAdminResult').textContent=error.message;}
 }
-$('telegramOwnerUnlinkForm').addEventListener('submit',async event=>{
+$('telegramOwnerUnlinkForm')?.addEventListener('submit',async event=>{
  event.preventDefault();if(currentAdminRole!=='owner')return;
  const form=event.currentTarget,msg=$('telegramOwnerUnlinkResult');
  if(!confirm('¿Desvincular sin expulsar del canal? El Telegram anterior SEGUIRÁ dentro. Se bloqueará una segunda vinculación mientras la plaza esté ocupada.'))return;

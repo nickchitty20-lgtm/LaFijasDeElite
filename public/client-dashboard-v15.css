@@ -76,3 +76,6 @@ body.client-logged-in>header{display:none}body.client-logged-in .auth-layout{max
 .notice-preferences-card input[type="checkbox"]{width:18px;height:18px;accent-color:#d6b36e;flex-shrink:0}
 .notice-preferences-card button{max-width:270px}
 .notice-preferences-card p[role="status"]{color:#d7c6a8;min-height:1.5em}
+
+/* v2.0.2 — hidden must win over navigation/layout display rules */
+#customer-area [hidden]{display:none!important}

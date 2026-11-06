@@ -23,7 +23,7 @@ import {installTelegramRoutes} from './telegram-routes.js';
 import {installNotificationCenter,enqueueVipActivation,enqueuePredictionEvent} from './notification-center.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
-const APP_VERSION = '2.0.1';
+const APP_VERSION = '2.0.3';
 const app = express();
 let telegramVipControl=null;
 let notificationControl=null;
@@ -937,7 +937,9 @@ app.get('/api/admin/finance',authenticate,async(req,res)=>{
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../public');
 telegramVipControl=installTelegramRoutes(app,{db,customerAuth,authenticate,limit:apiRateLimit({windowMs:15*60*1000,limit:10,standardHeaders:'draft-7',legacyHeaders:false})});
 notificationControl=installNotificationCenter(app,{db,customerAuth,limit:apiRateLimit({windowMs:15*60*1000,limit:15,standardHeaders:'draft-7',legacyHeaders:false})});
-app.use(express.static(root,{index:'index.html',dotfiles:'ignore'}));
+app.use(express.static(root,{index:'index.html',dotfiles:'ignore',setHeaders(res,servedPath){
+ if(/\.(?:html|js|css)$/i.test(servedPath))res.setHeader('Cache-Control','no-store');
+}}));
 app.use('/api',(req,res)=>res.status(404).json({error:'Ruta no encontrada'}));
 app.use((req,res)=>res.status(404).send('Not Found'));
 const port=Number(process.env.PORT||3000);

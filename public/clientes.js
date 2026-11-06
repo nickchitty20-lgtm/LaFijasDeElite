@@ -86,12 +86,15 @@ async function me(){
 
 $('register').addEventListener('submit',async e=>{e.preventDefault();try{await call('/api/customers/register',form('register'));$('regMsg').textContent='Cuenta creada. Ahora inicia sesión.';view('login');$('loginMsg').textContent='Cuenta creada. Inicia sesión.';}catch(err){$('regMsg').textContent=err.message;}});
 async function enterCustomerPanel(){
- await me();await loadCustomerPicks();await loadDashboard();await refreshTelegramStatus();await loadNoticePreferences();
+ // La identidad debe validarse, pero otras consultas no deben ocultar el menú completo.
+ await me();
  signedIn=true;
  document.querySelector('.auth-card').hidden=true;$('customer-area').hidden=false;
  document.body.classList.add('client-logged-in');
- if(pendingPayPalReturn){$('payment-method').value='paypal';updatePaymentMethod();clientTab('payments');await completePayPalReturn();}
+ if(pendingPayPalReturn){$('payment-method').value='paypal';updatePaymentMethod();clientTab('payments');}
  else clientTab('overview');
+ await Promise.allSettled([loadCustomerPicks(),loadDashboard(),refreshTelegramStatus(),loadNoticePreferences()]);
+ if(pendingPayPalReturn)await completePayPalReturn();
 }
 $('signin').addEventListener('submit',async e=>{
  e.preventDefault();$('loginMsg').textContent='Comprobando acceso…';
@@ -284,9 +287,9 @@ $('telegramChangeForm').addEventListener('submit',async(event)=>{
  }catch(error){$('telegramClientResult').textContent=error.message;}
  finally{button.disabled=false;}
 });
-$('telegramUnlinkButton').addEventListener('click',()=>{$('telegramUnlinkForm').hidden=!$('telegramUnlinkForm').hidden;});
-$('telegramUnlinkCancel').addEventListener('click',()=>{$('telegramUnlinkForm').reset();$('telegramUnlinkForm').hidden=true;});
-$('telegramUnlinkForm').addEventListener('submit',async event=>{
+$('telegramUnlinkButton')?.addEventListener('click',()=>{$('telegramUnlinkForm').hidden=!$('telegramUnlinkForm').hidden;});
+$('telegramUnlinkCancel')?.addEventListener('click',()=>{$('telegramUnlinkForm').reset();$('telegramUnlinkForm').hidden=true;});
+$('telegramUnlinkForm')?.addEventListener('submit',async event=>{
  event.preventDefault();const form=event.currentTarget;
  if(!form.elements.namedItem('confirm').checked)return;
  if(!confirm('¿Desvincular SIN expulsar del canal? No podrás enlazar otro Telegram hasta que el antiguo salga y termine el plazo de seguridad.'))return;
@@ -298,7 +301,7 @@ $('telegramUnlinkForm').addEventListener('submit',async event=>{
   await refreshTelegramStatus();await loadNoticePreferences();
  }catch(error){$('telegramClientResult').textContent=error.message;}finally{button.disabled=false;}
 });
-$('telegramCheckDeparture').addEventListener('click',async()=>{
+$('telegramCheckDeparture')?.addEventListener('click',async()=>{
  const button=$('telegramCheckDeparture');button.disabled=true;$('telegramClientResult').textContent='Consultando el estado del canal…';
  try{const r=await call('/api/customers/telegram/check-departure',{},true);$('telegramClientResult').textContent=r.message;await refreshTelegramStatus();}
  catch(error){$('telegramClientResult').textContent=error.message;}finally{button.disabled=false;}

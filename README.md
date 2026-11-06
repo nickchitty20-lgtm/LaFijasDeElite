@@ -1,3 +1,27 @@
+# Fijas de Élite v2.0.3 — Corrección del desplazamiento horizontal móvil
+
+## Cambios
+- Corrige el desplazamiento del documento hacia la derecha en teléfonos y tablets.
+- Controla el ancho máximo de los paneles, formularios, listas VIP, Finanzas y Telegram.
+- Permite que los menús de navegación sigan desplazándose lateralmente dentro de su propia barra, sin desplazar la página completa.
+- Los códigos, enlaces y mensajes de error largos se ajustan al ancho disponible.
+- Se fuerza la actualización de los estilos con la versión `2.0.3` para evitar caché antiguo.
+- Conserva todos los módulos del dashboard de la v2.0.2, sesiones, pagos, rangos, Telegram y MySQL.
+
+## Despliegue
+1. Respaldar el proyecto y subir **todos** los archivos del ZIP al repositorio que usa Railway.
+2. Confirmar que Railway desplegó el commit nuevo y consultar `/health`: debe indicar `2.0.3`.
+3. En móvil, probar la landing, el login, los paneles del dueño, cliente y VIP. El documento no debe moverse horizontalmente; los menús sí se pueden deslizar dentro de su barra.
+4. Actualizar con recarga completa o borrar la caché de la web si se siguen viendo archivos antiguos.
+
+No modifica la base de datos ni variables de Railway. Las pruebas automáticas locales y la prueba de navegador móvil no sustituyen la verificación con datos reales en Railway.
+
+---
+
+# Fijas de Élite v2.0.2 — Dashboard restaurado
+
+Consultar `VERSION.md` para instalar y comprobar la corrección.
+
 # Fijas de Élite v2.0.1 — Centro de notificaciones por Telegram
 
 **Sobre v1.9.5:** nueva sección de preferencias en el dashboard, mensajes privados optativos sobre activación/renovación VIP, vencimiento y nuevos pronósticos, con cola persistente y controles de acceso. Configuración e instalación detalladas en [VERSION.md](VERSION.md).
