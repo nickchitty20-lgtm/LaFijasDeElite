@@ -17,9 +17,11 @@ import {isBlacklisted,roleRank,blockedAccountResponse} from './account-policy.js
 import {manualVipPeriod} from './manual-vip.js';
 import {evaluateMembershipArchive} from './membership-archive-policy.js';
 import {paypalReadiness,validatePaypalCapture,refundState,usdCents,captureIdFromRefund} from './paypal-rules.js';
+import {sendPredictionToTelegram} from './telegram-bridge.js';
+import {installTelegramRoutes} from './telegram-routes.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
-const APP_VERSION = '1.9.0';
+const APP_VERSION = '1.9.1';
 const app = express();
 // Railway terminates HTTPS behind one reverse proxy; trust only that hop.
 app.set('trust proxy', 1);
@@ -72,7 +74,7 @@ function sessionStillValid(payload,hash){
 // Accept requests only from this origin; PayPal returns via a top-level GET (SameSite=Lax).
 app.use('/api',(req,res,next)=>{
  res.set('Cache-Control','no-store');
- if(req.path==='/payments/paypal/webhook' && req.method==='POST')return next(); // Webhook uses PayPal cryptographic signature.
+ if(['/payments/paypal/webhook','/telegram/webhook'].includes(req.path) && req.method==='POST')return next(); // Webhook uses PayPal cryptographic signature.
  if(['GET','HEAD','OPTIONS'].includes(req.method))return next();
  const origin=req.get('Origin');
  const requestOrigin=`${req.protocol}://${req.get('host')}`;
@@ -227,17 +229,8 @@ const canViewCustomers=(a)=>['owner','general_admin','payments_admin','moderator
 const canViewAudit=(a)=>['owner','general_admin'].includes(a.role);
 const rolePermissions={owner:['predictions:read','predictions:write','payments:read','payments:write','memberships:write','plans:write','customers:read','staff:write','audit:read'],general_admin:['predictions:read','predictions:write','payments:read','payments:write','memberships:write','plans:write','customers:read','audit:read'],payments_admin:['payments:read','payments:write','memberships:write','plans:write','customers:read'],analyst:['predictions:read','predictions:write'],moderator:['customers:read']};
 app.get('/api/admin/permissions',authenticate,(req,res)=>res.json({role:req.admin.role,permissions:rolePermissions[req.admin.role]||[]}));
-function escapeHtml(t){return String(t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-async function sendTelegram(row){
- const bot=process.env.TELEGRAM_BOT_TOKEN;
- const channel=row.visibility==='vip'?process.env.TELEGRAM_VIP_CHAT_ID:process.env.TELEGRAM_FREE_CHAT_ID;
- if(!bot||!channel)return {state:'not_configured'};
- const label=row.visibility==='vip'?'🔒 VIP':'⚽ GRATIS';
- const message=`${label} | <b>${escapeHtml(row.title)}</b>\n🏆 ${escapeHtml(row.league)}\n📅 ${escapeHtml(row.match_date)} (UTC)\n🎯 ${escapeHtml(row.market)}: ${escapeHtml(row.selection)}\n📊 Cuota: ${Number(row.odds).toFixed(2)}\n\n${escapeHtml(row.analysis)}\n\nPronóstico, no garantía de resultado.`;
- const response=await fetch(`https://api.telegram.org/bot${bot}/sendMessage`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:channel,text:message,parse_mode:'HTML',disable_web_page_preview:true}),signal:AbortSignal.timeout(12000)});
- const result=await response.json();if(!response.ok||!result.ok)throw new Error('Telegram rejected message');
- return {state:'sent'};
-}
+// The public community gets teasers only; full VIP selections go exclusively to the private channel.
+const sendTelegram=sendPredictionToTelegram;
 app.get('/api/admin/predictions',authenticate,async(req,res)=>{
  if(!allowedToPublish(req.admin))return res.status(403).json({error:'Sin permisos'});
  try{const [rows]=await db.query('SELECT id,title,analysis,visibility,outcome,published_at,league,match_date,market,selection,odds,telegram_status FROM predictions ORDER BY id DESC LIMIT 100');res.json({predictions:rows});}
@@ -897,6 +890,7 @@ app.get('/api/admin/finance',authenticate,async(req,res)=>{
 });
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../public');
+installTelegramRoutes(app,{db,customerAuth,authenticate,limit:apiRateLimit({windowMs:15*60*1000,limit:10,standardHeaders:'draft-7',legacyHeaders:false})});
 app.use(express.static(root,{index:'index.html',dotfiles:'ignore'}));
 app.use('/api',(req,res)=>res.status(404).json({error:'Ruta no encontrada'}));
 app.use((req,res)=>res.status(404).send('Not Found'));

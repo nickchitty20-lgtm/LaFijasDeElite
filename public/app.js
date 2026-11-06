@@ -29,7 +29,7 @@ async function dashboard(){
  for(const id of ['predictionEditor','predictionHistory'])$(id).hidden=!pred;
  for(const id of ['plansPanel','paymentsPanel','vipPanel','financePanel'])$(id).hidden=!pay;
  $('customersPanel').hidden=!clients;$('auditPanel').hidden=!audit;
- if($('paypalDiagnosticsPanel'))$('paypalDiagnosticsPanel').hidden=me.role!=='owner';if(me.role==='owner'){await loadStaff();await loadPaypalDiagnostics();}if(pred)await loadPredictions();
+ if($('paypalDiagnosticsPanel'))$('paypalDiagnosticsPanel').hidden=me.role!=='owner';if($('telegramPanel'))$('telegramPanel').hidden=me.role!=='owner';if(me.role==='owner'){await loadStaff();await loadPaypalDiagnostics();await loadTelegramAdmin();}if(pred)await loadPredictions();
  if(pay){await loadCommerce();await loadVipPlans();await loadFinance();}else if(clients)await loadCustomersOnly();
  if(audit)await loadAudit();initAdminNavigation();}catch(err){$('loginMsg').textContent=err.message;show('login');}
 }
@@ -265,10 +265,10 @@ function selectAdminSection(section){
  for(const b of buttons){const on=b===selected;b.classList.toggle('active',on);b.setAttribute('aria-current',on?'page':'false');}
  for(const panel of document.querySelectorAll('#dashboard [data-panel]')){
    const accessId=panel.id==='predictionHistory'?'predictionEditor':panel.id;
-  const guarded=['predictionEditor','predictionHistory','plansPanel','paymentsPanel','vipPanel','staffPanel','customersPanel','auditPanel','financePanel'].includes(panel.id);
+  const guarded=['predictionEditor','predictionHistory','plansPanel','paymentsPanel','vipPanel','staffPanel','customersPanel','auditPanel','financePanel','telegramPanel'].includes(panel.id);
   panel.hidden=panel.dataset.panel!==section || (panel.id==='paypalDiagnosticsPanel' && currentAdminRole!=='owner') || (guarded && !isAdminPanelAllowed(accessId));
  }
- document.querySelector('#dashboard .heading h1').textContent=({overview:'Resumen del negocio',predictions:'Gestión de pronósticos',payments:'Solicitudes de pago',finance:'Finanzas y conciliación',vip:'Gestión de membresías VIP',plans:'Planes y precios',customers:'Clientes registrados',staff:'Gestión de personal',audit:'Historial de actividad'})[section]||'Resumen del negocio';
+ document.querySelector('#dashboard .heading h1').textContent=({overview:'Resumen del negocio',predictions:'Gestión de pronósticos',payments:'Solicitudes de pago',finance:'Finanzas y conciliación',vip:'Gestión de membresías VIP',plans:'Planes y precios',customers:'Clientes registrados',staff:'Gestión de personal',audit:'Historial de actividad',telegram:'Telegram y suscriptores VIP'})[section]||'Resumen del negocio';
 }
 function isAdminPanelAllowed(id){const button=document.querySelector(`.admin-nav button[data-access="${id}"]`);return button&&!button.hidden;}
 document.querySelectorAll('.admin-nav button[data-section]').forEach(button=>button.addEventListener('click',()=>selectAdminSection(button.dataset.section)));
@@ -315,3 +315,24 @@ async function loadFinance(){
  }catch(err){summary.textContent='No se pudieron cargar los datos.';msg.textContent=err.message;}
 }
 $('financeRefresh')?.addEventListener('click',loadFinance);
+
+// v1.9.1 Telegram owner controls. No token or webhook secret reaches the browser.
+async function loadTelegramAdmin(){
+ try{
+  const s=await api('/api/admin/telegram');
+  $('telegramAdminSetup').textContent=[s.bot_configured?'Bot ✓':'Falta bot',s.vip_channel_configured?'VIP ✓':'Falta canal',s.free_group_configured?'Grupo ✓':'Falta grupo',s.webhook_secret_configured?'Secreto ✓':'Falta secreto'].join(' · ');
+  $('telegramAdminLinked').textContent=String(s.linked);
+  $('telegramAdminMembers').textContent=String(s.vip_members);
+ }catch(error){$('telegramAdminResult').textContent=error.message;}
+}
+$('telegramWebhookConfigure').addEventListener('click',async()=>{
+ if(!confirm('¿Configurar el webhook HTTPS del bot con las variables de Railway?'))return;
+ const msg=$('telegramAdminResult');msg.textContent='Configurando webhook…';
+ try{const r=await api('/api/admin/telegram/configure',{method:'POST',body:'{}'});msg.textContent=`Webhook activo para @${r.bot_username}.`;await loadTelegramAdmin();}
+ catch(error){msg.textContent=error.message;}
+});
+$('telegramSync').addEventListener('click',async()=>{
+ const msg=$('telegramAdminResult');msg.textContent='Sincronizando canal VIP…';
+ try{const r=await api('/api/admin/telegram/sync',{method:'POST',body:'{}'});msg.textContent=`Miembros retirados: ${r.removed}. Errores: ${r.failed}.`;await loadTelegramAdmin();}
+ catch(error){msg.textContent=error.message;}
+});

@@ -77,3 +77,9 @@
 .finance-line{margin:9px 0;padding:10px;border-bottom:1px solid #333b46;color:#d4d8df;overflow-wrap:anywhere}
 #financePanel details{padding:14px;background:#171d25;border-radius:12px}
 #financePanel summary{cursor:pointer;color:#dec28c;font-weight:700}
+
+/* Telegram owner admin */
+.telegram-admin-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px;margin:18px 0}
+.telegram-admin-cards>div{border-radius:12px;padding:17px;background:#1b232e;border:1px solid #37404d;display:grid;gap:9px}
+.telegram-admin-cards small{color:#aeb7c5}.telegram-admin-cards strong{color:#e8c77e;overflow-wrap:anywhere}
+@media(max-width:800px){.telegram-admin-cards{grid-template-columns:1fr}}

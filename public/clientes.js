@@ -85,7 +85,7 @@ async function me(){
 
 $('register').addEventListener('submit',async e=>{e.preventDefault();try{await call('/api/customers/register',form('register'));$('regMsg').textContent='Cuenta creada. Ahora inicia sesión.';view('login');$('loginMsg').textContent='Cuenta creada. Inicia sesión.';}catch(err){$('regMsg').textContent=err.message;}});
 async function enterCustomerPanel(){
- await me();await loadCustomerPicks();await loadDashboard();
+ await me();await loadCustomerPicks();await loadDashboard();await refreshTelegramStatus();
  signedIn=true;
  document.querySelector('.auth-card').hidden=true;$('customer-area').hidden=false;
  document.body.classList.add('client-logged-in');
@@ -130,7 +130,7 @@ $('logout').addEventListener('click',async()=>{try{await call('/api/logout',{});
 if(new URLSearchParams(location.search).has('reset_token'))view('reset');load();
 // Navegación de cliente: una sección visible a la vez, sin alterar los permisos del servidor.
 function clientTab(name){
- const names=['overview','predictions','membership','payments','notices'];
+ const names=['overview','predictions','membership','payments','telegram','notices'];
  if(!names.includes(name))return;
  document.querySelectorAll('[data-client-panel]').forEach(el=>{el.hidden=el.dataset.clientPanel!==name;});
  document.querySelectorAll('[data-client-tab]').forEach(btn=>{const active=btn.dataset.clientTab===name;btn.classList.toggle('active',active);if(active)btn.setAttribute('aria-current','page');else btn.removeAttribute('aria-current');});
@@ -218,3 +218,44 @@ async function resumeCustomerSession(){
  }catch(err){$('loginMsg').textContent='Tu sesión no pudo restaurarse. Inicia sesión para continuar.';}
 }
 resumeCustomerSession();
+
+// v1.9.1 · Verified Telegram linking and VIP join-request workflow.
+async function refreshTelegramStatus(){
+ const status=$('telegramAccountStatus');
+ if(!status)return;
+ try{
+  const r=await call('/api/customers/telegram');
+  $('telegramLinkButton').hidden=!r.configured||r.linked;
+  $('telegramInviteButton').hidden=!r.configured||!r.linked||!r.has_vip;
+  $('telegramInviteButton').disabled=Boolean(r.is_member);
+  $('telegramInviteButton').textContent=r.is_member?'✓ Ya perteneces al canal VIP':'Solicitar acceso al canal VIP';
+  status.textContent=!r.configured?'El dueño todavía no configuró el bot y el canal VIP.':
+   !r.linked?'Primero vincula tu Telegram para verificar tu identidad.':
+   `${r.telegram_username?'@'+r.telegram_username:'Cuenta Telegram vinculada'} · ${r.is_member?'Ya perteneces al canal VIP':r.has_vip?'VIP activo: puedes solicitar acceso':'VIP no activo: renueva tu membresía para ingresar'}`;
+  const group=$('telegramPublicLink');group.replaceChildren();
+  if(r.public_group_url && /^https:\/\/t\.me\//i.test(r.public_group_url)){
+   const a=document.createElement('a');a.href=r.public_group_url;a.target='_blank';a.rel='noopener noreferrer';a.className='telegram-action';a.textContent='Abrir comunidad pública ↗';group.append(a);
+  }else group.textContent='El dueño compartirá el enlace del grupo público.';
+ }catch(error){status.textContent=error.message;}
+}
+$('telegramLinkButton').addEventListener('click',async()=>{
+ const button=$('telegramLinkButton');button.disabled=true;$('telegramClientResult').textContent='Preparando enlace de vinculación…';
+ try{
+  const r=await call('/api/customers/telegram/link',{},true);
+  const out=$('telegramClientResult');out.replaceChildren();
+  const link=document.createElement('a');link.href=r.url;link.target='_blank';link.rel='noopener noreferrer';link.className='telegram-action';link.textContent='Abrir el bot y pulsar Iniciar ↗';
+  out.append(link,document.createTextNode(' · El enlace vence en 10 minutos. Después pulsa «Actualizar estado».'));
+ }catch(error){$('telegramClientResult').textContent=error.message;}
+ finally{button.disabled=false;}
+});
+$('telegramInviteButton').addEventListener('click',async()=>{
+ const button=$('telegramInviteButton');button.disabled=true;$('telegramClientResult').textContent='Generando solicitud VIP…';
+ try{
+  const r=await call('/api/customers/telegram/invite',{},true);
+  const out=$('telegramClientResult');out.replaceChildren();
+  const link=document.createElement('a');link.href=r.url;link.target='_blank';link.rel='noopener noreferrer';link.className='telegram-action';link.textContent='Abrir invitación al canal VIP ↗';
+  out.append(link,document.createTextNode(' · El bot aprobará tu solicitud si la haces desde tu cuenta vinculada.'));
+ }catch(error){$('telegramClientResult').textContent=error.message;}
+ finally{button.disabled=false;}
+});
+$('telegramRefreshButton').addEventListener('click',refreshTelegramStatus);

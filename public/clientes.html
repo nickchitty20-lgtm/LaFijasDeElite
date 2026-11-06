@@ -7,7 +7,7 @@
    <button type="button" data-client-tab="predictions">⚽ Pronósticos</button>
    <button type="button" data-client-tab="membership">♛ Mi membresía</button>
    <button type="button" data-client-tab="payments">▣ Comprar VIP</button>
-   <button type="button" data-client-tab="notices">♧ Notificaciones</button>
+   <button type="button" data-client-tab="telegram">✈ Telegram VIP</button><button type="button" data-client-tab="notices">♧ Notificaciones</button>
   </nav><div class="client-side-footer">ACCESO SEGURO · FIJAS DE ÉLITE</div>
  </aside>
  <div class="client-content">
@@ -50,6 +50,13 @@
      </div>
     </div>
     <div class="client-payment-info"><span>✦</span><h4>Tu acceso Élite</h4><p><b>Yape, Plin y transferencias:</b> se revisan manualmente, sin activar el VIP por una simple referencia.</p><p><b>PayPal:</b> checkout externo. Solo se concede acceso después de la confirmación comprobada por el servidor.</p><p class="checkout-helper">PayPal puede estar desactivado mientras el dueño termina de configurar las credenciales Sandbox.</p></div>
+   </div>
+  </section>
+  <section class="client-panel" data-client-panel="telegram" hidden>
+   <div class="client-section-heading"><h3>Telegram · Comunidad y canal VIP</h3><p>La comunidad pública comparte avisos. Los pronósticos VIP completos se publican solo en el canal privado.</p></div>
+   <div class="telegram-client-grid">
+    <article class="telegram-client-card"><span class="eyebrow">COMUNIDAD PÚBLICA</span><h4>⚽ Fijas de Élite | Comunidad</h4><p>Conversación y avisos de nuevos pronósticos. Para consultar los gratuitos completos, inicia sesión en la web.</p><div id="telegramPublicLink"></div></article>
+    <article class="telegram-client-card telegram-client-vip"><span class="eyebrow">♛ CANAL PRIVADO</span><h4>Fijas de Élite | VIP</h4><p>Solo clientes con membresía activa y una cuenta Telegram vinculada.</p><p id="telegramAccountStatus" role="status">Comprobando estado…</p><button id="telegramLinkButton" type="button">Vincular mi Telegram</button><button id="telegramInviteButton" type="button" hidden>Solicitar acceso al canal VIP</button><p id="telegramClientResult" role="status"></p><button id="telegramRefreshButton" type="button" class="secondary">Actualizar estado</button></article>
    </div>
   </section>
   <section class="client-panel" data-client-panel="notices" hidden><div class="client-section-heading"><h3>Centro de notificaciones</h3><p>Información importante sobre tu cuenta y tus pronósticos.</p></div><div id="vip-notices" class="vip-notices" aria-live="polite"></div></section>

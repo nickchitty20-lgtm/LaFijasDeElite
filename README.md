@@ -1,3 +1,63 @@
+# Fijas de Élite v1.9.1 — Telegram Comunidad + Canal VIP
+
+Actualización sobre la v1.9.0. Mantiene MySQL, las sesiones con cookies, Rank 0, pagos, PayPal, administración de VIP y el diseño oscuro y dorado. **No elimina los datos existentes.**
+
+## Lo nuevo
+
+- **Grupo público («Fijas de Élite | Comunidad»):** al publicar un pronóstico, el bot envía únicamente un AVISO con la liga y un enlace para iniciar sesión en la web. **No publica la selección, la cuota, el mercado ni el análisis**, ni siquiera de los pronósticos gratuitos. De este modo, los pronósticos gratuitos completos siguen disponibles solo para cuentas registradas.
+- **Canal privado («Fijas de Élite | VIP»):** recibe los pronósticos VIP completos. Se requiere membresía VIP activa y cuenta Telegram vinculada. Los mensajes se publican con protección de contenido contra reenvío, sin garantía de impedir capturas de pantalla.
+- **Panel de clientes > Telegram VIP:** vinculación desde un enlace temporal al bot y solicitud de acceso al canal. El cliente envía `/start <código>` por chat privado para demostrar qué cuenta de Telegram controla.
+- **Acceso seguro:** invitación temporal de 15 minutos con solicitud de aprobación (`creates_join_request=true`). El webhook confirma identidad Telegram, cuenta web no bloqueada y membresía activa. **Compartir la invitación con otra persona no le concede entrada automáticamente.**
+- **Vencimientos:** sincronización cada 3 minutos para retirar a miembros registrados cuyo VIP expiró, fue retirado o cuya cuenta fue puesta en Rank 0. El dueño también dispone de botón de sincronización manual en el panel Telegram. Al renovar, el cliente puede solicitar un nuevo acceso.
+- **Panel admin > Telegram:** comprobar configuración sin mostrar secretos, activar webhook y sincronizar expulsiones.
+- **Migración automática:** se crean `telegram_links`, `telegram_link_tokens` y `telegram_vip_invites`. Nunca se guardan los códigos de vinculación en texto plano.
+
+## 1. Crear los chats y asignar permisos
+
+1. Conserva tu grupo público **Fijas de Élite | Comunidad**. No necesitas otro canal gratuito. Agrega el bot como administrador con permiso para publicar mensajes.
+2. Crea **Fijas de Élite | VIP** como **canal privado** (no público). Añade el bot como administrador con los permisos **publicar mensajes, invitar usuarios y bloquear/retirar miembros**. Necesita acceso a los eventos de solicitudes de unión y cambios de miembros.
+3. Consigue el **ID numérico del canal privado** (generalmente empieza con `-100`). El `TELEGRAM_FREE_CHAT_ID` existente sigue identificando el grupo público. Utiliza canales/chats tuyos, no IDs inventados.
+4. Desactiva o revoca enlaces de invitación generales permanentes al canal VIP que se hayan compartido anteriormente. Para que la moderación automática sea efectiva, no deben circular enlaces públicos de acceso sin verificación.
+5. **Seguridad:** si compartiste anteriormente el token del bot, revócalo con BotFather y usa el token nuevo en Railway. No envíes el token, claves privadas ni secretos a nadie.
+
+## 2. Variables nuevas en Railway
+
+```env
+TELEGRAM_BOT_TOKEN=TOKEN_NUEVO_Y_PRIVADO
+TELEGRAM_FREE_CHAT_ID=-100ID_DEL_GRUPO_PUBLICO
+TELEGRAM_FREE_GROUP_URL=https://t.me/ENLACE_PUBLICO_DE_TU_GRUPO
+TELEGRAM_VIP_CHAT_ID=-100ID_DEL_CANAL_PRIVADO
+TELEGRAM_WEBHOOK_SECRET=CADENA_ALEATORIA_DE_32_O_MAS_CARACTERES
+PUBLIC_BASE_URL=https://lafijasdeelite-production.up.railway.app
+```
+
+Para generar un secreto aleatorio válido de ejemplo: `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"`. Establécelo **solo en Railway**, no en GitHub. No modifiques `JWT_SECRET` y conserva las variables de PayPal existentes. `TELEGRAM_FREE_GROUP_URL` es opcional; sin él el panel no muestra enlace del grupo.
+
+## 3. Activar y comprobar
+
+1. Respaldar MySQL y desplegar el ZIP en GitHub / Railway, comprobando `GET /health` → `version: 1.9.1`.
+2. Entrar como **dueño → Telegram → Activar webhook Telegram**. Esto registra en el Bot API la URL HTTPS `https://lafijasdeelite-production.up.railway.app/api/telegram/webhook` con secreto de verificación y eventos `message`, `chat_join_request`, `chat_member`.
+3. Entrar como cliente VIP → **Telegram VIP → Vincular mi Telegram**. Abrir el bot con el enlace proporcionado, pulsar **Iniciar** y volver a pulsar **Actualizar estado** en la web.
+4. Elegir **Solicitar acceso al canal VIP**. Abrir el enlace y enviar la solicitud desde **la misma cuenta de Telegram vinculada**. El bot aprobará la solicitud solo si el VIP está vigente.
+5. Publicar un pronóstico gratis y otro VIP. Comprobar que el grupo público ve **avisos sin selección, cuota, mercado ni análisis** y que el canal VIP sí recibe el pronóstico completo.
+6. Desde **Gestionar VIP**, revocar una membresía de prueba y pulsar **Telegram → Sincronizar**, o esperar hasta 3 minutos. Confirmar que el cliente deja de pertenecer al canal. No pruebes con un cliente real pagador sin su consentimiento.
+
+## Limitaciones y seguridad
+
+- **El sistema no puede revocar capturas, copias anteriores o mensajes vistos antes de la expulsión**. La opción Telegram `protect_content` limita reenvíos pero no ofrece protección perfecta.
+- La expulsión automática es por sondeo cada 3 minutos y depende de que Railway mantenga el servicio activo, el bot sea administrador y Telegram esté accesible. No es en tiempo real ni garantiza un SLA preciso.
+- Si alguien ya entró al canal con un enlace de invitación externo antiguo, conviene auditar los suscriptores manualmente. El control automático identifica sobre todo a las cuentas vinculadas y los nuevos ingresos que el bot observa mediante el webhook.
+- No se cobra dentro de Telegram. El acceso y los permisos financieros se verifican en el backend web; PayPal y otros medios de pago no cambian en esta actualización.
+- Las invitaciones temporales requieren aprobación del bot; no dan acceso por poseer el enlace.
+- Las actualizaciones desconocidas del webhook y los mensajes de otros chats se ignoran. Se verifica `X-Telegram-Bot-Api-Secret-Token`.
+- Si una cuenta ya está vinculada a un Telegram incorrecto, en esta versión debe solicitar desvinculación a soporte; **no se permite reemplazar el Telegram desde un enlace sin revisión** para evitar el robo de accesos.
+
+## Pruebas disponibles
+
+`npm test` ejecuta 30 pruebas locales, incluidas nueve relacionadas con Telegram. `node --check` verifica sintaxis. Son pruebas unitarias y simulaciones de Bot API, **no pruebas reales con Telegram, MySQL ni Railway**. Antes de abrir el canal VIP a clientes, prueba los permisos y la expulsión con una cuenta de prueba.
+
+---
+
 # FIJAS DE ÉLITE v1.9.0 — PAYPAL PRODUCCIÓN (DESACTIVADO POR DEFECTO)
 
 Este proyecto completo se basa en v1.8.9. **Se entrega con Live BLOQUEADO por defecto.**

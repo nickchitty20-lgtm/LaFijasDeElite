@@ -68,6 +68,30 @@ export async function initializeDatabase() {
     const [indices] = await connection.query("SHOW INDEX FROM payments WHERE Key_name = 'uq_paypal_capture_id'");
     if (!indices.length) await connection.query('CREATE UNIQUE INDEX uq_paypal_capture_id ON payments(paypal_capture_id)');
 
+    // v1.9.1: Telegram identity linking and time-limited join requests.
+    // Never stores bot credentials or plaintext one-time linking codes.
+    await connection.query(`CREATE TABLE IF NOT EXISTS telegram_links (
+      user_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+      telegram_user_id BIGINT NOT NULL UNIQUE,
+      telegram_username VARCHAR(100) NULL,
+      is_member BOOLEAN NOT NULL DEFAULT FALSE,
+      linked_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      last_verified_at DATETIME NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB`);
+    await connection.query(`CREATE TABLE IF NOT EXISTS telegram_link_tokens (
+      user_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+      token_hash CHAR(64) NOT NULL UNIQUE,
+      expires_at DATETIME NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB`);
+    await connection.query(`CREATE TABLE IF NOT EXISTS telegram_vip_invites (
+      user_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+      invite_hash CHAR(64) NOT NULL,
+      expires_at DATETIME NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB`);
+
     // Planes iniciales: se insertan solo cuando no existe otro con el mismo nombre.
     // Nunca se modifican precios ni duraciones configurados por un administrador.
     const starterPlans = [
