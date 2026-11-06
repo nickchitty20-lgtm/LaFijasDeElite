@@ -93,7 +93,19 @@ async function loadPredictions(){
    if(showArchivedPredictions){const archived=document.createElement('p');archived.textContent=`Retirado: ${p.archived_at||'—'} · Motivo: ${p.archive_reason||'—'}`;item.append(archived);}
    else {
     const select=document.createElement('select');for(const v of ['pending','won','lost','void']){const o=document.createElement('option');o.value=v;o.textContent=({pending:'Pendiente',won:'Acertado',lost:'Fallado',void:'Anulado'})[v];select.append(o);}select.value=p.outcome;
-    const button=document.createElement('button');button.className='secondary';button.textContent='Guardar resultado';button.addEventListener('click',async()=>{try{await api(`/api/admin/predictions/${p.id}/outcome`,{method:'PATCH',body:JSON.stringify({outcome:select.value})});button.textContent='Guardado';}catch(err){alert(err.message);}});
+    const button=document.createElement('button');button.className='secondary';button.textContent='Guardar resultado';button.addEventListener('click',async()=>{
+     const next=select.value;
+     const payload={outcome:next};
+     if(next!==p.outcome && p.outcome!=='pending'){
+      if(currentAdminRole!=='owner'){alert('Solo el dueño puede corregir un resultado ya cerrado.');return;}
+      const reason=prompt(`Estás corrigiendo el resultado del pronóstico #${p.id}.\nIndica el motivo de la corrección (mínimo 8 caracteres):`);
+      if(reason===null)return;
+      if(reason.trim().length<8||reason.trim().length>350){alert('El motivo debe tener entre 8 y 350 caracteres.');return;}
+      payload.reason=reason.trim();
+     }
+     try{await api(`/api/admin/predictions/${p.id}/outcome`,{method:'PATCH',body:JSON.stringify(payload)});p.outcome=next;button.textContent='Guardado';}
+     catch(err){alert(err.message);}
+    });
     item.append(select,button);
     if(currentAdminRole==='owner'){
      const del=document.createElement('button');del.type='button';del.className='secondary';del.textContent='Eliminar pronóstico';del.style.color='#ffa8a8';

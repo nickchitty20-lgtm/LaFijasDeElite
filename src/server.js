@@ -25,9 +25,10 @@ import {installNotificationCenter,enqueueVipActivation,enqueuePredictionEvent} f
 import {installFootballAutomation} from './football-automation.js';
 import {installNforceEngine} from './nforce-engine.js';
 import {publishedFootballDetails} from './football-report.js';
+import {publicPerformanceFilters,performanceWhere,summaryFromGroups,publicRecentResults} from './performance-stats.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
-const APP_VERSION = '3.1.0';
+const APP_VERSION = '3.2.0';
 const app = express();
 let telegramVipControl=null;
 let notificationControl=null;
@@ -232,7 +233,7 @@ app.get('/api/admin/overview',authenticate,async(req,res)=>{
 });
 // Pronósticos: la publicación web se guarda primero; Telegram se intenta después.
 const predictionSchema=z.object({title:z.string().trim().min(5).max(200),analysis:z.string().trim().min(10).max(8000),visibility:z.enum(['free','vip']),match_date:z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/),league:z.string().trim().min(2).max(120),market:z.string().trim().min(2).max(120),selection:z.string().trim().min(1).max(160),odds:z.coerce.number().min(1.01).max(1000)}).strict();
-const outcomeSchema=z.object({outcome:z.enum(['pending','won','lost','void'])}).strict();
+const outcomeSchema=z.object({outcome:z.enum(['pending','won','lost','void']),reason:z.string().trim().min(8).max(350).optional()}).strict();
 const archivePredictionSchema=z.object({reason:z.string().trim().min(8).max(350)}).strict();
 const allowedToPublish=(a)=>['owner','general_admin','analyst'].includes(a.role);
 const canViewCustomers=(a)=>['owner','general_admin','payments_admin','moderator'].includes(a.role);
@@ -266,10 +267,29 @@ app.post('/api/admin/predictions',authenticate,async(req,res)=>{
 app.patch('/api/admin/predictions/:id/outcome',authenticate,async(req,res)=>{
  if(!allowedToPublish(req.admin))return res.status(403).json({error:'Sin permisos'});
  if(!/^\d{1,18}$/.test(req.params.id))return res.status(400).json({error:'ID inválido'});
- const p=outcomeSchema.safeParse(req.body);if(!p.success)return res.status(400).json({error:'Resultado inválido'});
- try{const [r]=await db.execute('UPDATE predictions SET outcome=? WHERE id=? AND archived_at IS NULL',[p.data.outcome,req.params.id]);if(!r.affectedRows)return res.status(404).json({error:'No existe'});
- await db.execute("INSERT INTO audit_logs(actor_admin_id,action,entity_type,entity_id,details) VALUES (?,'prediction_outcome_updated','prediction',?,JSON_OBJECT('outcome',?))",[req.admin.id,req.params.id,p.data.outcome]);res.json({ok:true});}
- catch(e){console.error('outcome update',e.code||e.message);res.status(500).json({error:'No se pudo actualizar'});}
+ const parsed=outcomeSchema.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Resultado o motivo inválido'});
+ const nextOutcome=parsed.data.outcome;
+ const conn=await db.getConnection();
+ try{
+  await conn.beginTransaction();
+  const [rows]=await conn.execute('SELECT id,outcome,archived_at FROM predictions WHERE id=? FOR UPDATE',[req.params.id]);
+  if(!rows.length||rows[0].archived_at){await conn.rollback();return res.status(404).json({error:'El pronóstico no existe o está retirado'});}
+  const previous=rows[0].outcome;
+  if(previous===nextOutcome){await conn.rollback();return res.json({ok:true,unchanged:true});}
+  const correction=previous!=='pending';
+  if(correction && (req.admin.role!=='owner'||!parsed.data.reason)){
+   await conn.rollback();return res.status(403).json({error:'Para corregir un resultado ya cerrado se requiere permiso de dueño y motivo de al menos 8 caracteres'});
+  }
+  await conn.execute('UPDATE predictions SET outcome=? WHERE id=?',[nextOutcome,req.params.id]);
+  await conn.execute(`INSERT INTO audit_logs(actor_admin_id,action,entity_type,entity_id,details)
+   VALUES (?,?, 'prediction',?,JSON_OBJECT('previous',?,'outcome',?,'reason',?))`,[
+    req.admin.id,correction?'prediction_outcome_corrected':'prediction_outcome_updated',
+    req.params.id,previous,nextOutcome,parsed.data.reason||null
+   ]);
+  await conn.commit();
+  res.json({ok:true,corrected:correction});
+ }catch(e){await conn.rollback().catch(()=>{});console.error('outcome update',e.code||e.message);res.status(500).json({error:'No se pudo actualizar'});}
+ finally{conn.release();}
 });
 // Owner-only logical deletion. Financial/performance records and audit trail remain intact.
 app.delete('/api/admin/predictions/:id',authenticate,async(req,res)=>{
@@ -300,6 +320,32 @@ app.delete('/api/admin/predictions/:id',authenticate,async(req,res)=>{
 app.get('/api/predictions/teasers',async(req,res)=>{
  try{const [rows]=await db.query("SELECT id,title,league,match_date,visibility FROM predictions WHERE published_at IS NOT NULL AND archived_at IS NULL ORDER BY id DESC LIMIT 12");res.set('Cache-Control','no-store').json({predictions:rows});}
  catch(e){console.error('teasers',e.code||e.message);res.status(500).json({error:'No disponible'});}
+});
+// Public performance: aggregated from ALL published DB rows, even withdrawn ones.
+// Manual outcome labels are disclosed as administrative records, not independently verified.
+// No VIP picks, analyses, odds, selections or user data are returned.
+const publicPerformanceLimit=apiRateLimit({windowMs:60*1000,limit:45,standardHeaders:'draft-7',legacyHeaders:false});
+app.get('/api/public/performance',publicPerformanceLimit,async(req,res)=>{
+ const filters=publicPerformanceFilters(req.query);
+ const where=performanceWhere(filters);
+ try{
+  const [groups]=await db.execute(`SELECT p.visibility,COUNT(*) AS total,
+   SUM(CASE WHEN (p.match_date IS NULL OR p.match_date<=UTC_TIMESTAMP()) AND p.outcome='won' THEN 1 ELSE 0 END) AS won,
+   SUM(CASE WHEN (p.match_date IS NULL OR p.match_date<=UTC_TIMESTAMP()) AND p.outcome='lost' THEN 1 ELSE 0 END) AS lost,
+   SUM(CASE WHEN (p.match_date IS NULL OR p.match_date<=UTC_TIMESTAMP()) AND p.outcome='void' THEN 1 ELSE 0 END) AS void,
+   SUM(CASE WHEN p.archived_at IS NOT NULL THEN 1 ELSE 0 END) AS archived
+   FROM predictions p WHERE ${where.sql} GROUP BY p.visibility`,where.params);
+  const [recent]=await db.execute(`SELECT p.id,p.title,p.league,p.visibility,p.outcome,p.match_date,p.archived_at
+   FROM predictions p WHERE ${where.sql}
+    AND p.outcome IN ('won','lost','void')
+    AND (p.match_date IS NULL OR p.match_date<=UTC_TIMESTAMP())
+   ORDER BY COALESCE(p.match_date,p.published_at) DESC,p.id DESC LIMIT 15`,where.params);
+  res.set('Cache-Control','public, max-age=60').json({filters,...summaryFromGroups(groups),recent:publicRecentResults(recent),
+   methodology:{source:'Resultados marcados por la administración; sin verificación independiente automatizada',
+    denominator:'Aciertos / (aciertos + fallos); anulados y pendientes no se incluyen',
+    includes_withdrawn:true,not_predictions:'Esta tasa histórica no predice aciertos futuros'},
+   generated_at:new Date().toISOString()});
+ }catch(error){console.error('public performance',error.code||error.message);res.status(503).json({error:'No fue posible cargar el historial en este momento'});}
 });
 // Legacy endpoint must never expose free predictions anonymously.
 app.get('/api/predictions/free',(req,res)=>res.status(401).json({error:'Inicia sesión para ver pronósticos gratuitos'}));

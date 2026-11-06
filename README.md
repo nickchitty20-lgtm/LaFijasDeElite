@@ -1,3 +1,36 @@
+# Fijas de Élite v3.2.0 — Estadísticas públicas del historial
+
+**Proyecto completo**, compatible con la v3.1.0. Mantiene web, Telegram, PayPal, MySQL, membresías, rangos y motor N-FORCE.
+
+## Qué se agregó
+
+- Portada `/` → sección **Resultados con transparencia**.
+- Contadores: publicados, ganados, perdidos, anulados, pendientes y tasa de acierto real de los resultados registrados.
+- Filtros `todo / últimos 30 / últimos 90 días` y `gratis / VIP / ambos`.
+- Barras comparativas gratis y VIP; historial público de los últimos 15 resultados registrados, partido, categoría, fecha y estado. **No** se muestran selecciones, mercados, cuotas ni análisis VIP.
+- Endpoint público `GET /api/public/performance?period=all|30d|90d&visibility=all|free|vip` con límite de peticiones.
+- Todo procede de los pronósticos ya publicados en MySQL; no se añaden datos ficticios. Las publicaciones retiradas permanecen en el cómputo.
+- Fórmula: **aciertos / (aciertos + perdidos)**. Los anulados y pendientes no cuentan en el denominador; si no hay resultados concluidos, se muestra `—`.
+- Resultado marcado anticipadamente para un encuentro futuro se cuenta como pendiente y no como acierto hasta que su horario programado pase.
+- Cambiar un resultado ya decidido solo puede hacerlo el dueño, indicando un motivo; la modificación (valor anterior, nuevo y razón) queda en el registro de auditoría.
+- Los resultados siguen siendo **marcados manualmente por el personal**. El panel lo comunica explícitamente: no existe conciliación automática contra marcador oficial ni auditoría independiente.
+
+## Publicar en Railway
+
+1. Sube ZIP completo (o solo archivos cambiados) a GitHub.
+2. Espera el deploy de Railway y comprueba `/health` → `3.2.0`.
+3. Entra a la web principal y abre el apartado **Resultados**.
+4. Con una cuenta autorizada, en **Administración → Pronósticos**, marca las selecciones concluidas como ganado, perdido o anulado. El resultado aparece en la portada después de guardar.
+5. Si está vacío, significa que todavía no hay pronósticos concluidos registrados: no se muestran cifras de demostración.
+
+No requiere variables nuevas ni migraciones SQL. La tasa no prueba rentabilidad y no predice futuros aciertos. Los resultados solo deben marcarse cuando se conocen realmente.
+
+## Pruebas locales
+
+`npm test` y `node --check` de los archivos JS modificados. Pruebas sintéticas para totalización, resultados retirados, cero casos, ventanas y ocultación de contenido VIP. No se realizó una prueba con la base de datos de Railway ni datos reales en esta sesión.
+
+---
+
 # Fijas de Élite v3.1.0 — N-FORCE Football Intelligence mejorado
 
 Motor estadístico **propio y sin API-Football por defecto**. Mantiene la web, MySQL, usuarios, pagos, gestión de VIP, administración, bot de Telegram, eliminación de pronósticos y demás flujos existentes en la v2.2.2. Esta actualización es aditiva: **no borra la base de datos**.

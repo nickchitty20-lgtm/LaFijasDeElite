@@ -1,3 +1,14 @@
+# v3.2.0 — 7 noviembre 2026
+
+- Historial de resultados en la portada; desglose gratis y VIP.
+- Estadísticas calculadas a partir de MySQL, con pendientes, anulados, retirados y filtros temporales.
+- Endpoint público minimizado: no divulga selecciones ni análisis VIP.
+- Las tasas son de resultados registrados manualmente, no certificadas.
+- Los cambios posteriores a un resultado cerrado requieren motivo y permiso de dueño; auditoría con valor anterior y nuevo.
+- Sin eliminación de historiales y sin cambios de credenciales ni migraciones.
+
+---
+
 # Fijas de Élite v3.1.0 — N-FORCE Football Intelligence mejorado
 
 **Base:** v3.0.0; mantiene web, Telegram, pagos, miembros y base de datos sin borrados.
