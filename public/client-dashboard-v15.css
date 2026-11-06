@@ -112,7 +112,7 @@ body.client-logged-in>header{display:none}body.client-logged-in .auth-layout{max
 
 .fe-match-extra{font-size:11px;color:#c6ccd4;line-height:1.5;overflow-wrap:anywhere}
 
-/* v2.2.2 — Estudio avanzado responsive en tarjetas VIP */
+/* v3.1.0 — Estudio avanzado responsive en tarjetas VIP */
 .fe-advanced-team{background:#17212c;border:1px solid #3d4b5b;border-radius:12px;padding:12px 14px;margin:12px 0;min-width:0;overflow-wrap:anywhere}
 .fe-advanced-team h6{margin:0 0 8px;color:#e8c787;letter-spacing:.07em;font-size:12px}
 .fe-advanced-team p{font-size:12px;color:#d5dfe7;line-height:1.6;margin:6px 0;overflow-wrap:anywhere}

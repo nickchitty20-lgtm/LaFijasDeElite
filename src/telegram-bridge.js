@@ -16,7 +16,7 @@ export function telegramPublicNotice(p,base){
 export function telegramFreeAutoPost(p){
  const n=Number(p.estimated_probability);
  const verified=p.estimated_probability!=null && Number.isFinite(n)&&n>=0&&n<=100;
- const confidence=verified?`\n📈 Estimación del proveedor: ${n.toFixed(1)}% (NO es porcentaje de aciertos real).`:'';
+ const confidence=verified?`\n📈 Probabilidad estimada: ${n.toFixed(1)}% (NO es porcentaje de aciertos real).`:'';
  return `⚽ <b>FIJAS DE ÉLITE · COMUNIDAD · GRATIS</b>\n<b>${h(p.title)}</b>\n🏆 ${h(p.league)}${h(telegramMatchSchedule(p.match_date))}\n🎯 ${h(p.market)}: <b>${h(p.selection)}</b>${confidence}\n⚠️ <b>RIESGO ALTO · NO ES UNA FIJA SEGURA</b>\n\n${h(String(p.analysis||'').slice(0,1400))}\n\nEstimación estadística no calibrada, no garantía de acierto. No apuestes dinero que no puedas perder.`;
 }
 export function telegramGoalsSummary(p){
@@ -25,7 +25,8 @@ export function telegramGoalsSummary(p){
  const line=(label,v)=>`\n• ${label}: ${h(v||'sin estimación')}`;
  const hist=f.historical;
  const msg='\n\n<b>⚽ MERCADOS DE GOLES (estimaciones)</b>'+line('Total',f.total_line?.market_label)+line('Local',f.home_line?.market_label)+line('Visitante',f.away_line?.market_label)+
-  line('Ambos anotan',hist?`${hist.both_scored}/${hist.games} antecedentes`:'Sin datos suficientes')+
+  (f.model_goals?line('Más de 1.5',`${f.model_goals.over15}%`)+line('Más de 3.5',`${f.model_goals.over35}%`):'')+
+  line('Ambos anotan',f.model_goals?.btts!=null?`${f.model_goals.btts}% según N-FORCE`:hist?`${hist.both_scored}/${hist.games} antecedentes`:'Sin datos suficientes')+
   line('Marcador orientativo',f.estimated_score)+
   line('Diferencia de goles',f.estimated_margin!=null?`${f.estimated_margin} gol(es)`:null);
  return msg+'\n<i>Estimaciones, no apuestas garantizadas ni cuotas verificadas para goles.</i>';

@@ -1,5 +1,13 @@
-# Fijas de Élite v2.2.2 — Reintentos tras cero pronósticos
+# Fijas de Élite v3.1.0 — N-FORCE Football Intelligence mejorado
 
-Corrección de la v2.2.1. Si el escaneo completado no generó propuestas, el bot ahora puede volver a intentar después de 60 minutos (30 cuando no analizó partidos), en vez de bloquear automáticamente cuatro horas. Los controles se ejecutan cada 15 minutos, respetando siempre la cuota del proveedor. También filtra candidatos ya procesados ANTES de seleccionar los 10 partidos del siguiente escaneo, para explorar otros encuentros. El panel indica el próximo intento, estadísticas de descartes y motivos por los que no se publicó una propuesta.
+**Base:** v3.0.0; mantiene web, Telegram, pagos, miembros y base de datos sin borrados.
 
-Las propuestas realmente creadas mantienen el intervalo de cuatro horas. No se reducen exigencias estadísticas ni se fabrican resultados. No se han verificado los tokens, datos ni el despliegue de Railway del usuario.
+- Modelo nforce-poisson-1.1 con regularización ataque/defensa, localía y ajuste de resultados bajos.
+- Calidad explicable del historial, tamaño efectivo de muestra y detección de falta de datos.
+- Backtesting cronológico por liga, categoría GRATIS/VIP y banda de probabilidad; Brier y log-loss.
+- Autopublicación solo con backtest reciente de esta versión; borradores anteriores se actualizan y no se publican obsoletos.
+- Dashboard muestra la calidad de historial y razones de descarte; mantiene permisos y flujos de Telegram.
+
+**No cambia:** MySQL requiere las mismas tablas; la migración es compatible y aditiva; API-Football no es obligatorio. Sin cuotas ni lesiones inventadas.
+
+**Cautela:** estos cambios no demuestran mayor precisión hasta comparar métricas históricas y, sobre todo, resultados fuera de muestra en producción.

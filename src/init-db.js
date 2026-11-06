@@ -111,6 +111,65 @@ export async function initializeDatabase() {
       FOREIGN KEY (prediction_id) REFERENCES predictions(id)
     ) ENGINE=InnoDB`);
 
+    // v3.0.0: open-data local engine. Additive; NEVER deletes existing API-football
+    // proposals, subscriptions, PayPal receipts or Telegram memberships.
+    await connection.query(`CREATE TABLE IF NOT EXISTS nforce_matches (
+      id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+      source_key VARCHAR(350) NOT NULL UNIQUE,
+      competition VARCHAR(20) NOT NULL,
+      league VARCHAR(120) NOT NULL,
+      season VARCHAR(12) NOT NULL,
+      round_name VARCHAR(90) NULL,
+      home_team VARCHAR(120) NOT NULL,
+      away_team VARCHAR(120) NOT NULL,
+      match_date DATE NOT NULL,
+      kickoff DATETIME NULL,
+      scheduled_time_known BOOLEAN NOT NULL DEFAULT FALSE,
+      home_goals SMALLINT UNSIGNED NULL,
+      away_goals SMALLINT UNSIGNED NULL,
+      source_path VARCHAR(100) NOT NULL,
+      source_checked_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_nforce_date (match_date),
+      INDEX idx_nforce_kickoff (kickoff),
+      INDEX idx_nforce_club (competition,home_team,match_date)
+    ) ENGINE=InnoDB`);
+    await connection.query(`CREATE TABLE IF NOT EXISTS nforce_import_runs (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      status ENUM('running','completed','failed') NOT NULL DEFAULT 'running',
+      started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      finished_at DATETIME NULL,
+      sources INT UNSIGNED NOT NULL DEFAULT 0,
+      records INT UNSIGNED NOT NULL DEFAULT 0,
+      scheduled INT UNSIGNED NOT NULL DEFAULT 0,
+      completed_results INT UNSIGNED NOT NULL DEFAULT 0,
+      errors_json TEXT NULL
+    ) ENGINE=InnoDB`);
+    await connection.query(`CREATE TABLE IF NOT EXISTS nforce_scans (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      status ENUM('running','completed','failed') NOT NULL DEFAULT 'running',
+      initiated_by ENUM('manual','scheduled') NOT NULL DEFAULT 'scheduled',
+      started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      finished_at DATETIME NULL,
+      upcoming INT UNSIGNED NOT NULL DEFAULT 0,
+      modeled INT UNSIGNED NOT NULL DEFAULT 0,
+      drafts INT UNSIGNED NOT NULL DEFAULT 0,
+      insufficient INT UNSIGNED NOT NULL DEFAULT 0,
+      filtered INT UNSIGNED NOT NULL DEFAULT 0,
+      error_message VARCHAR(200) NULL
+    ) ENGINE=InnoDB`);
+    await connection.query(`CREATE TABLE IF NOT EXISTS nforce_backtests (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      model_version VARCHAR(80) NOT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      evaluated INT UNSIGNED NOT NULL,
+      accuracy DECIMAL(6,2) NULL,
+      brier DECIMAL(7,5) NULL,
+      logloss DECIMAL(7,5) NULL,
+      metrics_json JSON NOT NULL
+    ) ENGINE=InnoDB`);
+    await connection.query("UPDATE nforce_scans SET status='failed',finished_at=UTC_TIMESTAMP(),error_message='Interrumpido por reinicio' WHERE status='running' AND started_at<DATE_SUB(UTC_TIMESTAMP(),INTERVAL 20 MINUTE)");
+    await connection.query("UPDATE nforce_import_runs SET status='failed',finished_at=UTC_TIMESTAMP(),errors_json='[\"Interrumpido por reinicio\"]' WHERE status='running' AND started_at<DATE_SUB(UTC_TIMESTAMP(),INTERVAL 30 MINUTE)");
+
     // v2.2.1: avoid repeatedly spending Free calls on unsupported fixtures.
     // Missing predictions retry after 6h; filtered models after 8h.
     await connection.query(`CREATE TABLE IF NOT EXISTS football_fixture_checks (

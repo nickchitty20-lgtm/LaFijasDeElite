@@ -1,4 +1,4 @@
-/* Fijas de Élite v2.2.2 — Structured football report for authorized sessions. */
+/* Fijas de Élite v3.1.0 — Structured football report for authorized sessions. */
 (()=>{'use strict';
 const el=(tag,klass,text)=>{const node=document.createElement(tag);if(klass)node.className=klass;if(text!=null)node.textContent=String(text);return node;};
 const unknown='Sin estimación disponible';
@@ -11,18 +11,22 @@ function goals(p){
  const f=p.football_details;const body=el('section','fe-goals-breakdown');
  body.append(el('h5','','⚽ Goles, mercados y escenarios'));
  const grid=el('div','fe-goal-metrics');
- addMetric(grid,'Total de goles',f.total_line?.market_label||null,'Línea orientativa del proveedor');
+ addMetric(grid,'Total de goles',f.total_line?.market_label||null,'Probabilidad o expectativa del modelo; no una cuota');
+ if(f.model_goals){
+  for(const [label,key] of [['Más de 1.5 goles','over15'],['Más de 2.5 goles','over25'],['Más de 3.5 goles','over35']])
+   addMetric(grid,label,f.model_goals[key]!=null?`${f.model_goals[key]}%`:null,'Probabilidad del motor propio, no cuota verificada');
+ }
  addMetric(grid,'Goles del equipo local',f.home_line?.market_label||null,'No implica un marcador exacto');
  addMetric(grid,'Goles del visitante',f.away_line?.market_label||null,'No implica un marcador exacto');
  const h=f.historical;
- addMetric(grid,'Ambos equipos marcan',h&&h.both_scored!=null?`${h.both_scored} de ${h.games} antecedentes`:null,'Frecuencia H2H, NO probabilidad calibrada');
+ addMetric(grid,'Ambos equipos marcan',f.model_goals?.btts!=null?`${f.model_goals.btts}% (N-FORCE)`:h&&h.both_scored!=null?`${h.both_scored} de ${h.games} antecedentes`:null,'Estadística orientativa, no probabilidad calibrada');
  addMetric(grid,'Marcador orientativo',f.estimated_score||null,'Escenario estadístico, no una apuesta segura');
  addMetric(grid,'Diferencia de goles',f.estimated_margin!=null&&f.estimated_score!=null?`${f.estimated_margin} gol(es)`:null,'Solo si hay marcador orientativo');
  body.append(grid);
  if(h){const history=el('p','fe-goal-history',`Historial H2H (${h.games} partidos): promedio local ${h.home_average??'—'}, visitante ${h.away_average??'—'}, total ${h.total_average??'—'} goles.`);body.append(history);}
  const probs=f.provider_1x2;
  if(probs&&(probs.home!=null||probs.draw!=null||probs.away!=null)){
-  body.append(el('p','fe-goal-probabilities',`Estimación 1X2 del proveedor: local ${probs.home??'—'} % · empate ${probs.draw??'—'} % · visitante ${probs.away??'—'} %. No es una tasa real de acierto.`));
+  body.append(el('p','fe-goal-probabilities',`Estimación 1X2 (${f.probability_source||'proveedor'}): local ${probs.home??'—'} % · empate ${probs.draw??'—'} % · visitante ${probs.away??'—'} %. No es una tasa real de acierto.`));
  }
  body.append(el('small','fe-goal-warning',f.disclaimer||'Datos orientativos sin garantías.'));
  return body;

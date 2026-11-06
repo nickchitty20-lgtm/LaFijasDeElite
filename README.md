@@ -1,3 +1,71 @@
+# Fijas de Élite v3.1.0 — N-FORCE Football Intelligence mejorado
+
+Motor estadístico **propio y sin API-Football por defecto**. Mantiene la web, MySQL, usuarios, pagos, gestión de VIP, administración, bot de Telegram, eliminación de pronósticos y demás flujos existentes en la v2.2.2. Esta actualización es aditiva: **no borra la base de datos**.
+
+
+## Mejoras de la v3.1.0
+
+- **Poisson 1.1:** tasas de gol basadas en ataque/defensa por localía, regularización bayesiana conservadora y ajuste fijo de correlación para marcadores bajos (Dixon-Coles estilo). Los coeficientes son heurísticos y **no han sido calibrados con una muestra externa**.
+- **Muestras transparentes:** cantidad de partidos por equipo, partidos en la misma localía, tamaño efectivo ponderado, edad del último partido y calidad descriptiva 0–100. **La calidad de muestra NO es una probabilidad de ganar**.
+- **Más mercados estudiados:** probabilidades de over/under 2.5, over 1.5/3.5 y ambos marcan en la explicación. Se conserva **solo la selección oficial 1X2**; no se genera una segunda apuesta con los mercados descriptivos.
+- **Validación mejorada:** además de Brier y log-loss, el backtesting cronológico presenta precisión observada y tamaño de muestra por liga, categoría GRATIS/VIP y bandas de confianza. Una banda con pocas observaciones no permite conclusiones sólidas.
+- **Diagnósticos:** contador de históricos por equipo/liga insuficientes, forma obsoleta y partidos futuros sin hora exacta. No se inventan fechas.
+- **Protección de migración:** el escáner actualiza borradores existentes al nuevo modelo sin modificar publicados o descartados; la publicación rechaza borradores de una versión antigua.
+- **Autopublicación:** exige un backtest vigente de la versión **nforce-poisson-1.1** y 40 encuentros evaluados como mínimo; el dueño debe revisar sus métricas antes de activar `NFORCE_LIVE_RELEASE_ACK=true`.
+
+Tras subir la versión, pulsa **Validar modelo** y **Analizar ahora** para refrescar los borradores del v3.0.0. El backtesting local mejora la evaluación, pero no prueba rentabilidad real ni garantiza publicaciones.
+
+## Puesta en marcha en Railway
+
+1. Sube **todos los archivos** del ZIP a tu repositorio de GitHub. Conserva las variables de MySQL, JWT, PayPal (si lo usas) y Telegram; **no incluyas contraseñas ni tokens en GitHub**.
+2. Variables recomendadas al instalar:
+
+   ```env
+   FOOTBALL_ENGINE_MODE=own
+   FOOTBALL_AUTO_IMPORT=true
+   FOOTBALL_AUTO_SCAN=true
+   FOOTBALL_AUTO_PUBLISH=false
+   NFORCE_LIVE_RELEASE_ACK=false
+   ```
+
+   No necesitas `FOOTBALL_API_KEY` en modo `own`. Las credenciales del bot y los IDs de ambos chats siguen siendo necesarios para enviar mensajes.
+3. Espera `Success` en Railway y comprueba `GET /health` → `version: 3.1.0`. El sistema creará las tablas `nforce_matches`, `nforce_import_runs`, `nforce_scans` y `nforce_backtests` sin borrar las existentes.
+4. En `admin.html` → **Análisis automático**, pulsa **Importar datos CC0** (la importación automática también comienza al arrancar). Revisa cuántos partidos y resultados se importaron; algunos ficheros pueden faltar o contener calendarios no actualizados.
+5. Pulsa **Validar modelo (backtest)** y comprueba su muestra, aciertos observados y Brier. El backtest se volverá a ejecutar automáticamente como mínimo cada 7 días y antes si aún no hay muestra suficiente.
+6. Pulsa **Analizar ahora y guardar propuestas**. Si existe un partido futuro con **hora conocida**, historial suficiente y supera los filtros, aparecerá como borrador. Puedes aprobarlo manualmente para probar la publicación.
+7. **Solo tras verificar el calendario, historial, rendimiento y canales**, habilita explícitamente:
+
+   ```env
+   FOOTBALL_AUTO_PUBLISH=true
+   NFORCE_LIVE_RELEASE_ACK=true
+   ```
+
+   En modo propio, ambos son necesarios. Auto-publicación exige 40 evaluaciones retrospectivas como mínimo y respeta los topes de una gratuita y dos VIP al día. **40 observaciones no prueban precisión suficiente**: el dueño debe evaluar el modelo antes de activar el envío real.
+
+## Funcionamiento
+
+- **Fuente abierta:** ficheros JSON CC0 del repositorio [OpenFootball/football.json](https://github.com/openfootball/football.json) alojados en GitHub. Fuentes preaprobadas para Premier League, LaLiga, Bundesliga, Serie A y Ligue 1 de temporada vigente y anterior (hasta 10 ficheros). Sin clave API ni scrapers de webs ajenas.
+- **Licencia y atribución:** [CC0 1.0](https://github.com/openfootball/football.json/blob/master/LICENSE.md). La fuente está en dominio público. Esto no certifica exactitud o actualización del calendario, ni derechos de logos deportivos.
+- **Actualización:** cada 12 horas aproximadamente y reintento después de fallos; importación idempotente en MySQL. Una programación movida actualiza el encuentro existente. Se omiten partidos con hora ausente o ilegible para autopublicación.
+- **Estadística:** modelo Poisson regularizado, corrección fija para marcadores 0-0/1-0/0-1/1-1, ajuste a medias de liga y promedios local/visitante, ponderación exponencial por recencia y muestra mínima de 7 partidos por club más 36 de liga. Produce 1X2, probabilidades de más de 1.5/2.5/3.5 goles, ambos marcan y un marcador orientativo. Las probabilidades **no están calibradas** y no proceden de cuotas.
+- **Calidad:** no publica partidos ya empezados, con resultados registrados, sin fecha/hora válida, con calendario local desactualizado (más de 36h desde la última consulta), duplicados o sin respaldo estadístico.
+- **Backtesting:** simulación cronológica *walk-forward* donde las predicciones pasadas solo ven datos anteriores a cada partido; Brier, log-loss, porcentajes observados y curvas de calibración por bandas de confianza y categoría gratis/VIP. Historial de backtests en MySQL. El backtest retrospectivo no representa resultados en producción.
+- **Canales:** las gratuitas completas a `TELEGRAM_FREE_CHAT_ID`; las VIP completas a `TELEGRAM_VIP_CHAT_ID` y adelanto de cada publicación VIP en la comunidad. Funciones existentes de enlace, blacklist, invitaciones y permisos siguen intactas.
+- **Sin cuota / lesiones / alineaciones:** OpenFootball JSON no las ofrece. Nunca se inventan. El bot publica «Cuota no disponible» y reporta esas limitaciones.
+- **Modo anterior:** `FOOTBALL_ENGINE_MODE=api` restaura la antigua integración si necesitas compararla; en ese caso sí debes configurar `FOOTBALL_API_KEY` y verificar los límites del proveedor. El modo por defecto es **own**.
+
+## Problemas y diagnóstico
+
+**¿Sigue apareciendo 0 fijas?** Comprueba en orden: (1) ¿la importación indica al menos una fuente exitosa?, (2) ¿hay partidos futuros con **hora publicada**?, (3) ¿hay resultados históricos recientes de ambos clubes?, (4) ¿el modelo genera una probabilidad que supera el filtro?, (5) ¿se completó el backtest?, (6) ¿los interruptores de publicación están habilitados?, (7) ¿se configuraron los dos chats de Telegram? Ninguna publicación debe fabricarse para llenar el canal.
+
+**Importante sobre OpenFootball:** sus archivos de la temporada en curso pueden regenerarse diariamente, pero la **fuente original no tiene garantía de actualización diaria**. Revisa los horarios contra el organizador oficial antes de activar publicación real. Si los datos están atrasados, la aplicación lo indicará; no podremos sustituir datos reales por porcentajes inventados.
+
+**Pruebas locales:** `npm test` y `node --check src/nforce-engine.js`. Incluye pruebas de zona horaria/DST, licencia y fuente permitida, escaneo con memoria MySQL simulada, prueba de publicación a Telegram simulada, backtesting sin fuga de datos futuros y protecciones VIP heredadas. No demuestra integración real con Railway, MySQL alojado ni chats reales.
+
+---
+
+## Documentación del sistema anterior (v2.x; motor API legado)
+
 # Fijas de Élite v2.2.2 — Reintentos y diagnóstico automático
 
 **Instala el ZIP completo en GitHub/Railway y verifica `/health` → `2.2.2`.** Esta versión corrige la pausa injustificada de cuatro horas cuando el motor no consiguió ninguna fija. También permite considerar partidos nuevos aun si muchos fixtures anteriores ya fueron descartados. Conserva Telegram gratis/VIP, membresías, análisis avanzado, eliminación y PayPal.

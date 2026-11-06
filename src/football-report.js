@@ -10,6 +10,21 @@ export function publishedFootballDetails(raw){
  let data=raw;
  try{if(Buffer.isBuffer(data))data=data.toString('utf8');if(typeof data==='string')data=JSON.parse(data);}catch{return null;}
  if(!data||typeof data!=='object'||!data.goals||typeof data.goals!=='object')return null;
+ if(data.model?.model==='nforce-poisson-1.1'){
+  const m=data.model;
+  const probability=numeric(m.confidence,0,100),p=m.probabilities||{},t=m.totals||{};
+  return {home_line:{market_label:`Goles esperados ${m.lambda?.home??'—'}`,direction:'over',threshold:0.5},
+   away_line:{market_label:`Goles esperados ${m.lambda?.away??'—'}`,direction:'over',threshold:0.5},
+   total_line:{market_label:`Más de 2.5: ${numeric(t.over25,0,100)??'—'}% (modelo)`,direction:'over',threshold:2.5},
+   model_goals:{over15:numeric(t.over15,0,100),over25:numeric(t.over25,0,100),over35:numeric(t.over35,0,100),btts:numeric(t.btts,0,100)},
+   historical:null,estimated_score:/^\d-\d$/.test(m.score||'')?m.score:null,
+   estimated_margin:data.goals?.illustrative_margin??null,
+   provider_1x2:{home:numeric(p.home,0,100),draw:numeric(p.draw,0,100),away:numeric(p.away,0,100)},
+   probability_source:'Modelo N-FORCE propio (sin calibración verificada)',
+   match_context:Object.fromEntries(['country','round','venue','city'].map(k=>[k,typeof data.match_context?.[k]==='string'?data.match_context[k].slice(0,130):'']).filter(x=>x[1])),
+   advanced:null,source:'OpenFootball CC0 + modelo estadístico N-FORCE',
+   disclaimer:'Probabilidades Poisson NO calibradas; sin cuotas verificadas, lesiones ni alineaciones. Confirma horario y resultados con una fuente oficial.'};
+ }
  const g=data.goals;
  const history=g.historical&&typeof g.historical==='object'?g.historical:null;
  const played=numeric(history?.games,3,20);

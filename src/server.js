@@ -23,10 +23,11 @@ import {canRemovePrediction,validPredictionId,removePredictionTelegramMessages} 
 import {installTelegramRoutes} from './telegram-routes.js';
 import {installNotificationCenter,enqueueVipActivation,enqueuePredictionEvent} from './notification-center.js';
 import {installFootballAutomation} from './football-automation.js';
+import {installNforceEngine} from './nforce-engine.js';
 import {publishedFootballDetails} from './football-report.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
-const APP_VERSION = '2.2.2';
+const APP_VERSION = '3.1.0';
 const app = express();
 let telegramVipControl=null;
 let notificationControl=null;
@@ -978,7 +979,13 @@ app.get('/api/admin/finance',authenticate,async(req,res)=>{
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../public');
 telegramVipControl=installTelegramRoutes(app,{db,customerAuth,authenticate,limit:apiRateLimit({windowMs:15*60*1000,limit:10,standardHeaders:'draft-7',legacyHeaders:false})});
 notificationControl=installNotificationCenter(app,{db,customerAuth,limit:apiRateLimit({windowMs:15*60*1000,limit:15,standardHeaders:'draft-7',legacyHeaders:false})});
-footballControl=installFootballAutomation(app,{db,authenticate});
+// Default: independent local model. Legacy API-Football remains opt-in only.
+footballControl=process.env.FOOTBALL_ENGINE_MODE==='api'
+ ?installFootballAutomation(app,{db,authenticate})
+ :installNforceEngine(app,{db,authenticate,enqueueEvent:async(database,id,visibility)=>{
+   const {enqueuePredictionEvent}=await import('./notification-center.js');
+   return enqueuePredictionEvent(database,id,visibility);
+  }});
 app.use(express.static(root,{index:'index.html',dotfiles:'ignore',setHeaders(res,servedPath){
  if(/\.(?:html|js|css)$/i.test(servedPath))res.setHeader('Cache-Control','no-store');
 }}));
