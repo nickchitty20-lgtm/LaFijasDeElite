@@ -477,7 +477,7 @@ $('myTelegramChangeForm')?.addEventListener('submit',async event=>{
 });
 
 
-// v2.1.0 — evidence-based football scouting, owner-only.
+// v2.1.1 — read-only diagnostic, fixed complete scan, owner-only.
 async function loadFootballEngine(){
  const summary=$('footballEngineSummary'),list=$('footballCandidateList'),message=$('footballEngineMsg');
  if(!summary||currentAdminRole!=='owner')return;
@@ -485,13 +485,14 @@ async function loadFootballEngine(){
   const [status,result]=await Promise.all([api('/api/admin/football/status'),api('/api/admin/football/candidates')]);
   summary.replaceChildren();
   const stats=[
-   ['Fuente de datos',status.configured?'Conectada':'Sin API key'],
+   ['Fuente de datos',status.configured?'API key configurada':'Sin API key'],
    ['Búsqueda automática',status.auto_scan?'Activada':'Desactivada'],
    ['Publicación automática',status.auto_publish?'Activada':'Solo revisión'],
    ['Propuestas pendientes',status.drafts],
    ['Publicadas',status.published],
    ['Resultados ganados / perdidos',`${status.won} / ${status.lost}`],
-   ['Acierto observado',status.accuracy==null?'Sin suficientes resultados':`${status.accuracy}%`]
+   ['Acierto observado',status.accuracy==null?'Sin suficientes resultados':`${status.accuracy}%`],
+   ['Último escaneo',status.latest?`${status.latest.status} · ${new Date(status.latest.started_at).toLocaleString('es-PE')}`:'Todavía no se ejecutó']
   ];
   for(const [title,value] of stats){const div=document.createElement('div');const small=document.createElement('small');small.textContent=title;const strong=document.createElement('strong');strong.textContent=String(value);div.append(small,strong);summary.append(div);}
   list.replaceChildren();
@@ -520,6 +521,28 @@ async function loadFootballEngine(){
   }
  }catch(err){message.textContent=err.message;}
 }
+function footballDiagnosticSummary(d){
+ const holder=$('footballDiagnosticResult');if(!holder)return;
+ holder.hidden=false;holder.replaceChildren();
+ const title=document.createElement('strong');title.textContent=d.ok?'Resultado de prueba real · API-Football':'Diagnóstico';holder.append(title);
+ const items=[
+  ['Conexión',d.api_connected?'Correcta':'Sin verificar'],
+  ['Partidos recibidos',d.fixtures_returned??'—'],
+  ['Partidos entre 1 y 6 horas',d.fixtures_in_window??'—'],
+  ['Predicción de muestra',d.sample?.prediction_available===true?'Disponible':d.sample?.prediction_available===false?'No disponible':'No comprobada'],
+  ['Aprobación de filtros',d.sample?.passes_filters===true?'Sí':d.sample?.passes_filters===false?'No':'Sin muestra'],
+ ];
+ if(d.provider_requests_limit!=null)items.push(['Uso de API',`${d.provider_requests_current??'—'} / ${d.provider_requests_limit}`]);
+ if(d.sample?.match)items.push(['Partido revisado',d.sample.match]);
+ if(d.next_fixture)items.push(['Próximo partido detectado',`${d.next_fixture.match} · ${new Date(d.next_fixture.kickoff).toLocaleString('es-PE')}`]);
+ for(const [key,value] of items){const p=document.createElement('p');const bold=document.createElement('b');bold.textContent=key+': ';p.append(bold,document.createTextNode(String(value)));holder.append(p);}
+ const note=document.createElement('p');note.className='football-diagnostic-note';note.textContent=d.reason||'Prueba completada sin publicar nada.';holder.append(note);
+}
+$('footballTestButton')?.addEventListener('click',async()=>{
+ const btn=$('footballTestButton');btn.disabled=true;$('footballEngineMsg').textContent='Comprobando API y partidos reales; no se publicará nada…';
+ try{const report=await api('/api/admin/football/test',{method:'POST',body:'{}'});footballDiagnosticSummary(report);$('footballEngineMsg').textContent=report.cached?'Mostrando la última prueba (sin gastar más consultas).':'Prueba completada. Revisa los resultados debajo.';}
+ catch(err){$('footballEngineMsg').textContent=err.message;}finally{btn.disabled=false;}
+});
 $('footballScanButton')?.addEventListener('click',async()=>{
  const btn=$('footballScanButton');btn.disabled=true;$('footballEngineMsg').textContent='Analizando próximos partidos…';
  try{const r=await api('/api/admin/football/scan',{method:'POST',body:'{}'});$('footballEngineMsg').textContent=r.message||`Examinados: ${r.examined||0}. Nuevos análisis: ${r.drafts_created||0}. Automáticamente publicados: ${r.automatically_published||0}.`;await loadFootballEngine();}

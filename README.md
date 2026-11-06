@@ -1,3 +1,22 @@
+# Fijas de Élite v2.1.1 — Diagnóstico inmediato de análisis ⚡
+
+**Corrección de un fallo real en v2.1.0:** el escáner utilizaba `DEFAULT_MAX_HOURS` sin importarlo; producía un error antes de leer los partidos. Además, el bloqueo de 180 minutos impedía otra búsqueda incluso cuando el escaneo había fallado. Ambas cosas están corregidas.
+
+## Prueba inmediata sin esperar horas
+
+1. Sube el contenido completo a GitHub y verifica Railway `Success` y `/health` versión `2.1.1`.
+2. Inicia sesión como dueño → **Análisis automático** → **⚡ Probar conexión y partidos ahora**.
+3. La prueba de solo lectura comprueba la cuenta de API-Football, consulta partidos de hoy y mañana si la ventana cruza medianoche, y consulta una predicción de muestra cuando hay partidos en las próximas 1–6 horas.
+4. Verás si responde la API, cuántos partidos llegaron, cuántos están dentro de la ventana, si hay predicción de proveedor y si supera filtros. Si no hay partidos, indicará el motivo sin fingir un pronóstico.
+
+**La prueba no escribe propuestas, no cobra, no envía nada a Telegram y no modifica la membresía.** Usa de 2 a 4 consultas API-Football. Se devuelve un resultado en caché durante 60 segundos para evitar consumir cuota y se limitan a 4 diagnósticos por día y proceso. Nunca muestra la API key.
+
+La **Búsqueda completa** sigue limitada a tres horas tras una ejecución *completada*, para cuidar la cuota gratuita, pero los fallos anteriores ya no bloquean la búsqueda. Al esperar, muestra la fecha exacta. Los escaneos manuales no activan la publicación automática: solo los escaneos programados pueden publicarla cuando `FOOTBALL_AUTO_PUBLISH=true`.
+
+**Limitación:** todavía se debe validar en Railway con credenciales reales; los tests locales simulan respuestas de la API. Se mantienen las variables `FOOTBALL_API_KEY`, `FOOTBALL_AUTO_SCAN` y `FOOTBALL_AUTO_PUBLISH`. Se recomienda desactivar la publicación automática mientras se evalúan resultados.
+
+---
+
 # Fijas de Élite v2.1.0 — Motor de análisis automático de fútbol
 
 ## Alcance real de esta versión

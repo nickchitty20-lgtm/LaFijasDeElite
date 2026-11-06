@@ -1,4 +1,5 @@
-import {footballApi,utcDate,upcomingFixtures,createAssessment,extractMatchWinnerOdds,kickOffString} from './football-analysis.js';
+import {footballApi,utcDate,upcomingFixtures,createAssessment,extractMatchWinnerOdds,kickOffString,DEFAULT_MAX_HOURS} from './football-analysis.js';
+import {diagnoseFootball} from './football-diagnostic.js';
 import {sendPredictionToTelegram} from './telegram-bridge.js';
 import {enqueuePredictionEvent} from './notification-center.js';
 
@@ -12,6 +13,10 @@ export function installFootballAutomation(app,{db,authenticate}){
  let scanning=false;
  let lastError='';
  let lastSuccess=null;
+ let lastDiagnostic=null;
+ let lastDiagnosticAt=0;
+ let dailyDiagnosticCount=0;
+ let diagnosticDay='';
  const isOwner=req=>req.admin?.role==='owner';
 
  async function scan({manual=false}={}){
@@ -25,10 +30,11 @@ export function installFootballAutomation(app,{db,authenticate}){
    const [[lockRow]]=await lock.query("SELECT GET_LOCK('fijas_football_auto_scan',1) AS acquired");
    if(Number(lockRow.acquired)!==1)return {busy:true,message:'Otro proceso está analizando.'};
    acquired=true;
-   const [[prior]]=await lock.query('SELECT started_at FROM football_scans ORDER BY id DESC LIMIT 1');
+   const [[prior]]=await lock.query("SELECT started_at FROM football_scans WHERE status='completed' ORDER BY id DESC LIMIT 1");
    const priorTime=prior?.started_at?new Date(prior.started_at).getTime():0;
    if(priorTime && Date.now()-priorTime<SCAN_COOLDOWN_MINUTES*60000){
-    return {cooldown:true,message:'El siguiente escaneo estará disponible en unas horas. Esto protege la cuota de la API.'};
+    const nextAt=new Date(priorTime+SCAN_COOLDOWN_MINUTES*60000).toISOString();
+    return {cooldown:true,next_scan_at:nextAt,message:`La búsqueda completa está limitada para cuidar las consultas de la API. Próxima búsqueda: ${nextAt}. Puedes ejecutar la prueba inmediata sin esperar.`};
    }
    const [created]=await lock.execute('INSERT INTO football_scans (status,started_at) VALUES (?,UTC_TIMESTAMP())',['running']);
    const runId=created.insertId;
@@ -77,7 +83,7 @@ export function installFootballAutomation(app,{db,authenticate}){
     await lock.execute("UPDATE football_scans SET status='completed',finished_at=UTC_TIMESTAMP(),examined=?,drafts_created=? WHERE id=?",[examined,drafts,runId]);
     lastError='';lastSuccess=Date.now();
     // Automatic publication is opt-in and requires quoted odds and daily limits.
-    if(process.env.FOOTBALL_AUTO_PUBLISH==='true'){
+    if(!manual&&process.env.FOOTBALL_AUTO_PUBLISH==='true'){
      const [rows]=await db.query("SELECT id FROM football_candidates WHERE status='draft' AND odds IS NOT NULL AND kickoff>DATE_ADD(UTC_TIMESTAMP(),INTERVAL 20 MINUTE) ORDER BY provider_probability DESC LIMIT 8");
      for(const row of rows){
       try{const result=await publish(row.id,null,{automatic:true});if(result?.published)published++;}
@@ -155,13 +161,43 @@ export function installFootballAutomation(app,{db,authenticate}){
     free_public_full:process.env.FOOTBALL_PUBLIC_FREE_PICKS==='true',
     drafts:Number(stats.drafts||0),published:Number(stats.published||0),
     won:Number(stats.won||0),lost:Number(stats.lost||0),accuracy:decided?Number((stats.won*100/decided).toFixed(1)):null,
-    latest:latest||null,scanning,last_error:lastError,last_success:lastSuccess});
+    latest:latest||null,scanning,last_error:lastError,last_success:lastSuccess,
+    diagnostic:lastDiagnostic?{...lastDiagnostic,cached:false}:null});
   }catch(e){res.status(500).json({error:'No se pudo consultar el motor deportivo'});}
  });
  app.get('/api/admin/football/candidates',authenticate,async(req,res)=>{
   if(!isOwner(req))return res.status(403).json({error:'Solo creador'});
   try{const [rows]=await db.query('SELECT id,fixture_id,visibility,home_team,away_team,league,kickoff,market,selection,provider_probability,odds,analysis,status,prediction_id,created_at FROM football_candidates ORDER BY id DESC LIMIT 30');res.json({candidates:rows});}
   catch(e){res.status(500).json({error:'No se pudieron cargar los análisis'});}
+ });
+ // Read-only live diagnostic: independent of the 3-hour full-scan cooldown.
+ // Never creates proposals, publishes predictions or sends Telegram messages.
+ app.post('/api/admin/football/test',authenticate,async(req,res)=>{
+  if(!isOwner(req))return res.status(403).json({error:'Solo creador'});
+  if(!process.env.FOOTBALL_API_KEY)return res.status(400).json({error:'Falta FOOTBALL_API_KEY en Railway'});
+  const now=Date.now(),today=new Date(now).toISOString().slice(0,10);
+  if(lastDiagnostic&&now-lastDiagnosticAt<60000)return res.json({...lastDiagnostic,cached:true});
+  if(diagnosticDay!==today){diagnosticDay=today;dailyDiagnosticCount=0;}
+  if(dailyDiagnosticCount>=4)return res.status(429).json({error:'Límite de 4 diagnósticos por día alcanzado para proteger tu cuota gratuita. La búsqueda automática sigue disponible.'});
+  if(scanning)return res.status(409).json({error:'Ya se está ejecutando un análisis; prueba nuevamente al terminar.'});
+  let conn,hasLock=false;
+  try{
+   conn=await db.getConnection();
+   const [[row]]=await conn.query("SELECT GET_LOCK('fijas_football_auto_scan',1) AS acquired");
+   if(Number(row.acquired)!==1)return res.status(409).json({error:'Otro proceso está analizando. Prueba nuevamente en un momento.'});
+   hasLock=true;
+   dailyDiagnosticCount++;
+   const result=await diagnoseFootball();
+   lastDiagnostic=result;lastDiagnosticAt=Date.now();
+   return res.json({...result,cached:false});
+  }catch(e){
+   const error=safeError(e);
+   console.warn('football read-only diagnostic:',error);
+   return res.status(502).json({error:`No se pudo completar la prueba: ${error}`});
+  }finally{
+   if(hasLock)await conn.query("SELECT RELEASE_LOCK('fijas_football_auto_scan')").catch(()=>{});
+   conn?.release();
+  }
  });
  app.post('/api/admin/football/scan',authenticate,async(req,res)=>{
   if(!isOwner(req))return res.status(403).json({error:'Solo creador'});

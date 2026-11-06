@@ -1,4 +1,4 @@
-/* Fijas de Élite — Análisis automático 2.1.0 */
+/* Fijas de Élite — Análisis automático 2.1.1 */
 #footballEnginePanel{overflow:hidden}
 .football-engine-top{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;flex-wrap:wrap}
 .football-engine-top small{color:#d2b173;letter-spacing:.15em;font-size:11px;font-weight:800}
@@ -17,3 +17,6 @@
 .football-candidate-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}.football-candidate-actions button{max-width:100%;white-space:normal}
 #footballEngineMsg{color:#e9c687;overflow-wrap:anywhere}
 @media(max-width:600px){.football-engine-top>span{white-space:normal}.football-engine-actions button,.football-candidate-actions button{width:100%}.football-candidates{grid-template-columns:1fr}}
+
+.football-diagnostic-result{background:#141d27;border:1px solid #60734d;border-radius:14px;padding:16px;margin:12px 0;color:#d8e1e9;overflow-wrap:anywhere}
+.football-diagnostic-result strong{color:#e6c77f}.football-diagnostic-result p{font-size:13px;line-height:1.5;margin:8px 0}.football-diagnostic-result b{color:#d4dce6}.football-diagnostic-result .football-diagnostic-note{color:#e8bf75;margin-top:15px}
