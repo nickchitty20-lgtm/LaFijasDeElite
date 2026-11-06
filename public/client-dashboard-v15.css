@@ -56,3 +56,23 @@ body.client-logged-in>header{display:none}body.client-logged-in .auth-layout{max
 .telegram-client-card button:disabled{opacity:.5;cursor:not-allowed}
 #telegramClientResult{overflow-wrap:anywhere;font-size:13px}
 @media(max-width:900px){.telegram-client-grid{grid-template-columns:1fr}}
+
+/* v1.9.2 · Secure Telegram account change */
+.telegram-change-help{font-size:12px;color:#c7af7c!important;max-width:46ch}
+.telegram-change-form{display:grid;gap:12px;padding:20px;margin-top:12px;border-radius:14px;border:1px solid #82704e;background:#121923}
+.telegram-change-form[hidden]{display:none!important}
+.telegram-change-form h5{margin:0;color:#f0d7a6;font-size:16px}
+.telegram-change-form label{display:grid;gap:8px;color:#f5e9d4;font-size:13px}
+.telegram-change-form input[type="password"]{width:100%;min-width:0;border-radius:10px;padding:12px;color:#f5f1e7;background:#11161e;border:1px solid #5e646f}
+.telegram-change-form .telegram-change-confirm{display:flex;align-items:flex-start;gap:12px;line-height:1.5}
+.telegram-change-form .telegram-change-confirm input{margin-top:3px;accent-color:#dbc085}
+.telegram-change-form button{margin:0;max-width:100%}
+
+/* v2.0 — Centro de notificaciones */
+.notice-preferences-card{background:#131923;border:1px solid rgba(214,179,110,.24);border-radius:18px;padding:clamp(18px,3vw,28px);margin-bottom:24px}
+.notice-preferences-card h4{font-size:1.12rem;margin:10px 0}
+.notice-preferences-card form{display:grid;gap:12px;margin-top:16px}
+.notice-preferences-card label{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:12px;background:#1c2430;border:1px solid #323a45;cursor:pointer}
+.notice-preferences-card input[type="checkbox"]{width:18px;height:18px;accent-color:#d6b36e;flex-shrink:0}
+.notice-preferences-card button{max-width:270px}
+.notice-preferences-card p[role="status"]{color:#d7c6a8;min-height:1.5em}

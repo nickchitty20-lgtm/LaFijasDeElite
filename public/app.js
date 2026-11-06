@@ -31,7 +31,7 @@ async function dashboard(){
  $('customersPanel').hidden=!clients;$('auditPanel').hidden=!audit;
  if($('paypalDiagnosticsPanel'))$('paypalDiagnosticsPanel').hidden=me.role!=='owner';if($('telegramPanel'))$('telegramPanel').hidden=me.role!=='owner';if(me.role==='owner'){await loadStaff();await loadPaypalDiagnostics();await loadTelegramAdmin();}if(pred)await loadPredictions();
  if(pay){await loadCommerce();await loadVipPlans();await loadFinance();}else if(clients)await loadCustomersOnly();
- if(audit)await loadAudit();initAdminNavigation();}catch(err){$('loginMsg').textContent=err.message;show('login');}
+ if(audit)await loadAudit();initAdminNavigation();await loadMyTelegram();}catch(err){$('loginMsg').textContent=err.message;show('login');}
 }
 $('logout').addEventListener('click',async()=>{
  try{await api('/api/logout',{method:'POST',body:'{}'});currentAdminRole='';show('login');}
@@ -195,6 +195,7 @@ function renderStaff(){
   const mail=document.createElement('small');mail.textContent=u.email;
   const rank=document.createElement('span');rank.className='staff-rank'+(u.role==='blacklist'?' rank-zero':'');rank.textContent=u.role==='blacklist'?'⛔ RANK 0 · LISTA NEGRA':'Rango '+u.rank+' · '+({customer:'Cliente',general_admin:'Admin general',payments_admin:'Admin pagos',analyst:'Analista',moderator:'Moderador'})[u.role];
   info.append(name,mail,rank);
+  if(['moderator','analyst','payments_admin','general_admin'].includes(u.role)){const benefit=document.createElement('small');benefit.textContent='♛ VIP gratuito por cargo · sin vencimiento mientras mantenga el rango';info.append(benefit);}
   if(u.role==='blacklist'&&u.blacklist_reason){const reason=document.createElement('small');reason.textContent='Motivo: '+u.blacklist_reason;info.append(reason);}
   const controls=document.createElement('div');controls.className='staff-controls';
   const select=document.createElement('select');select.setAttribute('aria-label','Rol de '+u.email);
@@ -214,8 +215,16 @@ function renderStaff(){
    if(!confirm(message))return;
    btn.disabled=true;
    try{
-    await api('/api/admin/staff/'+u.id+'/role',{method:'POST',body:JSON.stringify({role:select.value,...(select.value==='blacklist'?{reason:reason.value.trim()}:{})})});
-    $('staffMsg').textContent=select.value==='blacklist'?'Cuenta añadida a lista negra (Rank 0). Acceso bloqueado.':'Cargo actualizado y acceso restablecido según el rol.';
+    const result=await api('/api/admin/staff/'+u.id+'/role',{method:'POST',body:JSON.stringify({role:select.value,...(select.value==='blacklist'?{reason:reason.value.trim()}:{})})});
+    $('staffMsg').textContent=select.value==='blacklist'
+     ? ('Cuenta en Rank 0. '+(result.telegram_vip?.vip_channel_blocked===false
+         ? '⚠️ No se confirmó la expulsión del canal VIP. Usa Telegram → Sincronizar y revisa permisos.'
+         : 'Expulsión del canal VIP solicitada; el grupo público no se modifica.'))
+     : (u.role==='blacklist'
+        ? ('Rank 0 retirado. '+(result.telegram_vip?.vip_channel_unblocked===true
+          ? 'Telegram desbloqueado. Para entrar al canal necesita VIP y una invitación nueva.'
+          : '⚠️ Desbloqueo de Telegram pendiente; entra a Telegram → Auditar y limpiar miembros conocidos.'))
+        : 'Cargo actualizado y acceso restablecido según el rol.');
     await loadStaff();
    }catch(e){$('staffMsg').textContent=e.message;}finally{btn.disabled=false;}
   });
@@ -268,7 +277,7 @@ function selectAdminSection(section){
   const guarded=['predictionEditor','predictionHistory','plansPanel','paymentsPanel','vipPanel','staffPanel','customersPanel','auditPanel','financePanel','telegramPanel'].includes(panel.id);
   panel.hidden=panel.dataset.panel!==section || (panel.id==='paypalDiagnosticsPanel' && currentAdminRole!=='owner') || (guarded && !isAdminPanelAllowed(accessId));
  }
- document.querySelector('#dashboard .heading h1').textContent=({overview:'Resumen del negocio',predictions:'Gestión de pronósticos',payments:'Solicitudes de pago',finance:'Finanzas y conciliación',vip:'Gestión de membresías VIP',plans:'Planes y precios',customers:'Clientes registrados',staff:'Gestión de personal',audit:'Historial de actividad',telegram:'Telegram y suscriptores VIP'})[section]||'Resumen del negocio';
+ document.querySelector('#dashboard .heading h1').textContent=({overview:'Resumen del negocio',predictions:'Gestión de pronósticos',payments:'Solicitudes de pago',finance:'Finanzas y conciliación',vip:'Gestión de membresías VIP',plans:'Planes y precios',customers:'Clientes registrados',staff:'Gestión de personal',audit:'Historial de actividad',telegram:'Telegram y suscriptores VIP',mytelegram:'Mi Telegram VIP' })[section]||'Resumen del negocio';
 }
 function isAdminPanelAllowed(id){const button=document.querySelector(`.admin-nav button[data-access="${id}"]`);return button&&!button.hidden;}
 document.querySelectorAll('.admin-nav button[data-section]').forEach(button=>button.addEventListener('click',()=>selectAdminSection(button.dataset.section)));
@@ -323,8 +332,17 @@ async function loadTelegramAdmin(){
   $('telegramAdminSetup').textContent=[s.bot_configured?'Bot ✓':'Falta bot',s.vip_channel_configured?'VIP ✓':'Falta canal',s.free_group_configured?'Grupo ✓':'Falta grupo',s.webhook_secret_configured?'Secreto ✓':'Falta secreto'].join(' · ');
   $('telegramAdminLinked').textContent=String(s.linked);
   $('telegramAdminMembers').textContent=String(s.vip_members);
+  $('telegramCoverage').textContent=`Telegram informa ${s.telegram_member_count??'—'} miembros; IDs de miembros conocidos: ${s.tracked_members}. El bot no puede descargar la lista total: revisa manualmente usuarios antiguos no registrados.`;
  }catch(error){$('telegramAdminResult').textContent=error.message;}
 }
+$('telegramChangeExceptionForm').addEventListener('submit',async event=>{
+ event.preventDefault();if(currentAdminRole!=='owner')return;
+ const form=event.currentTarget;const msg=$('telegramChangeExceptionResult');
+ if(!window.confirm('¿Autorizar una excepción al plazo de 30 días? El cliente todavía deberá introducir su contraseña.'))return;
+ const data=Object.fromEntries(new FormData(form));msg.textContent='Registrando excepción…';
+ try{const r=await api('/api/admin/telegram/change-exception',{method:'POST',body:JSON.stringify(data)});msg.textContent=r.message;form.reset();}
+ catch(error){msg.textContent=error.message;}
+});
 $('telegramWebhookConfigure').addEventListener('click',async()=>{
  if(!confirm('¿Configurar el webhook HTTPS del bot con las variables de Railway?'))return;
  const msg=$('telegramAdminResult');msg.textContent='Configurando webhook…';
@@ -333,6 +351,64 @@ $('telegramWebhookConfigure').addEventListener('click',async()=>{
 });
 $('telegramSync').addEventListener('click',async()=>{
  const msg=$('telegramAdminResult');msg.textContent='Sincronizando canal VIP…';
- try{const r=await api('/api/admin/telegram/sync',{method:'POST',body:'{}'});msg.textContent=`Miembros retirados: ${r.removed}. Errores: ${r.failed}.`;await loadTelegramAdmin();}
+ try{const r=await api('/api/admin/telegram/sync',{method:'POST',body:'{}'});msg.textContent=`IDs auditados: ${r.checked} · Mantienen acceso: ${r.kept} · Retirados: ${r.removed} · Fallos: ${r.failed} · Administradores Telegram para revisión: ${r.telegram_admins}. La auditoría cubre miembros conocidos, no toda la lista de Telegram.`;await loadTelegramAdmin();}
  catch(error){msg.textContent=error.message;}
+});
+
+// v1.9.4 · Staff's own Telegram link and VIP picks, separate from owner operations.
+function renderMyTelegramLink(url,label,detail){
+ const target=$('myTelegramResult');target.replaceChildren();
+ const a=document.createElement('a');a.href=url;a.target='_blank';a.rel='noopener noreferrer';a.textContent=label;
+ target.append(a,document.createTextNode(' · '+detail));
+}
+async function loadMyTelegram(){
+ const msg=$('myTelegramStatus');if(!msg)return;
+ try{
+  const r=await api('/api/customers/telegram');
+  $('myTelegramPrepare').hidden=true;
+  $('myTelegramLink').hidden=Boolean(r.linked)||!r.configured;
+  $('myTelegramInvite').hidden=!r.linked||!r.has_vip||r.change_pending||!r.configured;
+  $('myTelegramInvite').disabled=Boolean(r.is_member);
+  $('myTelegramInvite').textContent=r.is_member?'✓ Ya estás dentro del canal':'Solicitar acceso al canal VIP';
+  $('myTelegramChange').hidden=!r.linked||!r.configured;
+  msg.textContent=r.staff_vip?`♛ VIP por cargo · sin vencimiento. ${r.linked?'Telegram vinculado'+(r.telegram_username?' @'+r.telegram_username:''):'Telegram no vinculado'}. ${r.is_member?'Ya estás en el canal VIP.':''}`:
+    (r.has_vip?'VIP pagado activo':'No tienes VIP')+' · '+(r.linked?'Telegram vinculado':'Vincula tu Telegram');
+ }catch(e){
+  msg.textContent=e.message;
+  $('myTelegramPrepare').hidden=currentAdminRole!=='owner'||!/perfil de cliente todavía/i.test(e.message);
+  $('myTelegramLink').hidden=true;$('myTelegramInvite').hidden=true;$('myTelegramChange').hidden=true;
+ }
+ try{
+  const r=await api('/api/customers/predictions');
+  const root=$('myTelegramPicks');root.replaceChildren();
+  for(const p of r.predictions.filter(p=>p.visibility==='vip').slice(0,12)){
+   const card=document.createElement('article');card.className='my-vip-pick';
+   const h=document.createElement('strong');h.textContent=p.locked?'🔒 '+p.title:p.title;
+   const body=document.createElement('p');body.textContent=p.locked?'Necesitas acceso VIP vigente.':`${p.market||''} · ${p.selection||''} · Cuota ${p.odds||'—'} · ${p.analysis||''}`;
+   card.append(h,body);root.append(card);
+  }
+  if(!root.children.length)root.textContent='Aún no hay pronósticos VIP publicados.';
+ }catch(error){$('myTelegramPicks').textContent='No se pudo consultar el contenido: '+error.message;}
+}
+$('myTelegramRefresh')?.addEventListener('click',loadMyTelegram);
+$('myTelegramPrepare')?.addEventListener('click',async()=>{
+ try{const r=await api('/api/admin/telegram/prepare-owner-profile',{method:'POST',body:'{}'});$('myTelegramResult').textContent=r.message;await loadMyTelegram();}
+ catch(e){$('myTelegramResult').textContent=e.message;}
+});
+$('myTelegramLink')?.addEventListener('click',async()=>{
+ try{const r=await api('/api/customers/telegram/link',{method:'POST',body:'{}'});renderMyTelegramLink(r.url,'Abrir bot y pulsar Iniciar ↗','Enlace personal de 10 minutos.');}
+ catch(e){$('myTelegramResult').textContent=e.message;}
+});
+$('myTelegramInvite')?.addEventListener('click',async()=>{
+ try{const r=await api('/api/customers/telegram/invite',{method:'POST',body:'{}'});renderMyTelegramLink(r.url,'Solicitar ingreso al canal VIP ↗','El bot comprobará tu Telegram y cargo.');}
+ catch(e){$('myTelegramResult').textContent=e.message;}
+});
+$('myTelegramChange')?.addEventListener('click',()=>{$('myTelegramChangeForm').hidden=!$('myTelegramChangeForm').hidden;});
+$('myTelegramChangeForm')?.addEventListener('submit',async event=>{
+ event.preventDefault();const form=event.currentTarget;
+ if(!confirm('¿Confirmas que la cuenta antigua perderá su acceso al canal antes del cambio?'))return;
+ try{
+  const r=await api('/api/customers/telegram/change',{method:'POST',body:JSON.stringify({password:form.elements.password.value,confirm:true})});
+  form.reset();form.hidden=true;renderMyTelegramLink(r.url,'Abrir bot en NUEVO Telegram ↗','El anterior fue retirado.');await loadMyTelegram();
+ }catch(e){$('myTelegramResult').textContent=e.message;}
 });

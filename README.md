@@ -1,3 +1,127 @@
+# Fijas de Élite v2.0.0 — Centro de notificaciones por Telegram
+
+**Sobre v1.9.5:** nueva sección de preferencias en el dashboard, mensajes privados optativos sobre activación/renovación VIP, vencimiento y nuevos pronósticos, con cola persistente y controles de acceso. Configuración e instalación detalladas en [VERSION.md](VERSION.md).
+
+Mantén PayPal Live en la configuración ya verificada; esta actualización **no habilita cobros Live por sí misma ni cambia sus credenciales**. Haz respaldo de MySQL y comprueba que Railway muestre `2.0.0` en `/health`.
+
+---
+
+# Fijas de Élite v1.9.5 — Desbloqueo de Telegram al salir de Rank 0
+
+Continuación de la v1.9.4. No elimina cuentas, membresías, pronósticos ni pagos.
+
+## Nuevo comportamiento
+
+1. Cuando el dueño asigna **Rank 0**, el bot solicita `banChatMember` únicamente en el canal VIP. El grupo público no se modifica.
+2. Cuando el dueño retira **Rank 0** y cambia el usuario a **Cliente** (u otro cargo), el bot ejecuta `unbanChatMember` para levantar el bloqueo del canal VIP, incluso si ese cliente no tiene membresía.
+3. **Desbloquear no equivale a entrar:** el usuario permanece fuera; necesita VIP comprado vigente o VIP por cargo y generar una invitación NUEVA con solicitud de ingreso aprobada.
+4. Si Telegram está desconectado o hay un error, la acción queda guardada en `telegram_rank0_actions` y se reintenta al reiniciar Railway, cada tres minutos y con la sincronización manual. No se marca como completada hasta confirmación de Telegram.
+5. Al cambiar un usuario otra vez a Rank 0, la acción pendiente se reemplaza por un ban. Nunca debe ejecutarse una liberación pendiente para alguien que hoy siga bloqueado.
+6. El panel de personal muestra si Telegram confirmó el desbloqueo o quedó pendiente. **El grupo público sigue intacto.**
+
+## Instalación
+
+- Haz respaldo de MySQL; reemplaza el proyecto completo en GitHub; comprueba Railway **Success** y `/health` versión `1.9.5`.
+- No se requieren variables nuevas. `initializeDatabase()` crea una tabla de cola de acciones; no altera miembros ni pagos previos.
+- El bot debe ser administrador del canal privado con permiso para restringir usuarios.
+- Prueba con una cuenta cuyo Telegram esté vinculado: asigna Rank 0, comprueba que quede baneada del canal VIP, cámbiala a Cliente y verifica que ya no esté baneada **pero siga fuera**; sin VIP, no debe poder solicitar un enlace. Con VIP vigente podrá generar uno nuevo y pedir ingreso.
+- Si falla un cambio, abre **Dueño → Telegram → Auditar y limpiar miembros conocidos**. La cola de acciones reintenta los bloqueos y desbloqueos pendientes. Revisa logs de Railway si Telegram sigue rechazando llamadas.
+
+## Límites
+
+- Como la versión anterior, solo se controlan IDs de Telegram vinculados y/o conocidos: Telegram Bot API no enumera todos los suscriptores.
+- Una cuenta que nunca vinculó Telegram no tiene ID que desbloquear; puede vincularse desde su panel cuando esté habilitada.
+- La confirmación completa requiere prueba real contra Telegram y MySQL; las pruebas locales verifican la política y sintaxis pero no reemplazan una integración desplegada.
+
+---
+
+# Fijas de Élite v1.9.4 — Telegram: limpieza al reiniciar + VIP gratuito por cargo
+
+Continúa la **v1.9.3** y mantiene intactos los pagos PayPal, los rangos, la lista negra, las membresías, las sesiones y las reglas de invitación. **Respalda MySQL antes de instalar.**
+
+## Comportamiento nuevo
+
+- **Al arrancar Railway:** el servidor inicia una auditoría de los usuarios de Telegram cuyos IDs conoce. Cada 3 minutos audita de nuevo hasta 60 conocidos por tanda; desde **Dueño → Telegram** también puedes solicitar una auditoría manual. Si Telegram confirma que un miembro del canal no tiene VIP comprado, VIP gratuito por cargo ni cuenta habilitada, el bot lo expulsa. Un Rank 0 queda baneado; quien solo perdió VIP es retirado y puede solicitar otra invitación después de volver a obtener acceso.
+- **Miembros rastreados:** registra los IDs observados por `chat_member` y los IDs vinculados en versiones anteriores en la tabla `telegram_channel_members`. Revisa cada uno por `getChatMember`. También puede retirar inmediatamente a un usuario ajeno que entre con una invitación distinta si Telegram envía el evento `chat_member`.
+- **Limitación real de la API:** el Bot API de Telegram **no permite enumerar todos los miembros de un canal**. Por tanto, la auditoría automática **NO garantiza revisar usuarios antiguos/desconocidos** que estaban antes de instalar el bot y nunca generaron un evento. Tampoco puede expulsar a otros administradores del canal. Revisa esos casos manualmente desde Telegram y desactiva enlaces generales que salten la aprobación del bot. El panel compara el recuento informado por Telegram con los IDs conocidos, sin afirmar que sean equivalentes (el recuento incluye administradores).
+- **VIP por cargo, sin pago ni vencimiento:** dueño, admin general, admin de pagos, analista y moderador conservan acceso VIP **mientras** tengan ese cargo en `admins` y la cuenta esté activa. No se crea una membresía de mentira ni se registra una venta. Al degradarlo a cliente, pierde el beneficio de rango; si tenía un VIP comprado todavía vigente, lo conserva. **Rank 0 lo bloquea incluso si tenía un pago válido**. El grupo público no se modifica.
+- **Panel del personal:** todos los administradores ven **Mi Telegram VIP** para vincular su cuenta Telegram, solicitar la invitación segura y consultar pronósticos VIP. El dueño original, que se creó antes que los clientes, puede pulsar **Preparar mi cuenta de dueño** para crear su perfil web correspondiente sin modificar la contraseña.
+- **Cambio de Telegram:** mantiene la comprobación de contraseña, un único Telegram vinculado y la espera de 30 días. La cuenta anterior se retira del canal antes de autorizar un cambio.
+
+## Instalación y comprobación
+
+1. Respalda la base MySQL. Descomprime el ZIP, sube todos sus archivos a GitHub y espera **Railway → Success**. Comprueba `GET /health` y la versión `1.9.4`.
+2. Conserva `TELEGRAM_BOT_TOKEN`, `TELEGRAM_VIP_CHAT_ID`, `TELEGRAM_WEBHOOK_SECRET` y `PUBLIC_BASE_URL`. No necesitas nuevas variables. El canal debe ser **privado** y el bot su administrador con permiso para gestionar invitaciones, aprobar solicitudes y banear miembros.
+3. Como dueño abre **Telegram → Activar webhook Telegram** si no lo hiciste; comprueba que se suscriba a `chat_member` y `chat_join_request`. Ejecuta **Auditar y limpiar miembros conocidos**. Verás cuántos IDs auditó, retiró y no pudo revisar.
+4. Prueba con un cliente sin VIP que ya esté en el canal: si su ID está registrado o el bot observa su ingreso, debe expulsarlo. Repite con un VIP vigente: debe permanecer. Prueba Rank 0: debe quedar fuera del canal, pero no del grupo público.
+5. Asigna a una cuenta de cliente el rango Analista. Con esa cuenta entra al panel del personal → **Mi Telegram VIP**. Debe tener VIP por cargo sin comprar. Vincula Telegram, solicita ingreso y después retírale el rango: el bot debe retirarlo salvo que tenga VIP comprado vigente.
+6. Audita **manualmente** a los miembros anteriores a la instalación del bot que no aparecen como conocidos. Los enlaces creados por otros administradores o el propietario deben revisarse en Telegram; el bot solo puede revocar sus propios enlaces.
+
+### Precauciones
+
+No uses Telegram como fuente exclusiva de identidad, ni confíes en `@username`: utiliza solo el ID numérico vinculado. Las expulsiones dependen de la disponibilidad de la API y los permisos; si falla la red, quedarán para reintento. La limpieza por reinicio se procesa **por tandas**, no es un escaneo mágico de todos los suscriptores. La condición de VIP por cargo es un privilegio interno y no constituye una venta ni un ingreso financiero. Los cambios en roles y pagos tienen efecto en el siguiente control del servidor; Telegram puede tardar en aplicar una expulsión.
+
+## Pruebas
+
+Se ejecutaron pruebas locales unitarias y de sintaxis. No equivalen a un despliegue real con tu MySQL, canal privado y credenciales de Telegram. Primero prueba con cuentas de demostración.
+
+---
+
+# Fijas de Élite v1.9.3 — Invitaciones VIP de un solo uso y Rank 0 en Telegram
+
+Esta actualización continúa sobre **v1.9.2**. Mantiene los paneles, la seguridad de cambios de Telegram, pagos y membresías. No borres MySQL ni cambies tus variables existentes.
+
+## Canal privado: reglas de ingreso
+
+- El cliente solicita desde **Dashboard → Telegram VIP** un enlace de invitación de 15 minutos. Se crea con `creates_join_request=true`: abrirlo **no** permite entrar sin aprobación.
+- El webhook comprueba que el **ID de Telegram del solicitante coincida exactamente** con el ID vinculado a la cuenta web, que no esté en Rank 0 y que exista VIP vigente **en ese momento**.
+- El enlace sólo sirve para la cuenta vinculada. Si se reenvía a otra persona, se rechaza la solicitud aunque esa persona sea VIP de otra cuenta.
+- Cuando se emite otro enlace se revoca el anterior; el que se use correctamente se revoca y elimina del registro. Los enlaces vencidos sin usar se desechan mediante una limpieza periódica; Telegram también impide usarlos después de su `expire_date`.
+- Una cuenta sin VIP o en Rank 0 no puede usar invitaciones antiguas, incluso aunque Telegram todavía muestre el enlace. El bot rehúsa su solicitud de ingreso.
+- **Rank 0:** al aplicarlo desde **Personal**, la web bloquea al cliente y solicita **inmediatamente** a Telegram que lo banee del **canal VIP** (no del grupo público). Si la API falla, el panel muestra una advertencia y la sincronización reintenta retirar al miembro.
+- Cuando el dueño levanta Rank 0, el usuario **no recupera el ingreso automáticamente**; necesita VIP vigente y una invitación nueva.
+
+## Instalación
+
+1. Haz una copia de seguridad de MySQL. Sube el contenido del ZIP a GitHub y verifica **Success** en Railway.
+2. Comprueba `GET /health` → `version: 1.9.3`. `initializeDatabase()` añade `telegram_vip_invites.invite_link` si la columna todavía no existe. No borra registros previos.
+3. No hay variables nuevas. Mantén el bot como administrador del canal VIP, con permisos para **invitar, aprobar solicitudes y expulsar/bloquear miembros**; activa el webhook desde **Dueño → Telegram** si está desactivado.
+4. Revoca manualmente invitaciones **externas, permanentes o creadas por otros administradores** que pudieran circular. El bot sólo puede revocar los enlaces que él mismo creó. Los enlaces antiguos de v1.9.2, de los que no se conservó el texto íntegro, expiran por sí solos a los 15 minutos y sus solicitudes no se aprobarán una vez sustituidos.
+5. Prueba con dos cuentas de Telegram y un cliente VIP de prueba: usa un enlace válido desde el ID correcto, intenta reenviarlo a otro ID, pide otro enlace y prueba el antiguo; después aplica Rank 0 y comprueba el bloqueo al canal mientras el grupo público permanece intacto.
+
+## Verificación y limitaciones
+
+Los test unitarios y `node --check` no equivalen a una prueba real con tu bot, el canal ni MySQL. La expulsión inmediata exige que Telegram esté disponible y que el bot tenga permiso de bloqueo. Si la API falla, el panel lo advierte y queda pendiente de reintento. La limpieza de enlaces caducados ocurre en el barrido programado aproximadamente cada tres minutos, sujeto a la actividad de Railway.
+
+---
+
+# Fijas de Élite v1.9.2 — Cambio seguro de Telegram para clientes VIP
+
+Esta actualización continúa sobre **v1.9.1**. Conserva los pagos, la administración, los pronósticos, los paneles y las vinculaciones Telegram existentes; no es necesario borrar MySQL ni cambiar el token del bot.
+
+## Protección contra compartir membresías
+
+- El cliente VIP ve **Telegram VIP → Cambiar mi cuenta Telegram** cuando ya tiene una cuenta vinculada.
+- Para solicitar un cambio debe confirmar su contraseña de Fijas de Élite y aceptar que la cuenta de Telegram anterior perderá el acceso **inmediatamente**. El backend pide a Telegram expulsar y bloquear esa cuenta del canal **antes** de generar el enlace. Si el bot no puede hacerlo, rechaza el cambio.
+- Se crea un enlace aleatorio de **un solo uso, válido 10 minutos**. Solo la cuenta Telegram que abra ese enlace mediante el bot puede completar el reemplazo. El Telegram antiguo no puede reutilizar el enlace. El nuevo Telegram no puede estar vinculado ya a otra cuenta web.
+- **Máximo un cambio completado cada 30 días**. Si se abandona un cambio antes de completarlo, la cuenta anterior sigue fuera del canal; se puede emitir un enlace nuevo con la misma contraseña tras **30 minutos**, sin desbloquear el Telegram anterior.
+- Al terminar, el cliente vuelve al panel y solicita una nueva invitación VIP para el **nuevo** Telegram. El bot comprueba la cuenta web, el VIP vigente y el ID de Telegram; no se conceden múltiples accesos en paralelo.
+- Solo el dueño puede autorizar una excepción al plazo desde **Administrador → Telegram → Autorizar un cambio anticipado**, con ID del cliente y motivo obligatorio. La excepción **no vincula cuentas ni concede acceso**: el cliente debe iniciar el reemplazo y volver a autenticar su contraseña. Las operaciones quedan en `telegram_change_events`; las excepciones se guardan también en `audit_logs`.
+- El bot verifica las solicitudes de entrada y bloquea cuentas de Telegram no autorizadas. Los enlaces de invitación antiguos deberían revocarse manualmente en Telegram si alguna vez se distribuyeron fuera del sistema.
+
+## Instalación y prueba
+
+1. **Respalda MySQL** y sube todos los archivos a GitHub; Railway debe terminar con **Success**. Comprueba `/health` → `version: 1.9.2`.
+2. No agregues variables de Railway para esta función. Conserva `TELEGRAM_BOT_TOKEN`, `TELEGRAM_VIP_CHAT_ID`, `TELEGRAM_WEBHOOK_SECRET`, `PUBLIC_BASE_URL` y el resto de la configuración existente.
+3. Confirma que el bot sea administrador del canal VIP con permiso para **expulsar/bloquear usuarios**, aprobar solicitudes de ingreso y crear enlaces. Si no puede expulsar, el reemplazo será rechazado por seguridad.
+4. Con una cuenta **VIP de prueba** ya vinculada, abre **Telegram VIP → Cambiar mi cuenta Telegram**, escribe su contraseña web y confirma la operación. Comprueba que el Telegram anterior sea retirado del canal.
+5. Abre el enlace desde otro Telegram de prueba **no vinculado**, pulsa Iniciar y actualiza el panel web. Solicita una nueva invitación VIP y verifica que solo el nuevo Telegram pueda entrar.
+6. Reintenta cambiar de inmediato: debe indicarse la espera de 30 días. Prueba también el enlace vencido, un Telegram vinculado a otra cuenta y la excepción autorizada por el dueño.
+
+**Limitaciones:** las expulsiones dependen de la API de Telegram; el bot no puede impedir capturas ni mensajes compartidos fuera del canal. El cliente que comienza el cambio pierde acceso con su Telegram anterior incluso si luego deja vencer el enlace, como protección deliberada. Los ensayos locales no prueban la integración contra tu Railway/MySQL/Telegram reales. No actives cobros de producción sin probar de extremo a extremo los componentes financieros.
+
+---
+
 # Fijas de Élite v1.9.1 — Telegram Comunidad + Canal VIP
 
 Actualización sobre la v1.9.0. Mantiene MySQL, las sesiones con cookies, Rank 0, pagos, PayPal, administración de VIP y el diseño oscuro y dorado. **No elimina los datos existentes.**

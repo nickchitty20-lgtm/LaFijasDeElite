@@ -88,8 +88,106 @@ export async function initializeDatabase() {
     await connection.query(`CREATE TABLE IF NOT EXISTS telegram_vip_invites (
       user_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
       invite_hash CHAR(64) NOT NULL,
+      invite_link VARCHAR(512) NULL,
       expires_at DATETIME NOT NULL,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB`);
+
+    // v1.9.3: store the short-lived link only so Telegram can revoke it.
+    // Never expose this value in logs or administrative responses.
+    const [inviteCols]=await connection.query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='telegram_vip_invites'");
+    if(!inviteCols.some(c=>c.COLUMN_NAME==='invite_link'))
+      await connection.query('ALTER TABLE telegram_vip_invites ADD COLUMN invite_link VARCHAR(512) NULL');
+
+    // v1.9.2: one pending Telegram replacement per customer; cooldown and audit persist.
+    // The old link remains reserved while a replacement is pending, but no longer grants channel access.
+    await connection.query(`CREATE TABLE IF NOT EXISTS telegram_change_state (
+      user_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+      status ENUM('idle','awaiting_new') NOT NULL DEFAULT 'idle',
+      old_telegram_user_id BIGINT NULL,
+      pending_token_hash CHAR(64) NULL UNIQUE,
+      pending_expires_at DATETIME NULL,
+      last_issue_at DATETIME NULL,
+      last_changed_at DATETIME NULL,
+      cooldown_until DATETIME NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB`);
+    await connection.query(`CREATE TABLE IF NOT EXISTS telegram_change_events (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      user_id BIGINT UNSIGNED NOT NULL,
+      event_type ENUM('requested','reissued','completed','owner_exception') NOT NULL,
+      old_telegram_user_id BIGINT NULL,
+      new_telegram_user_id BIGINT NULL,
+      actor_admin_id BIGINT UNSIGNED NULL,
+      detail VARCHAR(250) NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_telegram_change_user (user_id,created_at),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB`);
+
+    // v1.9.4: known-channel-member ledger. Telegram Bot API cannot list all subscribers.
+    // Track updates and audit known IDs after each restart; never fabricate unknown IDs.
+    await connection.query(`CREATE TABLE IF NOT EXISTS telegram_channel_members (
+      telegram_user_id BIGINT NOT NULL PRIMARY KEY,
+      state ENUM('member','left') NOT NULL DEFAULT 'member',
+      last_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      last_checked_at DATETIME NULL,
+      last_error VARCHAR(250) NULL,
+      INDEX idx_telegram_channel_audit(state,last_checked_at)
+    ) ENGINE=InnoDB`);
+    // Seed members tracked in previous releases without altering their VIP entitlements.
+    await connection.query(`INSERT IGNORE INTO telegram_channel_members(telegram_user_id,state)
+      SELECT telegram_user_id,'member' FROM telegram_links`);
+
+    // v1.9.5: durable queue for Rank 0 bans and lifts. Retries after Railway restarts
+    // and Telegram outages. A release is NOT an automatic VIP invitation.
+    await connection.query(`CREATE TABLE IF NOT EXISTS telegram_rank0_actions (
+      user_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+      telegram_user_id BIGINT NOT NULL,
+      action ENUM('ban','unban') NOT NULL,
+      attempts INT UNSIGNED NOT NULL DEFAULT 0,
+      last_error VARCHAR(250) NULL,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      INDEX idx_telegram_rank0_retry(updated_at)
+    ) ENGINE=InnoDB`);
+
+    // v2.0: Opt-in Telegram DM notification centre with durable, deduplicated outbox.
+    await connection.query(`CREATE TABLE IF NOT EXISTS telegram_notice_prefs (
+      user_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+      vip_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+      expiry_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+      picks_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB`);
+    await connection.query(`CREATE TABLE IF NOT EXISTS telegram_notice_outbox (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      user_id BIGINT UNSIGNED NOT NULL,
+      kind ENUM('vip_activated','vip_expiring','new_prediction') NOT NULL,
+      reference_key VARCHAR(120) NOT NULL,
+      message VARCHAR(650) NOT NULL,
+      requires_vip BOOLEAN NOT NULL DEFAULT FALSE,
+      status ENUM('pending','sending','sent','failed','disabled') NOT NULL DEFAULT 'pending',
+      attempts INT UNSIGNED NOT NULL DEFAULT 0,
+      retry_after DATETIME NULL,
+      lease_id VARCHAR(36) NULL,
+      leased_at DATETIME NULL,
+      last_error VARCHAR(250) NULL,
+      sent_at DATETIME NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_telegram_notification (user_id,kind,reference_key),
+      INDEX idx_telegram_outbox_queue(status,retry_after,leased_at),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB`);
+    await connection.query(`CREATE TABLE IF NOT EXISTS telegram_notice_events (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      prediction_id BIGINT UNSIGNED NOT NULL UNIQUE,
+      visibility ENUM('free','vip') NOT NULL,
+      last_user_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
+      status ENUM('pending','done') NOT NULL DEFAULT 'pending',
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (prediction_id) REFERENCES predictions(id) ON DELETE CASCADE
     ) ENGINE=InnoDB`);
 
     // Planes iniciales: se insertan solo cuando no existe otro con el mismo nombre.

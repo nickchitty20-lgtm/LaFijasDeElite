@@ -14,15 +14,19 @@ import {db} from './db.js';
 import {initializeDatabase} from './init-db.js';
 import {buildMembershipSummary} from './membership-summary.js';
 import {isBlacklisted,roleRank,blockedAccountResponse} from './account-policy.js';
+import {getVipEntitlement} from './vip-access.js';
 import {manualVipPeriod} from './manual-vip.js';
 import {evaluateMembershipArchive} from './membership-archive-policy.js';
 import {paypalReadiness,validatePaypalCapture,refundState,usdCents,captureIdFromRefund} from './paypal-rules.js';
 import {sendPredictionToTelegram} from './telegram-bridge.js';
 import {installTelegramRoutes} from './telegram-routes.js';
+import {installNotificationCenter,enqueueVipActivation,enqueuePredictionEvent} from './notification-center.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
-const APP_VERSION = '1.9.1';
+const APP_VERSION = '2.0.0';
 const app = express();
+let telegramVipControl=null;
+let notificationControl=null;
 // Railway terminates HTTPS behind one reverse proxy; trust only that hop.
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
@@ -246,6 +250,7 @@ app.post('/api/admin/predictions',authenticate,async(req,res)=>{
   const row={...p,id:r.insertId};let telegram='not_configured';
   try{telegram=(await sendTelegram(row)).state;}catch(e){telegram='failed';console.error('Telegram delivery failed for prediction',r.insertId,e.message);}
   await db.execute('UPDATE predictions SET telegram_status=? WHERE id=?',[telegram,r.insertId]);
+  try{await enqueuePredictionEvent(db,r.insertId,p.visibility);}catch(error){console.error('notification event enqueue',error.code||error.message);}
   res.status(201).json({id:r.insertId,web:'published',telegram});
  }catch(e){console.error('create prediction',e.code||e.message);res.status(500).json({error:'No se pudo publicar'});}
 });
@@ -318,10 +323,23 @@ app.post('/api/customers/reset-password',resetLimit,async(req,res)=>{
 });
 async function customerAuth(req,res,next){
  try{
-  const t=verifyToken(req,'customer');
-  if(!t)return res.status(401).json({error:'Inicia sesión'});
-  const [[u]]=await db.execute('SELECT id,email,display_name,password_hash,account_status FROM users WHERE id=?',[t.sub]);
-  if(!u||!sessionStillValid(t,u.password_hash))return res.status(401).json({error:'Sesión vencida o cuenta no disponible'});
+  let t=null;
+  try{t=verifyToken(req,'customer');}catch{/* Admin session has a different JWT audience. */}
+  let u=null;
+  if(t){
+   [[u]]=await db.execute('SELECT id,email,display_name,password_hash,account_status FROM users WHERE id=?',[t.sub]);
+   if(!u||!sessionStillValid(t,u.password_hash))return res.status(401).json({error:'Sesión vencida o cuenta no disponible'});
+  }else{
+   // Staff see their own Telegram/VIP benefit using their existing admin session.
+   // Never allow a different customer's account to be impersonated by an admin.
+   t=verifyToken(req,'admin');
+   if(!t)return res.status(401).json({error:'Inicia sesión'});
+   const [[a]]=await db.execute(`SELECT a.email,a.role,a.is_active,COALESCE(u.password_hash,a.password_hash) AS auth_hash
+     FROM admins a LEFT JOIN users u ON u.email=a.email WHERE a.id=?`,[t.sub]);
+   if(!a?.is_active||!['owner','general_admin','payments_admin','analyst','moderator'].includes(a.role)||!sessionStillValid(t,a.auth_hash))return res.status(403).json({error:'Acceso administrativo no autorizado'});
+   [[u]]=await db.execute('SELECT id,email,display_name,password_hash,account_status FROM users WHERE email=? LIMIT 1',[a.email]);
+   if(!u)return res.status(403).json({error:'Tu perfil de cliente todavía no está vinculado. El dueño puede habilitarlo desde su panel.'});
+  }
   if(isBlacklisted(u))return res.status(403).json(blockedAccountResponse);
   const {password_hash,account_status,...customer}=u;
   req.customer=customer;next();
@@ -330,11 +348,11 @@ async function customerAuth(req,res,next){
 // Always authorize content on the server; never send VIP selections to non-VIP users.
 app.get('/api/customers/predictions',customerAuth,async(req,res)=>{
  try{
-  const [[active]]=await db.execute("SELECT EXISTS(SELECT 1 FROM memberships WHERE user_id=? AND status='active' AND archived_at IS NULL AND starts_at<=UTC_TIMESTAMP() AND ends_at>UTC_TIMESTAMP()) AS has_vip",[req.customer.id]);
-  const vip=Boolean(active.has_vip);
+  const entitlement=await getVipEntitlement(db,req.customer.id);
+  const vip=entitlement.hasVip;
   const [rows]=await db.query("SELECT id,title,league,match_date,visibility,analysis,market,selection,odds,outcome FROM predictions WHERE published_at IS NOT NULL ORDER BY id DESC LIMIT 50");
   res.set('Cache-Control','private, no-store');
-  res.json({has_vip:vip,predictions:rows.map(p=>p.visibility==='vip'&&!vip?{id:p.id,title:p.title,league:p.league,match_date:p.match_date,visibility:'vip',locked:true}:{...p,locked:false})});
+  res.json({has_vip:vip,staff_vip:entitlement.staff,predictions:rows.map(p=>p.visibility==='vip'&&!vip?{id:p.id,title:p.title,league:p.league,match_date:p.match_date,visibility:'vip',locked:true}:{...p,locked:false})});
  }catch(e){console.error('customer predictions',e.code||e.message);res.status(500).json({error:'No se pudieron cargar los pronósticos'});}
 });
 // Customer-only dashboard: all figures are derived from database records.
@@ -346,13 +364,16 @@ app.get('/api/customers/dashboard',customerAuth,async(req,res)=>{
   const [[currentMembership]]=await db.execute("SELECT m.ends_at,p.name AS plan FROM memberships m JOIN plans p ON p.id=m.plan_id WHERE m.user_id=? AND m.status='active' AND m.archived_at IS NULL AND m.starts_at<=UTC_TIMESTAMP() AND m.ends_at>UTC_TIMESTAMP() ORDER BY m.ends_at DESC LIMIT 1",[req.customer.id]);
   const [[horizon]]=currentMembership?await db.execute("SELECT m.ends_at FROM memberships m WHERE m.user_id=? AND m.status='active' AND m.archived_at IS NULL AND m.ends_at>UTC_TIMESTAMP() ORDER BY m.ends_at DESC LIMIT 1",[req.customer.id]):[[null]];
   const [[scheduled]]=currentMembership?await db.execute("SELECT COUNT(*) AS total FROM memberships WHERE user_id=? AND status='active' AND archived_at IS NULL AND starts_at>UTC_TIMESTAMP() AND ends_at>UTC_TIMESTAMP()",[req.customer.id]):[[{total:0}]];
-  const membership=buildMembershipSummary(currentMembership,horizon,scheduled?.total);
+  const entitlement=await getVipEntitlement(db,req.customer.id);
+  // Staff benefit is unlimited while the role is active. It is NOT a paid membership.
+  const membership=entitlement.staff?{plan:'VIP por cargo · gratuito',ends_at:null,current_ends_at:null,days_left:null,renewals_scheduled:0,staff_vip:true}
+   :buildMembershipSummary(currentMembership,horizon,scheduled?.total);
   const [[stats]]=await db.query("SELECT COUNT(*) AS total, SUM(outcome='won') AS won, SUM(outcome='lost') AS lost, SUM(outcome='pending') AS pending FROM predictions WHERE published_at IS NOT NULL AND outcome IN ('won','lost','pending')");
   const [payments]=await db.execute("SELECT py.id,py.status,py.created_at,p.name AS plan FROM payments py JOIN memberships m ON m.id=py.membership_id JOIN plans p ON p.id=m.plan_id WHERE py.user_id=? ORDER BY py.id DESC LIMIT 5",[req.customer.id]);
   const [recent]=await db.query("SELECT id,title,visibility,outcome,match_date FROM predictions WHERE published_at IS NOT NULL ORDER BY id DESC LIMIT 6");
   const daysLeft=membership?.days_left||0;
   const notices=[];
-  if(membership&&daysLeft<=3)notices.push({type:'expiry',message:`Tu membresía vence en ${daysLeft} día(s).`});
+  if(membership&&!membership.staff_vip&&daysLeft<=3)notices.push({type:'expiry',message:`Tu membresía vence en ${daysLeft} día(s).`});
   if(!membership)notices.push({type:'vip',message:'Activa una membresía para desbloquear los pronósticos VIP.'});
   if(payments.some(p=>p.status==='pending'))notices.push({type:'payment',message:'Tienes una solicitud de pago pendiente de revisión.'});
   const [alerts]=await db.execute('SELECT kind,message,created_at FROM customer_notifications WHERE user_id=? ORDER BY id DESC LIMIT 4',[req.customer.id]);
@@ -367,7 +388,8 @@ app.get('/api/customers/me',customerAuth,async(req,res)=>{
   const [confirmed]=await db.execute(`${base} WHERE m.user_id=? AND m.status='active' AND m.archived_at IS NULL ORDER BY m.ends_at DESC LIMIT 40`,[req.customer.id]);
   const [pending]=await db.execute(`${base} WHERE m.user_id=? AND m.status='pending' AND m.archived_at IS NULL ORDER BY m.id DESC LIMIT 20`,[req.customer.id]);
   const [history]=await db.execute(`${base} WHERE m.user_id=? AND m.status IN ('expired','cancelled') AND m.archived_at IS NULL ORDER BY m.id DESC LIMIT 20`,[req.customer.id]);
-  res.set('Cache-Control','private, no-store').json({user:req.customer,memberships:[...confirmed,...pending,...history]});
+  const entitlement=await getVipEntitlement(db,req.customer.id);
+  res.set('Cache-Control','private, no-store').json({user:req.customer,staff_vip:entitlement.staff,memberships:[...confirmed,...pending,...history]});
  }catch(e){console.error('customer membership list',e.code||e.message);res.status(500).json({error:'No se pudieron consultar tus membresías'});}
 });
 app.post('/api/customers/payment-requests',customerAuth,async(req,res)=>{
@@ -393,6 +415,7 @@ app.post('/api/admin/payments/:id/decision',authenticate,async(req,res)=>{
  const start=current?.last_end && new Date(current.last_end)>new Date()?new Date(current.last_end):new Date();
  const end=new Date(start.getTime()+membership.duration_days*86400000);
  await conn.execute("UPDATE memberships SET status='active',starts_at=?,ends_at=? WHERE id=? AND status='pending' AND archived_at IS NULL",[start,end,membership.id]);
+ await enqueueVipActivation(conn,membership.user_id,membership.id);
  }else await conn.execute("UPDATE memberships SET status='cancelled' WHERE id=? AND status='pending'",[payment.membership_id]);
  await conn.execute('UPDATE payments SET status=?,verified_by=?,verified_at=UTC_TIMESTAMP() WHERE id=?',[parsed.data.decision,req.admin.id,payment.id]);
  await conn.execute("INSERT INTO audit_logs(actor_admin_id,action,entity_type,entity_id,details) VALUES (?,'payment_decision','payment',?,JSON_OBJECT('decision',?))",[req.admin.id,String(payment.id),parsed.data.decision]);await conn.commit();res.json({ok:true,status:parsed.data.decision});
@@ -465,6 +488,7 @@ app.post('/api/admin/vip/customers/:id/grant',authenticate,async(req,res)=>{
   await conn.execute(`INSERT INTO audit_logs(actor_admin_id,action,entity_type,entity_id,details)
    VALUES (?,'vip_manual_granted','membership',?,JSON_OBJECT('user_id',?,'plan_id',?,'days',?,'reason',?))`,
    [req.admin.id,String(result.insertId),String(user.id),String(plan.id),Number(plan.duration_days),parsed.data.reason]);
+  await enqueueVipActivation(conn,user.id,result.insertId);
   await conn.commit();
   res.status(201).json({ok:true,membership_id:result.insertId,plan:plan.name,starts_at:start,ends_at:end,
    message:'VIP concedido manualmente. No se registró ningún pago.'});
@@ -568,7 +592,7 @@ app.post('/api/admin/staff/:id/role',authenticate,async(req,res)=>{
  const parsed=staffRoleSchema.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Rol inválido'});
  const conn=await db.getConnection();try{
   await conn.beginTransaction();
-  const [[u]]=await conn.execute('SELECT id,email,password_hash FROM users WHERE id=? FOR UPDATE',[req.params.id]);
+  const [[u]]=await conn.execute('SELECT id,email,password_hash,account_status FROM users WHERE id=? FOR UPDATE',[req.params.id]);
   if(!u||!u.password_hash){await conn.rollback();return res.status(404).json({error:'El usuario debe registrarse primero'});}
   const [[a]]=await conn.execute('SELECT id,role FROM admins WHERE email=? FOR UPDATE',[u.email]);
   if(a?.role==='owner'){await conn.rollback();return res.status(403).json({error:'No se puede modificar al dueño'});}
@@ -587,7 +611,27 @@ app.post('/api/admin/staff/:id/role',authenticate,async(req,res)=>{
    else await conn.execute('INSERT INTO admins(email,password_hash,role,is_active) VALUES (?,?,?,1)',[u.email,u.password_hash,parsed.data.role]);
   }
   await conn.execute("INSERT INTO audit_logs(actor_admin_id,action,entity_type,entity_id,details) VALUES (?,'staff_role_changed','user',?,JSON_OBJECT('role',?,'rank',?,'reason',?))",[req.admin.id,String(u.id),parsed.data.role,roleRank(parsed.data.role),parsed.data.role==='blacklist'?parsed.data.reason?.trim():null]);
-  await conn.commit();res.json({ok:true,role:parsed.data.role,rank:roleRank(parsed.data.role)});
+  await conn.commit();
+  let telegram_vip=null;
+  if(telegramVipControl){
+   try{
+    if(parsed.data.role==='blacklist'){
+     telegram_vip=await telegramVipControl.revokeUser(u.id);
+    }else if(u.account_status==='blacklisted'){
+     // Rank 0 -> client/staff: remove Telegram's ban even when the user has NO VIP.
+     // The user stays OUT of the channel until a fresh authorized invite.
+     telegram_vip=await telegramVipControl.restoreUser(u.id);
+    }
+    if(parsed.data.role!=='blacklist'){
+     // Demotion removes staff VIP unless a paid membership is still active.
+     await telegramVipControl.reconcileUser(u.id);
+    }
+   }catch(error){
+    console.error('telegram role transition',error.message);
+    telegram_vip={queued:true,warning:'No se confirmó el cambio de Telegram. Usa Telegram → Sincronizar.'};
+   }
+  }
+  res.json({ok:true,role:parsed.data.role,rank:roleRank(parsed.data.role),telegram_vip});
  }catch(e){await conn.rollback();console.error('staff update',e.code||e.message);res.status(500).json({error:'No se pudo cambiar el rol'});}finally{conn.release();}
 });
 
@@ -682,6 +726,7 @@ async function reconcilePaypalOrder(orderId){
   const [updated]=await conn.execute("UPDATE payments SET status='verified',verified_at=UTC_TIMESTAMP(),paypal_capture_id=?,paypal_financial_state='captured' WHERE id=? AND status='pending' AND paypal_environment=?",[capture.captureId,pay.id,paypalMode()]);
   if(updated.affectedRows!==1)throw new Error('Capture reconciliation conflict');
   await conn.execute("INSERT INTO customer_notifications(user_id,payment_id,kind,message) VALUES (?,?,'paypal_confirmed',?) ON DUPLICATE KEY UPDATE id=id",[pay.user_id,pay.id,'Pago PayPal confirmado. Tu membresía VIP fue activada o renovada.']);
+  await enqueueVipActivation(conn,pay.user_id,member.id);
   await conn.execute("INSERT INTO audit_logs(action,entity_type,entity_id,details) VALUES ('paypal_captured','payment',?,JSON_OBJECT('paypal_order_id',?,'environment',?,'usd',?))",[String(pay.id),orderId,paypalMode(),capture.amountUsd]);
   await conn.commit();return true;
  }catch(e){try{await conn.rollback();}catch{}throw e;}finally{conn.release();}
@@ -890,10 +935,21 @@ app.get('/api/admin/finance',authenticate,async(req,res)=>{
 });
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../public');
-installTelegramRoutes(app,{db,customerAuth,authenticate,limit:apiRateLimit({windowMs:15*60*1000,limit:10,standardHeaders:'draft-7',legacyHeaders:false})});
+telegramVipControl=installTelegramRoutes(app,{db,customerAuth,authenticate,limit:apiRateLimit({windowMs:15*60*1000,limit:10,standardHeaders:'draft-7',legacyHeaders:false})});
+notificationControl=installNotificationCenter(app,{db,customerAuth,limit:apiRateLimit({windowMs:15*60*1000,limit:15,standardHeaders:'draft-7',legacyHeaders:false})});
 app.use(express.static(root,{index:'index.html',dotfiles:'ignore'}));
 app.use('/api',(req,res)=>res.status(404).json({error:'Ruta no encontrada'}));
 app.use((req,res)=>res.status(404).send('Not Found'));
 const port=Number(process.env.PORT||3000);
-try{await initializeDatabase();await db.query(`CREATE TABLE IF NOT EXISTS customer_password_resets (user_id BIGINT UNSIGNED NOT NULL PRIMARY KEY, token_hash CHAR(64) NOT NULL UNIQUE, expires_at DATETIME NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE) ENGINE=InnoDB`);app.listen(port,'0.0.0.0',()=>console.log(`Fijas de Elite API listening on ${port}`));}
+try{await initializeDatabase();await db.query(`CREATE TABLE IF NOT EXISTS customer_password_resets (user_id BIGINT UNSIGNED NOT NULL PRIMARY KEY, token_hash CHAR(64) NOT NULL UNIQUE, expires_at DATETIME NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE) ENGINE=InnoDB`);app.listen(port,'0.0.0.0',()=>{
+ console.log(`Fijas de Elite API listening on ${port}`);
+ // Start durable opt-in notification outbox after database migration.
+ if(process.env.TELEGRAM_BOT_TOKEN){
+  setImmediate(()=>notificationControl?.tick().catch(error=>console.error('notification startup worker',error.code||error.message)));
+ }
+ // Restart reconciliation of known Telegram members. The interval then keeps auditing.
+ if(process.env.TELEGRAM_BOT_TOKEN&&process.env.TELEGRAM_VIP_CHAT_ID){
+  setImmediate(()=>telegramVipControl?.synchronizeExpired().then(r=>console.log('Telegram VIP startup reconciliation:',JSON.stringify(r))).catch(e=>console.error('Telegram VIP startup reconciliation failed:',e.message)));
+ }
+});}
 catch(e){console.error('Database initialization failed:',e);process.exitCode=1;await db.end();}
