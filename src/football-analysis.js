@@ -85,10 +85,13 @@ export function createAssessment(fixture,predictionResponse,{h2h=[],injuries=[]}
  if(attackH!==null&&attackA!==null)evidence++;
  if(defenceH!==null&&defenceA!==null)evidence++;
  if(h2hRows.length>=2)evidence++;
- // VIP requires several independent descriptions of data and a clear favorite.
+ // These are UNCAlIBRATED provider probabilities, not measured hit rates.
+ // Free = modest statistical lead of 40-50% (1X2), with at least two evidence
+ // families and a >=12-point lead. Weak data is discarded, not sold as a "fija".
+ // VIP remains highly selective; neither tier guarantees a win.
  let visibility=null;
  if(pick.confidence>=72&&pick.margin>=18&&evidence>=2)visibility='vip';
- else if(pick.confidence>=48&&pick.confidence<72&&evidence>=2)visibility='free';
+ else if(pick.confidence>=40&&pick.confidence<=50&&pick.margin>=12&&evidence>=2)visibility='free';
  if(!visibility)return null;
  const selection=pick.outcome==='home'?home:pick.outcome==='away'?away:'Empate';
  const lines=[
@@ -100,6 +103,7 @@ export function createAssessment(fixture,predictionResponse,{h2h=[],injuries=[]}
  if(attackH!==null&&attackA!==null)lines.push(`Comparación de ataque (indicador del proveedor): local ${fmt(attackH)}, visitante ${fmt(attackA)}.`);
  if(defenceH!==null&&defenceA!==null)lines.push(`Comparación defensiva (indicador del proveedor): local ${fmt(defenceH)}, visitante ${fmt(defenceA)}.`);
  if(h2hRows.length>=2)lines.push(`Enfrentamientos previos consultados: ${h2hRows.length} partidos finalizados; estos antecedentes no determinan el resultado futuro.`);
+ if(visibility==='free')lines.push('PRONÓSTICO GRATUITO DE RIESGO ALTO: estimación del proveedor entre 40 y 50%, NO es una tasa de aciertos, ni garantiza rentabilidad.');
  // Secondary goal notes are not additional betting picks; the official
  // market remains 1X2 and the source goal lines are not exact scores.
  const goals=goalProjection(fixture,predictionResponse,h2hRows);
@@ -112,9 +116,9 @@ export function createAssessment(fixture,predictionResponse,{h2h=[],injuries=[]}
  return {provider:FOOTBALL_PROVIDER,fixture_id:fixtureId,home,away,league,kickoff: kickOffString(kickoff),
   selection,market:'Resultado final 1X2',visibility,confidence:pick.confidence,evidence_count:evidence,
   analysis:lines.join('\n\n').slice(0,7900),odds:null,
-  raw_evidence:{percent:pick.percent,margin:pick.margin,home_form:homeForm,away_form:awayForm,
+  raw_evidence:{percent:pick.percent,margin:pick.margin,evidence_count:evidence,home_form:homeForm,away_form:awayForm,
    attack:{home:attackH,away:attackA},defence:{home:defenceH,away:defenceA},h2h_count:h2hRows.length,
-   injuries_reported:injuryCount,goals,source:'API-Football /predictions, /fixtures/headtohead, /injuries'}
+   injuries_reported:injuryCount,goals,match_context:{country:clean(fixture?.league?.country,65),round:clean(fixture?.league?.round,90),venue:clean(fixture?.fixture?.venue?.name,130),city:clean(fixture?.fixture?.venue?.city,95)},source:'API-Football /predictions, /fixtures/headtohead, /injuries'}
  };
 }
 export function kickOffString(date){return date.toISOString().slice(0,19).replace('T',' ');}

@@ -1,3 +1,16 @@
+## Actualización v2.1.8 — Anuncios VIP limitados en la comunidad
+
+- **Cada nueva fija VIP** publica el análisis completo solamente en `TELEGRAM_VIP_CHAT_ID` y un **adelanto limitado** en `TELEGRAM_FREE_CHAT_ID`.
+- El adelanto anuncia el encuentro (cuando el título procede del motor automático), liga, hora prevista y enlace al acceso VIP, **sin selección, mercado, cuota, goles, marcador, probabilidad ni análisis**.
+- Se reemplaza el límite antiguo de un anuncio por semana por **un anuncio por pronóstico**. La tabla nueva `telegram_vip_public_announcements` impide repetir el mismo anuncio al procesar otra vez su ID.
+- Los pronósticos gratuitos continúan enviándose completos a Fijas de Élite Comunidad.
+- MySQL crea la tabla nueva automáticamente al iniciar la versión; no se borran membresías, clientes ni la tabla antigua de adelantos.
+- Se aplica solo a nuevas publicaciones. Requiere que el bot pueda publicar en ambos chats y que ambas variables `TELEGRAM_FREE_CHAT_ID` / `TELEGRAM_VIP_CHAT_ID` estén bien configuradas.
+- Ante un fallo del envío al grupo, el pronóstico VIP permanece en el canal; se registra el fallo en Railway y no se hace reenvío automático que pueda duplicarlo.
+- Instalar actualizando GitHub, desplegar Railway, comprobar `/health` versión **2.1.8**, y publicar un pronóstico VIP de prueba con `FOOTBALL_AUTO_PUBLISH=false`.
+
+---
+
 # Fijas de Élite v2.1.5 — Proyección de goles y escenarios de marcador ⚽
 
 Esta actualización se aplica sobre v2.1.3. En **Análisis automático**, los candidatos nuevos incluyen un panel de goles por equipo, goles totales y, **solo con tres o más enfrentamientos directos válidos**, un escenario ilustrativo de marcador (p. ej., 2-1) y el margen de victoria. No garantiza que se produzca ese resultado.
@@ -553,10 +566,21 @@ En producción, define y publica una política de sanciones, apelaciones, membre
 - Se versionan los CSS y scripts de la portada y ambos dashboards para evitar cachés antiguos.
 
 
-## v2.1.6 — Horario y cuenta regresiva
+## v2.1.7 — Horario y cuenta regresiva
 
 El campo `match_date` se almacena en UTC. En la web se muestra el horario de Perú (America/Lima) y una cuenta regresiva dinámica que se actualiza cada 30 segundos. Los mensajes Telegram muestran una estimación del tiempo restante **al momento de envío**. No se presenta como información de marcador en vivo.
 
 - Cliente gratuito y VIP: `Pronósticos` → tarjeta de inicio. VIP bloqueado solo ve datos públicos del encuentro.
 - Dueño: `Análisis automático` → candidatos y hora de inicio. Personal: `Mi Telegram VIP` → ficha.
 - La primera vez tras instalar, forzar actualización (`Ctrl+F5`) para evitar caché.
+
+
+## v2.1.7 — Publicación en Telegram segmentada
+
+- **Fijas de Élite Comunidad:** al publicar pronóstico gratuito, envía el contenido completo y la advertencia de riesgo alto. Los pronósticos gratuitos automáticos tienen estimación de proveedor del **40–50%** y no representan una tasa de acierto observada.
+- **Canal privado VIP:** pronósticos completos solo para VIP; el grupo público recibe **como máximo un adelanto genérico en 7 días**, sin partido, selección ni cuota.
+- **Control:** se añadió `telegram_vip_teaser_gate` en MySQL, automáticamente y sin borrar datos. La reserva semanal se realiza antes del envío para no duplicar mensajes ante reinicios.
+- Las propuestas gratuitas pueden publicarse automáticamente aun sin cuota: se indica explícitamente que no existe cuota verificada. Las VIP automáticas sí exigen cuota del proveedor.
+- Publicación automática: `FOOTBALL_AUTO_SCAN=true`, `FOOTBALL_AUTO_PUBLISH=true`; para pruebas mantener `FOOTBALL_AUTO_PUBLISH=false`.
+- La variable `FOOTBALL_PUBLIC_FREE_PICKS` ya no hace falta: las selecciones gratuitas publicadas van completas al grupo.
+- Las tasas de acierto SOLO se obtienen de resultados finalizados registrados, y la confianza estimada no garantiza una ganancia.

@@ -45,22 +45,22 @@ test('cryptographic SHA256 produces 64-character hexadecimal',()=>{
  assert.match(sha256('test'),/^[a-f0-9]{64}$/);
  assert.notEqual(sha256('test'),sha256('test1'));
 });
-test('public publishing does not send full predictions to group',async()=>{
+test('public publishing sends only full FREE predictions to community',async()=>{
  const old=globalThis.fetch;let request=null;
  try{
   globalThis.fetch=async (url,opts)=>{request=JSON.parse(opts.body);return {ok:true,json:async()=>({ok:true,result:{message_id:123}})};};
   const result=await sendPredictionToTelegram(pick,{TELEGRAM_BOT_TOKEN:'example-token',TELEGRAM_FREE_CHAT_ID:'-100123',PUBLIC_BASE_URL:'https://example.com'});
   assert.equal(result.state,'sent');assert.equal(request.chat_id,'-100123');
-  assert.equal(request.text.includes('SUPER PRIVADO 1044'),false);
+  assert.equal(request.text.includes('SUPER PRIVADO 1044'),true);
+  assert.match(request.text,/RIESGO ALTO/);
  }finally{globalThis.fetch=old;}
 });
-test('VIP publishing sends full content only to private channel',async()=>{
+test('VIP publishing sends full content privately; preview requires database',async()=>{
  const old=globalThis.fetch;const requests=[];
  try{
   globalThis.fetch=async (url,opts)=>{requests.push(JSON.parse(opts.body));return {ok:true,json:async()=>({ok:true,result:{message_id:123}})};};
   const result=await sendPredictionToTelegram({...pick,visibility:'vip'},{TELEGRAM_BOT_TOKEN:'example-token',TELEGRAM_FREE_CHAT_ID:'-100123',TELEGRAM_VIP_CHAT_ID:'-100321',TELEGRAM_WEBHOOK_SECRET:'a'.repeat(32),PUBLIC_BASE_URL:'https://example.com'});
-  assert.equal(result.state,'sent');assert.equal(requests.length,2);
+  assert.equal(result.state,'sent');assert.equal(requests.length,1);
   assert.equal(requests[0].chat_id,'-100321');assert.match(requests[0].text,/SUPER PRIVADO 1044/);
-  assert.equal(requests[1].chat_id,'-100123');assert.equal(requests[1].text.includes('SUPER PRIVADO 1044'),false);
  }finally{globalThis.fetch=old;}
 });

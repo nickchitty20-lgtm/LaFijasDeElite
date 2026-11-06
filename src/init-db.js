@@ -108,6 +108,29 @@ export async function initializeDatabase() {
       FOREIGN KEY (prediction_id) REFERENCES predictions(id)
     ) ENGINE=InnoDB`);
 
+    // Legacy v2.1.7 weekly VIP preview gate (preserved for compatibility).
+    // v2.1.8 no longer uses this gate; per-publication records are below.
+    await connection.query(`CREATE TABLE IF NOT EXISTS telegram_vip_teaser_gate (
+      id TINYINT UNSIGNED NOT NULL PRIMARY KEY,
+      reserved_at DATETIME NULL,
+      sent_at DATETIME NULL,
+      prediction_id BIGINT UNSIGNED NULL,
+      send_state ENUM('reserved','sent','failed') NULL
+    ) ENGINE=InnoDB`);
+    await connection.query('INSERT IGNORE INTO telegram_vip_teaser_gate (id) VALUES (1)');
+
+    // v2.1.8: one public VIP preview per newly published VIP prediction.
+    // The old weekly gate remains for compatibility but is no longer used.
+    // INSERT IGNORE by prediction_id prevents repeated previews on reprocessing.
+    await connection.query(`CREATE TABLE IF NOT EXISTS telegram_vip_public_announcements (
+      prediction_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+      state ENUM('reserved','sent','failed') NOT NULL DEFAULT 'reserved',
+      reserved_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      sent_at DATETIME NULL,
+      telegram_message_id BIGINT NULL,
+      FOREIGN KEY (prediction_id) REFERENCES predictions(id)
+    ) ENGINE=InnoDB`);
+
     // v1.9.1: Telegram identity linking and time-limited join requests.
     // Never stores bot credentials or plaintext one-time linking codes.
     await connection.query(`CREATE TABLE IF NOT EXISTS telegram_links (

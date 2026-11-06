@@ -29,3 +29,16 @@
 .football-goals-preview p{margin:5px 0;color:#d8d3c8;font-size:13px}
 .football-goals-preview .football-score{color:#ebc478;font-weight:700}
 .football-goals-preview small{color:#aaa49b;font-size:11px;line-height:1.5;display:block;margin-top:7px}
+
+
+/* v2.1.8 — Kickoff clock, dark/gold cards, safe on narrow screens. */
+.fe-match-schedule{display:grid;gap:6px;min-width:0;max-width:100%;box-sizing:border-box;padding:13px 15px;margin:10px 0 13px;border:1px solid #655437;border-radius:12px;background:linear-gradient(120deg,#252117,#181e28);overflow-wrap:anywhere}
+.fe-match-label{font-weight:750;font-size:12px;letter-spacing:.05em;color:#d9bb7c}
+.fe-match-date{font-weight:700;font-size:14px;color:#f1e5cd;line-height:1.5}
+.fe-match-countdown{display:block;color:#eac677;font-weight:800;font-size:16px;line-height:1.45}
+.fe-match-countdown[data-match-phase="passed"]{color:#c5ccd5;font-size:13px}
+.fe-match-countdown[data-match-phase="soon"]{color:#a9deca}
+.fe-match-disclaimer{color:#a7afb9;font-size:10px;line-height:1.5}
+@media(max-width:600px){.fe-match-schedule{padding:11px 12px}.fe-match-date{font-size:13px}.fe-match-countdown{font-size:14px}}
+
+.fe-match-extra{font-size:11px;color:#c6ccd4;line-height:1.5;overflow-wrap:anywhere}

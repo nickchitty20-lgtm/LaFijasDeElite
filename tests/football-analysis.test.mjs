@@ -32,8 +32,13 @@ test('VIP requiere confianza estimada, margen y varias evidencias',()=>{
  assert.equal(out.fixture_id,102);
  assert.equal(out.market,'Resultado final 1X2');
 });
-test('pronóstico gratuito no se fabrica para llegar a 40 % de aciertos',()=>{
- assert.equal(createAssessment(fixture(),prediction(58,25,17)).visibility,'free');
+test('GRATIS se clasifica por estimación <=50%, nunca por tasa real de aciertos',()=>{
+ const free=createAssessment(fixture(),prediction(45,28,27));
+ assert.equal(free.visibility,'free');
+ assert.match(free.analysis,/RIESGO ALTO/);
+ assert.equal(free.confidence,45);
+ assert.equal(free.raw_evidence.evidence_count>=2,true);
+ assert.equal(createAssessment(fixture(),prediction(58,25,17)),null);
  assert.equal(createAssessment(fixture(),prediction(40,30,30)),null);
  assert.equal(createAssessment(fixture(),{predictions:{percent:{home:'75%',draw:'15%',away:'10%'}}}),null);
 });

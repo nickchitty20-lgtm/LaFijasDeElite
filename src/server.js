@@ -25,7 +25,7 @@ import {installFootballAutomation} from './football-automation.js';
 import {publishedFootballDetails} from './football-report.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
-const APP_VERSION = '2.1.5';
+const APP_VERSION = '2.1.8';
 const app = express();
 let telegramVipControl=null;
 let notificationControl=null;
@@ -236,7 +236,7 @@ const canViewCustomers=(a)=>['owner','general_admin','payments_admin','moderator
 const canViewAudit=(a)=>['owner','general_admin'].includes(a.role);
 const rolePermissions={owner:['predictions:read','predictions:write','payments:read','payments:write','memberships:write','plans:write','customers:read','staff:write','audit:read'],general_admin:['predictions:read','predictions:write','payments:read','payments:write','memberships:write','plans:write','customers:read','audit:read'],payments_admin:['payments:read','payments:write','memberships:write','plans:write','customers:read'],analyst:['predictions:read','predictions:write'],moderator:['customers:read']};
 app.get('/api/admin/permissions',authenticate,(req,res)=>res.json({role:req.admin.role,permissions:rolePermissions[req.admin.role]||[]}));
-// The public community gets teasers only; full VIP selections go exclusively to the private channel.
+// Full FREE picks go to the public group; each VIP publication gets a limited, deduplicated public preview.
 const sendTelegram=sendPredictionToTelegram;
 app.get('/api/admin/predictions',authenticate,async(req,res)=>{
  if(!allowedToPublish(req.admin))return res.status(403).json({error:'Sin permisos'});
@@ -251,7 +251,7 @@ app.post('/api/admin/predictions',authenticate,async(req,res)=>{
   const [r]=await db.execute(`INSERT INTO predictions (title,analysis,visibility,outcome,published_at,author_id,league,match_date,market,selection,odds,telegram_status) VALUES (?,?,?,'pending',UTC_TIMESTAMP(),?,?,?,?,?,?,'pending')`,[p.title,p.analysis,p.visibility,req.admin.id,p.league,p.match_date.replace('T',' ')+':00',p.market,p.selection,p.odds]);
   await db.execute("INSERT INTO audit_logs(actor_admin_id,action,entity_type,entity_id) VALUES (?,'prediction_created','prediction',?)",[req.admin.id,String(r.insertId)]);
   const row={...p,id:r.insertId};let telegram='not_configured';
-  try{telegram=(await sendTelegram(row)).state;}catch(e){telegram='failed';console.error('Telegram delivery failed for prediction',r.insertId,e.message);}
+  try{telegram=(await sendTelegram(row,process.env,{db})).state;}catch(e){telegram='failed';console.error('Telegram delivery failed for prediction',r.insertId,e.message);}
   await db.execute('UPDATE predictions SET telegram_status=? WHERE id=?',[telegram,r.insertId]);
   try{await enqueuePredictionEvent(db,r.insertId,p.visibility);}catch(error){console.error('notification event enqueue',error.code||error.message);}
   res.status(201).json({id:r.insertId,web:'published',telegram});

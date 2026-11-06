@@ -33,7 +33,7 @@ function pickInfo(p){
  row.append(el('span','', '🎯 Selección principal'),el('strong','',`${p.market||'Mercado no indicado'} · ${p.selection||'Sin selección'}`));
  root.append(row);
  const extra=el('p','fe-pick-odds',p.odds!=null?`Cuota indicada: ${p.odds} · verifica casa de apuestas y vigencia antes de usarla`:'Cuota del mercado principal: no verificada; no se puede calcular valor esperado');root.append(extra);
- if(p.match_date){const dt=new Date(p.match_date);if(!Number.isNaN(dt.getTime()))root.append(el('small','',`Inicio del partido: ${dt.toLocaleString('es-PE',{dateStyle:'medium',timeStyle:'short'})}`));}
+ // The live match clock is rendered separately, including for locked VIP cards.
  return root;
 }
 function analysis(p){

@@ -5,6 +5,7 @@ import {predictedResult} from './football-analysis.js';
 import {sendPredictionToTelegram} from './telegram-bridge.js';
 import {enqueuePredictionEvent} from './notification-center.js';
 import {publishedFootballDetails} from './football-report.js';
+import {canAutoPublishCandidate} from './football-publication-policy.js';
 
 const SCAN_COOLDOWN_MINUTES=180;
 const DEFAULT_SCAN_INTERVAL_MS=4*60*60*1000;
@@ -72,7 +73,7 @@ export function installFootballAutomation(app,{db,authenticate}){
     // 2 fixture dates + 5 predictions + 1 H2H + 1 odds = at most 9
     // quota-consuming requests per scan. Prefer distinct leagues.
     const fixtures=pickScanFixtures(upcoming);
-    let candidateLooksGood=0;
+    const candidateCount={free:0,vip:0};
     let h2hQueries=0,oddsQueries=0;
     for(const fixture of fixtures){
      examined++;
@@ -96,7 +97,7 @@ export function installFootballAutomation(app,{db,authenticate}){
      // optional H2H call per scan also for an eligible candidate, so goals can
      // be explained from actual results. Do not let this call block publication.
      const usableH2h=(Array.isArray(pred?.h2h)?pred.h2h:[]).filter(x=>x?.fixture?.status?.short==='FT'&&Number.isInteger(x?.goals?.home)&&Number.isInteger(x?.goals?.away)).length;
-     if((!assessment || (assessment && usableH2h<3)) && h2hQueries<1 && (predictedResult(pred)?.confidence??0)>=48){
+     if((!assessment || (assessment && usableH2h<3)) && h2hQueries<1 && (predictedResult(pred)?.confidence??0)>=40){
       h2hQueries++;
       const head=Number(fixture.teams.home.id),away=Number(fixture.teams.away.id);
       try{
@@ -119,10 +120,12 @@ export function installFootballAutomation(app,{db,authenticate}){
       }
       continue;
      }
-     if(candidateLooksGood>=2)continue;
-     candidateLooksGood++;
-     // Odds are data supplied by a bookmaker; never synthesise missing prices.
-     if(oddsQueries<1){
+     // Keep a balanced shortlist. VIP candidates must not crowd out free ones.
+     if(candidateCount[assessment.visibility]>=2)continue;
+     candidateCount[assessment.visibility]++;
+     // The free preview is educational and may have no quoted bookmaker odds.
+     // Reserve the scarce optional odds request for an eligible VIP candidate.
+     if(oddsQueries<1&&assessment.visibility==='vip'){
       oddsQueries++;
       try{
        const oddsArr=await footballApi('odds',{fixture:fixture.fixture.id,page:1});
@@ -143,9 +146,10 @@ export function installFootballAutomation(app,{db,authenticate}){
     if(examined>0 && providerErrors===examined)throw Error(warnings[0]||'No se pudieron consultar predicciones');
     await lock.execute("UPDATE football_scans SET status='completed',finished_at=UTC_TIMESTAMP(),examined=?,drafts_created=?,window_matches=?,without_prediction=?,below_filters=?,provider_errors=? WHERE id=?",[examined,drafts,windowMatches,missingPredictions,discardedByFilters,providerErrors,runId]);
     lastError='';lastSuccess=Date.now();
-    // Automatic publication is opt-in and requires quoted odds and daily limits.
+    // Automatic publication is opt-in. Free picks don't need bookmaker odds;
+    // VIP picks do. The final validation rechecks probability/evidence and quotas.
     if(!manual&&process.env.FOOTBALL_AUTO_PUBLISH==='true'){
-     const [rows]=await db.query("SELECT id FROM football_candidates WHERE status='draft' AND odds IS NOT NULL AND kickoff>DATE_ADD(UTC_TIMESTAMP(),INTERVAL 20 MINUTE) ORDER BY provider_probability DESC LIMIT 8");
+     const [rows]=await db.query("SELECT id FROM football_candidates WHERE status='draft' AND (visibility='free' OR (visibility='vip' AND odds IS NOT NULL)) AND kickoff>DATE_ADD(UTC_TIMESTAMP(),INTERVAL 20 MINUTE) ORDER BY provider_probability DESC LIMIT 8");
      for(const row of rows){
       try{const result=await publish(row.id,null,{automatic:true});if(result?.published)published++;}
       catch(e){console.warn('football automated publication skipped:',safeError(e));}
@@ -179,8 +183,7 @@ export function installFootballAutomation(app,{db,authenticate}){
    const when=sqlDateToUtc(row.kickoff);
    if(!Number.isFinite(when.getTime())||when.getTime()<=Date.now()+10*60000)throw Error('El partido está demasiado cerca o ya comenzó');
    if(automatic){
-    if(row.odds==null)throw Error('Sin cuota verificable; requiere aprobación manual');
-    if(row.evidence_json==null)throw Error('Sin evidencias documentadas');
+    if(!canAutoPublishCandidate(row))throw Error('No cumple requisitos para publicación automática: evidencias, probabilidad o cuota VIP');
     const [[count]]=await conn.execute(`SELECT COUNT(*) AS total FROM football_candidates
      WHERE visibility=? AND status='published' AND DATE(published_at)=UTC_DATE()`,[row.visibility]);
     const limit=row.visibility==='vip'?2:1;
@@ -202,9 +205,9 @@ export function installFootballAutomation(app,{db,authenticate}){
   // Telegram is outside transaction: failures never undo a prediction stored on the site.
   const payload={id:predictionId,title:`${row.home_team} vs ${row.away_team}`,analysis:row.analysis,
    visibility:row.visibility,league:row.league,match_date:kickOffString(sqlDateToUtc(row.kickoff)),market:row.market,
-   selection:row.selection,odds:row.odds,auto_generated:true,football_details:publishedFootballDetails(row.evidence_json)};
+   selection:row.selection,odds:row.odds,estimated_probability:Number(row.provider_probability),auto_generated:true,football_details:publishedFootballDetails(row.evidence_json)};
   let telegram='not_configured';
-  try{telegram=(await sendPredictionToTelegram(payload)).state;}
+  try{telegram=(await sendPredictionToTelegram(payload,process.env,{db})).state;}
   catch(e){telegram='failed';console.error('auto prediction Telegram:',safeError(e));}
   await db.execute('UPDATE predictions SET telegram_status=? WHERE id=?',[telegram,predictionId]);
   try{await enqueuePredictionEvent(db,predictionId,row.visibility);}catch(e){console.warn('auto notification enqueue:',safeError(e));}
@@ -241,7 +244,7 @@ export function installFootballAutomation(app,{db,authenticate}){
     let evidence={};
     try{evidence=typeof row.evidence_json==='string'?JSON.parse(row.evidence_json):row.evidence_json||{};}catch{}
     const {evidence_json,...publicRow}=row;
-    return {...publicRow,goal_projection:evidence.goals||null};
+    return {...publicRow,goal_projection:evidence.goals||null,match_context:evidence.match_context||null};
    });
    res.json({candidates});
   }

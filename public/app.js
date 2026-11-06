@@ -448,6 +448,7 @@ async function loadMyTelegram(){
    const card=document.createElement('article');card.className='my-vip-pick';
    const h=document.createElement('strong');h.textContent=p.locked?'🔒 '+p.title:p.title;
    card.append(h);
+   const schedule=window.FijasMatchSchedule?.render(p.match_date,p.locked?null:p.football_details?.match_context);if(schedule)card.append(schedule);
    if(p.locked){const body=document.createElement('p');body.textContent='Necesitas acceso VIP vigente.';card.append(body);}
    else if(window.FijasPickReport){card.append(window.FijasPickReport.pickInfo(p));const goals=window.FijasPickReport.goals(p);if(goals)card.append(goals);const details=window.FijasPickReport.analysis(p);if(details)card.append(details);}
    else{const body=document.createElement('p');body.textContent=p.analysis||'Sin análisis';card.append(body);}
@@ -511,7 +512,8 @@ async function loadFootballEngine(){
   for(const c of result.candidates){
    const item=document.createElement('article');item.className='football-candidate';
    const title=document.createElement('h3');title.textContent=`${c.home_team} vs ${c.away_team}`;
-   const info=document.createElement('p');info.className='football-meta';info.textContent=`${c.league} · ${new Date(c.kickoff).toLocaleString('es-PE')} · ${c.visibility.toUpperCase()} · ${c.status}`;
+   const info=document.createElement('p');info.className='football-meta';info.textContent=`${c.league} · ${c.visibility.toUpperCase()} · ${c.status}`;
+   const schedule=window.FijasMatchSchedule?.render(c.kickoff,c.match_context);
    const pick=document.createElement('p');pick.textContent=`Selección: ${c.selection} · Estimación del proveedor: ${c.provider_probability}% · Cuota: ${c.odds==null?'No disponible':c.odds}`;
    const goals=c.goal_projection;
    if(goals){
@@ -532,7 +534,7 @@ async function loadFootballEngine(){
     item.append(goalBox);
    }
    const detail=document.createElement('details');const heading=document.createElement('summary');heading.textContent='Leer análisis, datos y riesgos';const paragraph=document.createElement('p');paragraph.textContent=c.analysis;paragraph.className='football-analysis';detail.append(heading,paragraph);
-   item.append(title,info,pick,detail);
+   item.append(title,info);if(schedule)item.append(schedule);item.append(pick,detail);
    if(c.status==='draft'){
     const actions=document.createElement('div');actions.className='football-candidate-actions';
     for(const [action,label] of [['publish','Aprobar y publicar'],['discard','Descartar']]){
