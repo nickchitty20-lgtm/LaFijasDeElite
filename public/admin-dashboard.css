@@ -117,3 +117,22 @@
 #telegramOwnerForceUnlinkForm label:has(input[type="checkbox"]){display:flex;align-items:flex-start;gap:12px;max-width:100%;line-height:1.5}
 #telegramOwnerForceUnlinkForm input[type="checkbox"]{flex:0 0 18px;width:18px;height:18px;min-width:18px;margin:2px 0 0;accent-color:#d6b36e}
 #telegramOwnerForceUnlinkForm button{max-width:100%;white-space:normal;overflow-wrap:anywhere}
+
+/* v2.1.5: structured market report, no sideways overflow */
+.fe-research-card{min-width:0;overflow-wrap:anywhere;display:grid;gap:12px}
+.fe-research-card h4{margin-bottom:0}
+.fe-betting-context{padding:14px 16px;border-radius:12px;background:#252219;border:1px solid #867047;color:#f6e3b7;display:grid;gap:7px;min-width:0}
+.fe-main-pick{display:grid;gap:5px}.fe-main-pick span{font-size:11px;letter-spacing:.075em;color:#cbbb95}.fe-main-pick strong{font-size:16px;line-height:1.5}
+.fe-pick-odds{font-size:12px;margin:0!important;color:#bfb9ae;line-height:1.5}
+.fe-goals-breakdown{border:1px solid #4e5661;border-radius:14px;padding:16px;background:#121820;min-width:0}
+.fe-goals-breakdown h5{font-size:15px;letter-spacing:0;margin:0 0 12px;color:#eecb88}
+.fe-goal-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.fe-goal-metric{border:1px solid #354356;border-radius:10px;background:#1d2631;padding:12px;display:grid;gap:5px;min-width:0}
+.fe-goal-label{font-size:11px;color:#bac6d3}.fe-goal-value{font-size:14px;color:#edd4a0;line-height:1.45;overflow-wrap:anywhere}
+.fe-goal-detail{font-size:10px;color:#aab5c5;line-height:1.45}
+.fe-goal-history,.fe-goal-probabilities{font-size:12px;color:#bfccd6;line-height:1.6;margin:12px 0 4px!important}
+.fe-goal-warning{display:block;font-size:11px;color:#dfbd84;line-height:1.6;margin-top:9px}
+.fe-full-research{border-top:1px solid #4b545e;padding-top:12px;min-width:0}
+.fe-full-research summary{cursor:pointer;font-weight:700;color:#e1c48c;line-height:1.5}
+.fe-full-research p{margin:10px 0 0!important;white-space:pre-line;overflow-wrap:anywhere;color:#cad2dc;line-height:1.7;font-size:13px}
+@media(max-width:600px){.fe-goal-metrics{grid-template-columns:1fr}.fe-research-card{padding:16px!important}.fe-goals-breakdown{padding:12px}}

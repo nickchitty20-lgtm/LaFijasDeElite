@@ -1,4 +1,4 @@
-# Fijas de Élite v2.1.4 — Proyección de goles y escenarios de marcador ⚽
+# Fijas de Élite v2.1.5 — Proyección de goles y escenarios de marcador ⚽
 
 Esta actualización se aplica sobre v2.1.3. En **Análisis automático**, los candidatos nuevos incluyen un panel de goles por equipo, goles totales y, **solo con tres o más enfrentamientos directos válidos**, un escenario ilustrativo de marcador (p. ej., 2-1) y el margen de victoria. No garantiza que se produzca ese resultado.
 
@@ -8,7 +8,7 @@ Las proyecciones se incorporan al **texto del análisis almacenado en MySQL** pa
 
 ## Instalación
 1. Copia el contenido de este proyecto en GitHub conservando las carpetas `src`, `public`, `sql` y `tests`.
-2. Espera Railway Success y verifica `/health`: `2.1.4`.
+2. Espera Railway Success y verifica `/health`: `2.1.5`.
 3. En **Análisis automático**, busca partidos cuando el escáner esté disponible. Consulta los nuevos detalles de goles en las propuestas.
 4. Mantén `FOOTBALL_AUTO_PUBLISH=false` hasta comprobar el rendimiento real.
 
@@ -538,3 +538,16 @@ Aviso: El registro de pagos verificables, el acceso VIP y el saldo del plan se m
 5. Como VIP de prueba, verifica que «Solicitudes pendientes» esté cerrado inicialmente y que las renovaciones confirmadas se muestren arriba.
 
 En producción, define y publica una política de sanciones, apelaciones, membresías y reembolsos. Mantén PayPal en Sandbox hasta completar las pruebas y aprobación comercial.
+
+
+## v2.1.5 — Fichas de análisis completas para clientes
+- La sección **Pronósticos** desglosa selección principal, cuota (cuando esté verificada), líneas de goles por equipo y total, frecuencia H2H de ambos marcan, marcador orientativo, margen y los riesgos.
+- Los datos se consultan del JSON de evidencia de `football_candidates` por `prediction_id`. **No se borra ni modifica MySQL; no requiere migración.**
+- Los pronósticos manuales o antiguos sin evidencia estructurada mantienen su análisis habitual; los detalles de goles no se inventan.
+- Las tarjetas VIP bloqueadas no reciben datos exclusivos desde el backend, ni siquiera en la respuesta JSON.
+- Los informes completos de nuevas selecciones automáticas se incluyen también en Telegram VIP, con límite de tamaño por mensaje.
+- La API solo recomienda líneas de más/menos goles: no proporciona cuotas para esos mercados ni asegura un marcador exacto. La muestra H2H no es una probabilidad calibrada.
+- Se consulta H2H como dato complementario para un candidato elegible cuando falten antecedentes (a lo sumo una consulta por escaneo, respetando la cuota).
+- Los nuevos reportes se muestran **después de analizar, guardar y aprobar una propuesta**. El diagnóstico de API no publica nada. Los datos de los pronósticos publicados anteriormente en v2.1.4 también aparecen si su `football_candidates.evidence_json` contiene la proyección.
+
+- Se versionan los CSS y scripts de la portada y ambos dashboards para evitar cachés antiguos.

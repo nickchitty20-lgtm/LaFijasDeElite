@@ -1,4 +1,4 @@
-# Fijas de Élite v2.1.4 — Detalle de goles y marcador orientativo
+# Fijas de Élite v2.1.5 — Detalle de goles y marcador orientativo
 
 - Líneas de goles de API-Football: por equipo y total; se muestran sin convertirlas en un marcador exacto.
 - Cuando hay por lo menos tres enfrentamientos directos completos, se muestra un escenario de marcador y la diferencia de goles basada en un cálculo exploratorio Poisson (no calibrado, no apuesta recomendada).

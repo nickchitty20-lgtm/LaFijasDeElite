@@ -4,6 +4,7 @@ import {pickScanFixtures,canRunManual,MANUAL_SCAN_DAILY_LIMIT} from './football-
 import {predictedResult} from './football-analysis.js';
 import {sendPredictionToTelegram} from './telegram-bridge.js';
 import {enqueuePredictionEvent} from './notification-center.js';
+import {publishedFootballDetails} from './football-report.js';
 
 const SCAN_COOLDOWN_MINUTES=180;
 const DEFAULT_SCAN_INTERVAL_MS=4*60*60*1000;
@@ -91,13 +92,17 @@ export function installFootballAutomation(app,{db,authenticate}){
      }
      // Preliminary assessment uses provider's own h2h when available.
      let assessment=createAssessment(fixture,pred);
-     if(!assessment && h2hQueries<1 && (predictedResult(pred)?.confidence??0)>=48){
+     // The provider's embedded H2H may lack completed scores. Spend at most one
+     // optional H2H call per scan also for an eligible candidate, so goals can
+     // be explained from actual results. Do not let this call block publication.
+     const usableH2h=(Array.isArray(pred?.h2h)?pred.h2h:[]).filter(x=>x?.fixture?.status?.short==='FT'&&Number.isInteger(x?.goals?.home)&&Number.isInteger(x?.goals?.away)).length;
+     if((!assessment || (assessment && usableH2h<3)) && h2hQueries<1 && (predictedResult(pred)?.confidence??0)>=48){
       h2hQueries++;
       const head=Number(fixture.teams.home.id),away=Number(fixture.teams.away.id);
       try{
        // `last` is forbidden by API-Football Free. Limit results locally.
        const h2h=await footballApi('fixtures/headtohead',headToHeadParams(head,away));
-       assessment=createAssessment(fixture,pred,{h2h});
+       assessment=createAssessment(fixture,pred,{h2h})||assessment;
       }catch(error){
        const warning=`Antecedentes no disponibles para ${fixture.teams.home.name} vs ${fixture.teams.away.name}: ${safeError(error)}`;
        warnings.push(warning);console.warn('football h2h optional:',warning);
@@ -197,7 +202,7 @@ export function installFootballAutomation(app,{db,authenticate}){
   // Telegram is outside transaction: failures never undo a prediction stored on the site.
   const payload={id:predictionId,title:`${row.home_team} vs ${row.away_team}`,analysis:row.analysis,
    visibility:row.visibility,league:row.league,match_date:kickOffString(sqlDateToUtc(row.kickoff)),market:row.market,
-   selection:row.selection,odds:row.odds,auto_generated:true};
+   selection:row.selection,odds:row.odds,auto_generated:true,football_details:publishedFootballDetails(row.evidence_json)};
   let telegram='not_configured';
   try{telegram=(await sendPredictionToTelegram(payload)).state;}
   catch(e){telegram='failed';console.error('auto prediction Telegram:',safeError(e));}

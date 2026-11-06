@@ -447,8 +447,11 @@ async function loadMyTelegram(){
   for(const p of r.predictions.filter(p=>p.visibility==='vip').slice(0,12)){
    const card=document.createElement('article');card.className='my-vip-pick';
    const h=document.createElement('strong');h.textContent=p.locked?'🔒 '+p.title:p.title;
-   const body=document.createElement('p');body.textContent=p.locked?'Necesitas acceso VIP vigente.':`${p.market||''} · ${p.selection||''} · Cuota ${p.odds||'—'} · ${p.analysis||''}`;
-   card.append(h,body);root.append(card);
+   card.append(h);
+   if(p.locked){const body=document.createElement('p');body.textContent='Necesitas acceso VIP vigente.';card.append(body);}
+   else if(window.FijasPickReport){card.append(window.FijasPickReport.pickInfo(p));const goals=window.FijasPickReport.goals(p);if(goals)card.append(goals);const details=window.FijasPickReport.analysis(p);if(details)card.append(details);}
+   else{const body=document.createElement('p');body.textContent=p.analysis||'Sin análisis';card.append(body);}
+   root.append(card);
   }
   if(!root.children.length)root.textContent='Aún no hay pronósticos VIP publicados.';
  }catch(error){$('myTelegramPicks').textContent='No se pudo consultar el contenido: '+error.message;}

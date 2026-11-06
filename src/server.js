@@ -22,9 +22,10 @@ import {sendPredictionToTelegram} from './telegram-bridge.js';
 import {installTelegramRoutes} from './telegram-routes.js';
 import {installNotificationCenter,enqueueVipActivation,enqueuePredictionEvent} from './notification-center.js';
 import {installFootballAutomation} from './football-automation.js';
+import {publishedFootballDetails} from './football-report.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
-const APP_VERSION = '2.1.4';
+const APP_VERSION = '2.1.5';
 const app = express();
 let telegramVipControl=null;
 let notificationControl=null;
@@ -352,9 +353,17 @@ app.get('/api/customers/predictions',customerAuth,async(req,res)=>{
  try{
   const entitlement=await getVipEntitlement(db,req.customer.id);
   const vip=entitlement.hasVip;
-  const [rows]=await db.query("SELECT id,title,league,match_date,visibility,analysis,market,selection,odds,outcome FROM predictions WHERE published_at IS NOT NULL ORDER BY id DESC LIMIT 50");
+  const [rows]=await db.query(`SELECT p.id,p.title,p.league,p.match_date,p.visibility,p.analysis,p.market,p.selection,p.odds,p.outcome,
+   f.evidence_json AS football_evidence FROM predictions p
+   LEFT JOIN football_candidates f ON f.prediction_id=p.id
+   WHERE p.published_at IS NOT NULL ORDER BY p.id DESC LIMIT 50`);
   res.set('Cache-Control','private, no-store');
-  res.json({has_vip:vip,staff_vip:entitlement.staff,predictions:rows.map(p=>p.visibility==='vip'&&!vip?{id:p.id,title:p.title,league:p.league,match_date:p.match_date,visibility:'vip',locked:true}:{...p,locked:false})});
+  res.json({has_vip:vip,staff_vip:entitlement.staff,predictions:rows.map(p=>{
+   // Important: NEVER return stored analysis, probabilities, or goal market info for locked VIP.
+   if(p.visibility==='vip'&&!vip)return {id:p.id,title:p.title,league:p.league,match_date:p.match_date,visibility:'vip',locked:true};
+   const {football_evidence,...visible}=p;
+   return {...visible,locked:false,football_details:publishedFootballDetails(football_evidence)};
+  })});
  }catch(e){console.error('customer predictions',e.code||e.message);res.status(500).json({error:'No se pudieron cargar los pronósticos'});}
 });
 // Customer-only dashboard: all figures are derived from database records.

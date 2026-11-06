@@ -14,8 +14,19 @@ export function telegramPublicNotice(p,base){
 export function telegramFreeAutoPost(p){
  return `⚽ <b>FIJAS DE ÉLITE · GRATIS</b>\n<b>${h(p.title)}</b>\n🏆 ${h(p.league)}\n📅 ${h(p.match_date)} UTC\n🎯 ${h(p.market)}: <b>${h(p.selection)}</b>\n\n${h(String(p.analysis||'').slice(0,1150))}\n\nAnálisis estadístico, no garantía. Pronósticos con riesgo de fallo.`;
 }
+export function telegramGoalsSummary(p){
+ const f=p?.football_details;
+ if(!f)return '';
+ const line=(label,v)=>`\n• ${label}: ${h(v||'sin estimación')}`;
+ const hist=f.historical;
+ const msg='\n\n<b>⚽ MERCADOS DE GOLES (estimaciones)</b>'+line('Total',f.total_line?.market_label)+line('Local',f.home_line?.market_label)+line('Visitante',f.away_line?.market_label)+
+  line('Ambos anotan',hist?`${hist.both_scored}/${hist.games} antecedentes`:'Sin datos suficientes')+
+  line('Marcador orientativo',f.estimated_score)+
+  line('Diferencia de goles',f.estimated_margin!=null?`${f.estimated_margin} gol(es)`:null);
+ return msg+'\n<i>Estimaciones, no apuestas garantizadas ni cuotas verificadas para goles.</i>';
+}
 export function telegramVipPost(p){
- return `♛ <b>FIJAS DE ÉLITE · VIP</b>\n<b>${h(p.title)}</b>\n🏆 ${h(p.league)}\n📅 ${h(p.match_date)} UTC\n🎯 <b>${h(p.market)}:</b> ${h(p.selection)}\n📊 Cuota: ${p.odds!=null && Number.isFinite(Number(p.odds))?Number(p.odds).toFixed(2):'No disponible (sin cuota verificada)'}\n\n<b>Análisis:</b>\n${h(p.analysis)}\n\nInformación deportiva, no una garantía de resultado.`;
+ return `♛ <b>FIJAS DE ÉLITE · VIP</b>\n<b>${h(p.title)}</b>\n🏆 ${h(p.league)}\n📅 ${h(p.match_date)} UTC\n🎯 <b>${h(p.market)}:</b> ${h(p.selection)}\n📊 Cuota: ${p.odds!=null && Number.isFinite(Number(p.odds))?Number(p.odds).toFixed(2):'No disponible (sin cuota verificada)'}${telegramGoalsSummary(p)}\n\n<b>Análisis y riesgos:</b>\n${h(String(p.analysis||'').slice(0,2300))}\n\nInformación deportiva, no una garantía de resultado.`;
 }
 export async function telegramApi(method,payload={},env=process.env){
  if(!env.TELEGRAM_BOT_TOKEN)throw Error('Bot de Telegram no configurado');

@@ -16,7 +16,26 @@ const form=id=>Object.fromEntries(new FormData($(id)));
 function view(name){document.querySelectorAll('.auth-view').forEach(el=>el.hidden=el.id!==`auth-${name}`);document.querySelectorAll('[data-view]').forEach(el=>el.classList.toggle('active',el.dataset.view===name));}
 document.querySelectorAll('[data-view]').forEach(el=>el.addEventListener('click',()=>view(el.dataset.view)));
 async function load(){try{const {plans}=await call('/api/plans');$('plans').replaceChildren();for(const p of plans){const o=document.createElement('option');o.value=p.id;o.textContent=`${p.name} · ${p.duration_days} días · S/ ${p.price_pen}`;$('plans').append(o);}const selected=new URLSearchParams(location.search).get('plan');if(selected && [...$('plans').options].some(o=>o.value===selected))$('plans').value=selected;}catch(e){$('requestMsg').textContent=e.message;}}
-async function loadCustomerPicks(){const box=$('customer-picks');try{const r=await call('/api/customers/predictions',null,true);box.replaceChildren();for(const p of r.predictions){const article=document.createElement('article');article.className='customer-pick'+(p.locked?' is-locked':'');const h=document.createElement('h4');h.textContent=(p.locked?'🔒 ':'⚽ ')+p.title;article.append(h);const meta=document.createElement('p');meta.textContent=`${p.league||'Fútbol'} · ${p.visibility==='vip'?'VIP':'Gratis'}`;article.append(meta);const desc=document.createElement('p');desc.textContent=p.locked?'🔒 Selección y análisis totalmente ocultos. Necesitas una membresía VIP activa.':`${p.market||''}: ${p.selection||''} ${p.odds?'· Cuota '+p.odds:''} — ${p.analysis||''}`;article.append(desc);if(!p.locked){const status=document.createElement('span');status.className='outcome outcome-'+(p.outcome||'pending');status.textContent=({won:'Ganado',lost:'Perdido',pending:'Pendiente',void:'Anulado'})[p.outcome]||'Pendiente';article.append(status);}else{const go=document.createElement('a');go.className='vip-unlock';go.href='#request';go.textContent='Desbloquear VIP';article.append(go);}box.append(article);}if(!r.predictions.length)box.textContent='Todavía no hay pronósticos.';}catch(e){box.textContent=e.message;}}
+async function loadCustomerPicks(){
+ const box=$('customer-picks');
+ try{
+  const r=await call('/api/customers/predictions',null,true);box.replaceChildren();
+  for(const p of r.predictions){
+   const article=document.createElement('article');article.className='customer-pick fe-research-card'+(p.locked?' is-locked':'');
+   const h=document.createElement('h4');h.textContent=(p.locked?'🔒 ':'⚽ ')+p.title;article.append(h);
+   const meta=document.createElement('p');meta.textContent=`${p.league||'Fútbol'} · ${p.visibility==='vip'?'VIP':'Gratis'}`;article.append(meta);
+   if(p.locked){const desc=document.createElement('p');desc.textContent='🔒 Selección, mercados y análisis ocultos. Necesitas una membresía VIP activa.';article.append(desc);
+    const go=document.createElement('a');go.className='vip-unlock';go.href='#request';go.textContent='Desbloquear VIP';article.append(go);
+   }else{
+    if(window.FijasPickReport){article.append(window.FijasPickReport.pickInfo(p));const goalBox=window.FijasPickReport.goals(p);if(goalBox)article.append(goalBox);const detail=window.FijasPickReport.analysis(p);if(detail)article.append(detail);}
+    else{const desc=document.createElement('p');desc.textContent=`${p.market||''}: ${p.selection||''} · ${p.analysis||''}`;article.append(desc);}
+    const status=document.createElement('span');status.className='outcome outcome-'+(p.outcome||'pending');status.textContent=({won:'Ganado',lost:'Perdido',pending:'Pendiente',void:'Anulado'})[p.outcome]||'Pendiente';article.append(status);
+   }
+   box.append(article);
+  }
+  if(!r.predictions.length)box.textContent='Todavía no hay pronósticos publicados. Los análisis en borrador no aparecen aquí hasta aprobarlos.';
+ }catch(e){box.textContent=e.message;}
+}
 async function loadDashboard(){
  const summary=$('vip-summary'),stats=$('vip-stats'),notices=$('vip-notices');
  try{
