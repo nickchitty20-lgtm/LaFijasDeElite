@@ -477,7 +477,7 @@ $('myTelegramChangeForm')?.addEventListener('submit',async event=>{
 });
 
 
-// v2.1.2 — Free-plan compatible analysis, owner-only.
+// v2.1.3 — Manual scan and detailed reasons, owner-only.
 async function loadFootballEngine(){
  const summary=$('footballEngineSummary'),list=$('footballCandidateList'),message=$('footballEngineMsg');
  if(!summary||currentAdminRole!=='owner')return;
@@ -492,9 +492,17 @@ async function loadFootballEngine(){
    ['Publicadas',status.published],
    ['Resultados ganados / perdidos',`${status.won} / ${status.lost}`],
    ['Acierto observado',status.accuracy==null?'Sin suficientes resultados':`${status.accuracy}%`],
-   ['Último escaneo',status.latest?`${status.latest.status} · ${new Date(status.latest.started_at).toLocaleString('es-PE')}`:'Todavía no se ejecutó']
+   ['Último escaneo',status.latest?`${status.latest.status} · ${new Date(status.latest.started_at).toLocaleString('es-PE')} · ${status.latest.drafts_created||0} propuestas`:'Todavía no se ejecutó'],
+   ['Escaneos manuales disponibles hoy',`${status.manual_scan?.remaining??'—'} / ${status.manual_scan?.daily_limit??2}`]
   ];
   for(const [title,value] of stats){const div=document.createElement('div');const small=document.createElement('small');small.textContent=title;const strong=document.createElement('strong');strong.textContent=String(value);div.append(small,strong);summary.append(div);}
+  const scanButton=$('footballScanButton');
+  if(scanButton){scanButton.disabled=!status.manual_scan?.available||!!status.scanning;
+   scanButton.title=status.manual_scan?.reason||'Analiza partidos reales, guarda propuestas, no publica';}
+  const allowance=$('footballScanAllowance');
+  if(allowance)allowance.textContent=status.manual_scan?.available?
+   `Puedes iniciar un análisis ahora. Quedan ${status.manual_scan.remaining} escaneos manuales hoy (UTC).`:
+   (status.manual_scan?.reason||'Análisis en ejecución.');
   list.replaceChildren();
   if(!result.candidates.length){list.textContent='No hay propuestas todavía. Configura tu API key y busca partidos.';return;}
   for(const c of result.candidates){
@@ -545,7 +553,19 @@ $('footballTestButton')?.addEventListener('click',async()=>{
 });
 $('footballScanButton')?.addEventListener('click',async()=>{
  const btn=$('footballScanButton');btn.disabled=true;$('footballEngineMsg').textContent='Analizando próximos partidos…';
- try{const r=await api('/api/admin/football/scan',{method:'POST',body:'{}'});$('footballEngineMsg').textContent=r.message||`Partidos examinados: ${r.examined||0}. Propuestas nuevas: ${r.drafts_created||0}. Sin predicción de la API: ${r.without_prediction||0}. Descartados por filtros: ${r.below_filters||0}. Errores del proveedor: ${r.provider_errors||0}.${r.warnings?.length?' Detalles: '+r.warnings.join(' · '):''} ${!r.examined?'No hubo partidos válidos entre 1 y 6 horas.':''}`;await loadFootballEngine();}
- catch(err){$('footballEngineMsg').textContent=err.message;}finally{btn.disabled=false;}
+ try{const r=await api('/api/admin/football/scan',{method:'POST',body:'{}'});
+  const report=$('footballScanReport');
+  if(report){
+   report.hidden=false;report.replaceChildren();
+   const line=(label,value)=>{const p=document.createElement('p');const b=document.createElement('strong');b.textContent=label+': ';p.append(b,document.createTextNode(String(value)));report.append(p);};
+   line('Resultado',r.message||r.note||'Búsqueda terminada');
+   if(r.ok){line('Partidos disponibles en 1–6 horas',r.fixtures_in_window);line('Partidos analizados',r.examined);line('Propuestas guardadas',r.drafts_created);line('Sin predicciones',r.without_prediction);line('Descartados por filtros',r.below_filters);line('Errores del proveedor',r.provider_errors);
+    for(const example of r.rejection_examples||[])line(example.match,example.reason);
+    for(const warning of r.warnings||[])line('Aviso API',warning);
+   }
+  }
+  $('footballEngineMsg').textContent=r.message||(r.drafts_created?`¡${r.drafts_created} propuesta(s) guardada(s)! Revisa las tarjetas de abajo para publicar.`:r.note||'Sin propuestas.');
+ }
+ catch(err){$('footballEngineMsg').textContent=err.message;}finally{btn.disabled=false;await loadFootballEngine();}
 });
 $('footballReloadButton')?.addEventListener('click',loadFootballEngine);

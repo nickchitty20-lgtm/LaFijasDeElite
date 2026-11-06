@@ -78,6 +78,12 @@ export async function initializeDatabase() {
       drafts_created INT UNSIGNED NOT NULL DEFAULT 0,
       error_message VARCHAR(200) NULL
     ) ENGINE=InnoDB`);
+    // v2.1.3: persistent manual-scan limits and last-scan reasons.
+    const [scanColumns]=await connection.query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='football_scans'");
+    const scanNames=new Set(scanColumns.map(c=>c.COLUMN_NAME));
+    const footballScanColumns={initiated_by:"ENUM('manual','scheduled') NOT NULL DEFAULT 'scheduled'",window_matches:'INT UNSIGNED NOT NULL DEFAULT 0',without_prediction:'INT UNSIGNED NOT NULL DEFAULT 0',below_filters:'INT UNSIGNED NOT NULL DEFAULT 0',provider_errors:'INT UNSIGNED NOT NULL DEFAULT 0'};
+    for(const [name,definition] of Object.entries(footballScanColumns))if(!scanNames.has(name))
+      await connection.query(`ALTER TABLE football_scans ADD COLUMN ${name} ${definition}`);
     await connection.query(`CREATE TABLE IF NOT EXISTS football_candidates (
       id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
       provider VARCHAR(40) NOT NULL,

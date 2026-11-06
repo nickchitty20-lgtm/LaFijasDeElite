@@ -1,11 +1,30 @@
-# Fijas de Élite v2.1.2 — Corrección API-Football Free ⚽
+# Fijas de Élite v2.1.3 — Análisis real y propuestas
+
+**Qué cambia frente a v2.1.2**
+
+- Dos botones separados: diagnóstico de API (no guarda) y análisis manual (guarda propuestas válidas en MySQL, NO publica).
+- El análisis manual ya no queda bloqueado por el enfriamiento automático de tres horas: tiene un cupo separado de **2 análisis al día** y al menos **10 minutos** entre intentos. El cupo se conserva en MySQL.
+- Analiza hasta **5 partidos de ligas distintas**, no solamente los primeros 3 del calendario. El límite conservador del plan gratuito es de hasta 9 consultas computables por análisis, sujeto a cruces de medianoche y a la información disponible.
+- Informe del análisis con partidos encontrados, revisados, rechazados y motivos, sin inventar pronósticos.
+- El dashboard distingue correctamente el límite diario de la API-Football (`requests.limit_day`).
+- Base de datos: migración aditiva para informes y escaneos manuales. No borres las tablas.
+
+**Instalación:** sustituye todos los archivos en GitHub, espera Railway Success, revisa `/health` (2.1.3), entra como dueño en Análisis automático y pulsa **«Analizar ahora y guardar propuestas»**. La primera ejecución puede tardar por las llamadas reales. Si no aparece ninguna propuesta, consulta los motivos de descarte. **No significa un fallo de API**.
+
+Durante la evaluación, fija `FOOTBALL_AUTO_PUBLISH=false` para que nada se envíe automáticamente a Telegram. Si el diagnóstico se ejecutó muy recientemente, el proveedor también aplica un límite de 10 solicitudes/minuto. No pulses ambos botones en sucesión rápida.
+
+**Los estimados de API-Football no son tasas de acierto garantizadas.** No se garantiza un pronóstico en cada búsqueda.
+
+---
+
+# Fijas de Élite v2.1.3 — Corrección API-Football Free ⚽
 
 **Problema resuelto:** la versión 2.1.1 usaba `last=5` en `/fixtures/headtohead`. El plan gratuito de API-Football devuelve el error `Free plans do not have access to the Last parameter`. Esta versión usa solo `h2h=ID-ID` y filtra localmente los encuentros terminados más recientes. No exige comprar otro plan.
 
 ## Instalar
 
 1. Descomprime y sube el contenido (archivos y carpetas de la raíz) a GitHub, reemplazando la versión 2.1.1.
-2. Espera que Railway muestre `Success` y verifica `/health` -> `"version":"2.1.2"`.
+2. Espera que Railway muestre `Success` y verifica `/health` -> `"version":"2.1.3"`.
 3. Como dueño, abre **Análisis automático** y pulsa **Buscar partidos próximos**. Como la búsqueda fallida no aplica cooldown, podrás reintentarlo. Revisa los contadores de examinados, sin predicción, descartados y advertencias.
 4. Si encuentra propuestas de calidad, aparecerán como borradores en **Actualizar propuestas**, listos para revisión y publicación manual. **El diagnóstico** continúa siendo solo de lectura: no guarda ni anuncia nada.
 5. Para pruebas, mantén `FOOTBALL_AUTO_PUBLISH=false` mientras confirmas datos, selección y cuotas. La publicación requiere aprobación manual salvo escaneos programados con publicación habilitada y filtros cumplidos.

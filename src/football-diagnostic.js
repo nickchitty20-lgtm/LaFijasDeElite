@@ -19,7 +19,7 @@ export async function diagnoseFootball({now=new Date(),request=footballApi}={}){
  const result={
   ok:true,read_only:true,checked_at:checkedAt,api_connected:true,
   provider_requests_current:Number.isFinite(Number(reqInfo.current))?Number(reqInfo.current):null,
-  provider_requests_limit:Number.isFinite(Number(reqInfo.limit))?Number(reqInfo.limit):null,
+  provider_requests_limit:Number.isFinite(Number(reqInfo.limit_day??reqInfo.limit))?Number(reqInfo.limit_day??reqInfo.limit):null,
   fixtures_returned:fixtures.length,fixtures_in_window:upcoming.length,
   window:'1 a 6 horas',sample:null,reason:null,api_calls:1+dates.length
  };

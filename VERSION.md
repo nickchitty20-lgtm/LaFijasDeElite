@@ -1,4 +1,8 @@
-# Fijas de Élite v2.1.2 — Compatible con API-Football Free
+# Versión 2.1.3
+
+Análisis manual de partidos sin esperar el cooldown automático. Dos ejecuciones diarias, informe de descartes, hasta cinco partidos revisados y guardado de borradores válidos sin publicar. Validar en Railway con datos reales.
+
+# Fijas de Élite v2.1.3 — Compatible con API-Football Free
 
 - Corrige el error `Free plans do not have access to the Last parameter` en la búsqueda completa: ahora `fixtures/headtohead` se consulta con `h2h` y los 5 encuentros anteriores se eligen en el backend.
 - Los fallos de datos complementarios H2H no bloquean el análisis del partido.
