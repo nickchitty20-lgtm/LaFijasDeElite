@@ -111,3 +111,9 @@
 
 /* v2.0.2 — hidden must win over navigation/layout display rules */
 #dashboard [hidden]{display:none!important}
+
+/* v2.0.4 — Owner confirmation, compact even on phones. */
+#telegramOwnerForceUnlinkForm{border-color:#ac8641;background:linear-gradient(120deg,#242017,#171c24)}
+#telegramOwnerForceUnlinkForm label:has(input[type="checkbox"]){display:flex;align-items:flex-start;gap:12px;max-width:100%;line-height:1.5}
+#telegramOwnerForceUnlinkForm input[type="checkbox"]{flex:0 0 18px;width:18px;height:18px;min-width:18px;margin:2px 0 0;accent-color:#d6b36e}
+#telegramOwnerForceUnlinkForm button{max-width:100%;white-space:normal;overflow-wrap:anywhere}

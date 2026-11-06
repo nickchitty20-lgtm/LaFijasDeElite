@@ -96,6 +96,19 @@ export async function initializeDatabase() {
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     ) ENGINE=InnoDB`);
 
+    // v2.0.4: owner-authorized detach/relink without expelling the prior subscriber.
+    // Each customer may retain at most ONE prior Telegram member; records survive restarts.
+    // The old member is never allowed to use a new invitation without an active link.
+    await connection.query(`CREATE TABLE IF NOT EXISTS telegram_owner_preserved (
+      telegram_user_id BIGINT NOT NULL PRIMARY KEY,
+      user_id BIGINT UNSIGNED NOT NULL UNIQUE,
+      actor_admin_id BIGINT UNSIGNED NOT NULL,
+      reason VARCHAR(250) NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      INDEX idx_telegram_owner_preserved_user (user_id)
+    ) ENGINE=InnoDB`);
+
     await connection.query(`CREATE TABLE IF NOT EXISTS telegram_link_tokens (
       user_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
       token_hash CHAR(64) NOT NULL UNIQUE,

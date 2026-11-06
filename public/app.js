@@ -368,7 +368,7 @@ async function loadTelegramAdmin(){
   $('telegramAdminSetup').textContent=[s.bot_configured?'Bot ✓':'Falta bot',s.vip_channel_configured?'VIP ✓':'Falta canal',s.free_group_configured?'Grupo ✓':'Falta grupo',s.webhook_secret_configured?'Secreto ✓':'Falta secreto'].join(' · ');
   $('telegramAdminLinked').textContent=String(s.linked);
   $('telegramAdminMembers').textContent=String(s.vip_members);
-  $('telegramCoverage').textContent=`Telegram informa ${s.telegram_member_count??'—'} miembros; IDs de miembros conocidos: ${s.tracked_members}. Desvinculados pendientes de salida: ${s.detached_pending}. El bot no puede descargar la lista total: revisa manualmente usuarios antiguos no registrados.`;
+  $('telegramCoverage').textContent=`Telegram informa ${s.telegram_member_count??'—'} miembros; IDs de miembros conocidos: ${s.tracked_members}. Desvinculados pendientes de salida: ${s.detached_pending}. Telegram anteriores conservados por el creador: ${s.creator_preserved??0}. El bot no puede descargar la lista total: revisa manualmente usuarios antiguos no registrados.`;
  }catch(error){$('telegramAdminResult').textContent=error.message;}
 }
 $('telegramOwnerUnlinkForm')?.addEventListener('submit',async event=>{
@@ -377,6 +377,25 @@ $('telegramOwnerUnlinkForm')?.addEventListener('submit',async event=>{
  if(!confirm('¿Desvincular sin expulsar del canal? El Telegram anterior SEGUIRÁ dentro. Se bloqueará una segunda vinculación mientras la plaza esté ocupada.'))return;
  const data=Object.fromEntries(new FormData(form));msg.textContent='Desvinculando sin expulsar…';
  try{const r=await api('/api/admin/telegram/unlink',{method:'POST',body:JSON.stringify(data)});msg.textContent=r.message;form.reset();await loadTelegramAdmin();}
+ catch(error){msg.textContent=error.message;}
+});
+$('telegramOwnerForceUnlinkForm')?.addEventListener('submit',async event=>{
+ event.preventDefault();if(currentAdminRole!=='owner')return;
+ const form=event.currentTarget,msg=$('telegramOwnerForceUnlinkResult');
+ if(!confirm('ATENCIÓN: el Telegram anterior NO será expulsado y podrás vincular uno nuevo. Esto permite dos miembros en el canal mientras el VIP esté activo. ¿Autorizar expresamente?'))return;
+ const data=Object.fromEntries(new FormData(form));
+ data.confirm_keep_old=data.confirm_keep_old==='on';
+ msg.textContent='Comprobando autorización y desvinculando…';
+ try{const r=await api('/api/admin/telegram/force-unlink',{method:'POST',body:JSON.stringify(data)});
+  msg.textContent=r.message;form.reset();await loadTelegramAdmin();}
+ catch(error){msg.textContent=error.message;}
+});
+$('telegramPreservedCheckForm')?.addEventListener('submit',async event=>{
+ event.preventDefault();if(currentAdminRole!=='owner')return;
+ const form=event.currentTarget,msg=$('telegramPreservedCheckResult');
+ msg.textContent='Comprobando estado en Telegram…';
+ try{const r=await api('/api/admin/telegram/check-preserved',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(form)))});
+  msg.textContent=r.message;if(r.released)form.reset();await loadTelegramAdmin();}
  catch(error){msg.textContent=error.message;}
 });
 $('telegramChangeExceptionForm').addEventListener('submit',async event=>{

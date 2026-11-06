@@ -1,3 +1,9 @@
+# Fijas de Élite v2.0.4
+
+**Nuevo:** el dueño puede forzar la desvinculación de Telegram y permitir que el cliente vincule otra cuenta sin expulsar al usuario anterior del canal VIP. Ver [VERSION.md](VERSION.md) para instrucciones y limitaciones.
+
+---
+
 # Fijas de Élite v2.0.3 — Corrección del desplazamiento horizontal móvil
 
 ## Cambios

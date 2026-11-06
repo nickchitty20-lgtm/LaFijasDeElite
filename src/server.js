@@ -23,7 +23,7 @@ import {installTelegramRoutes} from './telegram-routes.js';
 import {installNotificationCenter,enqueueVipActivation,enqueuePredictionEvent} from './notification-center.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
-const APP_VERSION = '2.0.3';
+const APP_VERSION = '2.0.4';
 const app = express();
 let telegramVipControl=null;
 let notificationControl=null;

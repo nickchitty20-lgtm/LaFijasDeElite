@@ -4,7 +4,7 @@ import {sha256,safeTelegramId,telegramApi,telegramLinkStart,telegramWebhookSecre
 import {canApproveJoinRequest} from './telegram-invite-policy.js';
 import {effectiveVipSql,getVipEntitlement} from './vip-access.js';
 import {rank0ActionMatchesStatus,rank0DesiredAction} from './telegram-rank0-policy.js';
-import {shouldPreserveDetachedMember,shouldReleaseDetachedReservation,canBeginNewTelegramLink} from './telegram-detach-policy.js';
+import {shouldPreserveDetachedMember,shouldReleaseDetachedReservation,canBeginNewTelegramLink,shouldPreserveOwnerMember,ownerForceCanProceed} from './telegram-detach-policy.js';
 
 const BOT_ENDPOINT='/api/telegram/webhook';
 const VIP_SQL=`SELECT ${effectiveVipSql('u')} AS vip FROM users u WHERE u.id=? AND u.account_status='active'`;
@@ -99,6 +99,7 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
   if(['left','kicked'].includes(state.status)){
    await markChecked(id,'left');await db.execute('UPDATE telegram_links SET is_member=0 WHERE telegram_user_id=?',[id]);
    await db.execute("DELETE FROM telegram_links WHERE telegram_user_id=? AND link_status='detached'",[id]);
+   await db.execute('DELETE FROM telegram_owner_preserved WHERE telegram_user_id=?',[id]);
    return 'not_member';
   }
   if(['administrator','creator'].includes(state.status)){
@@ -114,6 +115,15 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
    await markChecked(id,'member','Desvinculado: retiro manual pendiente del creador');
    return 'detached_kept';
   }
+  const [[ownerPreserved]]=await db.execute(`SELECT p.user_id,u.account_status,
+    ${effectiveVipSql('u')} AS active_vip FROM telegram_owner_preserved p
+    JOIN users u ON u.id=p.user_id WHERE p.telegram_user_id=? LIMIT 1`,[id]);
+  if(shouldPreserveOwnerMember(ownerPreserved,ownerPreserved?.account_status,ownerPreserved?.active_vip)){
+   await markChecked(id,'member','Excepción del creador: Telegram anterior conservado sin vinculación');
+   return 'owner_preserved_kept';
+  }
+  // An expired VIP/Rank 0 does not inherit an endless exception.
+  if(ownerPreserved)await db.execute('DELETE FROM telegram_owner_preserved WHERE telegram_user_id=?',[id]);
   const eligible=await allowedToJoin(id);
   if(eligible){
    await markChecked(id,'member');
@@ -378,8 +388,9 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
    if(!token||token.account_status!=='active'){await conn.rollback();reply='El enlace venció o no está disponible. Solicita otro desde tu panel.';}
    else{
     const [[linked]]=await conn.execute('SELECT user_id,telegram_user_id FROM telegram_links WHERE user_id=? OR telegram_user_id=? FOR UPDATE',[token.user_id,String(message.from.id)]);
+    const [[preserved]]=await conn.execute('SELECT telegram_user_id FROM telegram_owner_preserved WHERE telegram_user_id=? FOR UPDATE',[String(message.from.id)]);
     const [[cooldown]]=await conn.execute('SELECT cooldown_until>UTC_TIMESTAMP() AS blocked FROM telegram_change_state WHERE user_id=?',[token.user_id]);
-    if(linked||cooldown?.blocked){await conn.rollback();reply='Este Telegram ya está vinculado o reservado, o tu plazo de seguridad aún no termina. Contacta al dueño si necesitas una excepción.';}
+    if(linked||preserved||cooldown?.blocked){await conn.rollback();reply='Este Telegram ya está vinculado o reservado, o tu plazo de seguridad aún no termina. Contacta al dueño si necesitas una excepción.';}
     else{
      await conn.execute('INSERT INTO telegram_links(user_id,telegram_user_id,telegram_username,is_member) VALUES(?,?,?,0)',[token.user_id,String(message.from.id),String(message.from.username||'').slice(0,100)||null]);
      await conn.execute('DELETE FROM telegram_link_tokens WHERE user_id=?',[token.user_id]);
@@ -442,6 +453,11 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
    const [[detached]]=await db.execute(`SELECT t.link_status,u.account_status,${effectiveVipSql('u')} AS active_vip FROM telegram_links t
     JOIN users u ON u.id=t.user_id WHERE t.telegram_user_id=? LIMIT 1`,[String(user.id)]);
    if(shouldPreserveDetachedMember(detached?.link_status,detached?.account_status,detached?.active_vip))return; // No automatic kick on unlink.
+   const [[ownerPreserved]]=await db.execute(`SELECT p.user_id,u.account_status,${effectiveVipSql('u')} AS active_vip
+    FROM telegram_owner_preserved p JOIN users u ON u.id=p.user_id
+    WHERE p.telegram_user_id=? LIMIT 1`,[String(user.id)]);
+   if(shouldPreserveOwnerMember(ownerPreserved,ownerPreserved?.account_status,ownerPreserved?.active_vip))return;
+   if(ownerPreserved)await db.execute('DELETE FROM telegram_owner_preserved WHERE telegram_user_id=?',[String(user.id)]);
    const allowed=await allowedToJoin(user.id);
    if(!allowed){
     const [[linked]]=await db.execute(`SELECT u.account_status FROM telegram_links t
@@ -458,6 +474,7 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
    await rememberMember(user.id,'left');
    await db.execute('UPDATE telegram_links SET is_member=0 WHERE telegram_user_id=?',[String(user.id)]);
    await db.execute("DELETE FROM telegram_links WHERE telegram_user_id=? AND link_status='detached'",[String(user.id)]);
+   await db.execute('DELETE FROM telegram_owner_preserved WHERE telegram_user_id=?',[String(user.id)]);
   }
  }
  app.post(BOT_ENDPOINT,async(req,res)=>{
@@ -489,7 +506,10 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
   const [legacy]=await db.query(`SELECT t.telegram_user_id FROM telegram_links t
     LEFT JOIN telegram_channel_members c ON c.telegram_user_id=t.telegram_user_id
     WHERE c.telegram_user_id IS NULL LIMIT 30`);
-  const ids=[...new Set([...known,...legacy].map(u=>String(u.telegram_user_id)))];
+  const [ownerFormer]=await db.query(`SELECT p.telegram_user_id FROM telegram_owner_preserved p
+    LEFT JOIN telegram_channel_members c ON c.telegram_user_id=p.telegram_user_id
+    WHERE c.telegram_user_id IS NULL LIMIT 30`);
+  const ids=[...new Set([...known,...legacy,...ownerFormer].map(u=>String(u.telegram_user_id)))];
   let checked=0,removed=0,kept=0,failed=0,telegramAdmins=0;
   for(const id of ids){
    try{
@@ -516,9 +536,10 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
   try{
    const [[stats]]=await db.query("SELECT COALESCE(SUM(link_status='active'),0) AS linked,COALESCE(SUM(is_member AND link_status='active'),0) AS members,COALESCE(SUM(link_status='detached'),0) AS detached_pending FROM telegram_links");
    const [[tracking]]=await db.query(`SELECT COUNT(*) AS total,COALESCE(SUM(state='member'),0) AS known_current FROM telegram_channel_members`);
+   const [[exceptions]]=await db.query('SELECT COUNT(*) AS total FROM telegram_owner_preserved');
    let reportedChannelMembers=null;
    if(telegramEnabled())try{reportedChannelMembers=Number(await api('getChatMemberCount',{chat_id:process.env.TELEGRAM_VIP_CHAT_ID}));}catch(error){console.error('Telegram channel count',error.message);}
-   res.json({bot_configured:Boolean(process.env.TELEGRAM_BOT_TOKEN),vip_channel_configured:Boolean(process.env.TELEGRAM_VIP_CHAT_ID),free_group_configured:Boolean(process.env.TELEGRAM_FREE_CHAT_ID),webhook_secret_configured:validWebhookSecret(),public_base_url_configured:Boolean(process.env.PUBLIC_BASE_URL),linked:Number(stats.linked),vip_members:Number(stats.members),detached_pending:Number(stats.detached_pending),tracked_members:Number(tracking.known_current||0),tracked_total:Number(tracking.total||0),telegram_member_count:reportedChannelMembers,full_scan_available:false});
+   res.json({bot_configured:Boolean(process.env.TELEGRAM_BOT_TOKEN),vip_channel_configured:Boolean(process.env.TELEGRAM_VIP_CHAT_ID),free_group_configured:Boolean(process.env.TELEGRAM_FREE_CHAT_ID),webhook_secret_configured:validWebhookSecret(),public_base_url_configured:Boolean(process.env.PUBLIC_BASE_URL),linked:Number(stats.linked),vip_members:Number(stats.members),detached_pending:Number(stats.detached_pending),tracked_members:Number(tracking.known_current||0),tracked_total:Number(tracking.total||0),creator_preserved:Number(exceptions.total||0),telegram_member_count:reportedChannelMembers,full_scan_available:false});
   }catch(error){console.error('telegram admin',error.code||error.message);res.status(503).json({error:'No se pudo consultar Telegram'});}
  });
  // The original owner is created before customer registration and may lack a user row.
@@ -548,6 +569,85 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
    const result=await detachLink(userId,{actor:'owner',adminId:req.admin.id,reason});
    return res.status(result.status).json(result.status===200?{ok:true,message:result.message}:{error:result.error});
   }catch(error){console.error('telegram owner unlink',error.code||error.message);res.status(503).json({error:'No se pudo desvincular la cuenta.'});}
+ });
+ // Creator-only override: unlink an identity and IMMEDIATELY allow a replacement,
+ // WITHOUT kicking/unbanning the previous Telegram member. A single preserved former
+ // member is allowed per customer, and still requires an active VIP entitlement.
+ app.post('/api/admin/telegram/force-unlink',limit,authenticate,async(req,res)=>{
+  if(req.admin.role!=='owner')return res.status(403).json({error:'Solo el creador puede forzar la desvinculación.'});
+  const userId=String(req.body?.user_id||'');
+  const reason=String(req.body?.reason||'').trim();
+  const password=req.body?.password;
+  if(!/^[1-9]\d{0,18}$/.test(userId)||reason.length<12||reason.length>250||
+    typeof password!=='string'||password.length<1||password.length>256||
+    req.body?.confirm_keep_old!==true)
+   return res.status(400).json({error:'Indica ID, motivo (12-250 caracteres), tu contraseña y confirma la excepción.'});
+  let conn;
+  try{
+   const [[owner]]=await db.execute("SELECT password_hash FROM admins WHERE id=? AND role='owner' AND is_active=1",[req.admin.id]);
+   if(!owner?.password_hash||!await bcrypt.compare(password,owner.password_hash))
+    return res.status(403).json({error:'Contraseña del creador incorrecta.'});
+   conn=await db.getConnection();await conn.beginTransaction();
+   const [[account]]=await conn.execute('SELECT account_status FROM users WHERE id=? FOR UPDATE',[userId]);
+   const [[link]]=await conn.execute('SELECT telegram_user_id,link_status FROM telegram_links WHERE user_id=? FOR UPDATE',[userId]);
+   const [[preserved]]=await conn.execute('SELECT telegram_user_id FROM telegram_owner_preserved WHERE user_id=? FOR UPDATE',[userId]);
+   if(!ownerForceCanProceed({isOwner:true,hasLinkedTelegram:Boolean(link),alreadyPreserved:Boolean(preserved),accountStatus:account?.account_status})){
+    await conn.rollback();return res.status(409).json({error:preserved?
+      'Este cliente ya conserva un Telegram anterior. El creador debe retirarlo del canal o comprobar que salió antes de hacer otro cambio.':
+      'La cuenta debe estar activa y tener un Telegram vinculado o reservado.'});
+   }
+   const [[change]]=await conn.execute('SELECT status FROM telegram_change_state WHERE user_id=? FOR UPDATE',[userId]);
+   if(change?.status==='awaiting_new'){
+    await conn.rollback();return res.status(409).json({error:'Hay un reemplazo de Telegram en curso. Debe terminar o vencer antes de forzar otra desvinculación.'});
+   }
+   const [[oldInvite]]=await conn.execute('SELECT invite_link FROM telegram_vip_invites WHERE user_id=? FOR UPDATE',[userId]);
+   // This row grants no new invitation. It only prevents the known-member audit
+   // from kicking the previous account for being unlinked while VIP remains active.
+   await conn.execute(`INSERT INTO telegram_owner_preserved(telegram_user_id,user_id,actor_admin_id,reason)
+    VALUES(?,?,?,?)`,[String(link.telegram_user_id),userId,req.admin.id,reason]);
+   await conn.execute('DELETE FROM telegram_links WHERE user_id=?',[userId]);
+   await conn.execute('DELETE FROM telegram_link_tokens WHERE user_id=?',[userId]);
+   await conn.execute('DELETE FROM telegram_vip_invites WHERE user_id=?',[userId]);
+   await conn.execute(`INSERT INTO telegram_change_state(user_id,status,cooldown_until)
+     VALUES (?,'idle',NULL)
+     ON DUPLICATE KEY UPDATE status='idle',old_telegram_user_id=NULL,pending_token_hash=NULL,
+      pending_expires_at=NULL,cooldown_until=NULL`,[userId]);
+   await conn.execute('UPDATE telegram_notice_prefs SET vip_enabled=0,expiry_enabled=0,picks_enabled=0 WHERE user_id=?',[userId]);
+   await conn.execute(`INSERT INTO telegram_unlink_events(user_id,telegram_user_id,performed_by,actor_admin_id,reason)
+     VALUES (? ,?,'owner',?,?)`,[userId,String(link.telegram_user_id),req.admin.id,reason]);
+   await conn.execute(`INSERT INTO audit_logs(actor_admin_id,action,entity_type,entity_id,details)
+     VALUES (?,'telegram_owner_force_unlink_keep_member','user',?,?)`,
+     [req.admin.id,userId,JSON.stringify({previous_telegram_user_id:String(link.telegram_user_id),reason,allowed_to_relink:true,old_member_not_expulsed:true})]);
+   // Prevent the synchronizer from treating the former member as an unknown ID.
+   await conn.execute(`INSERT INTO telegram_channel_members(telegram_user_id,state,last_seen_at)
+     VALUES(?,'member',UTC_TIMESTAMP()) ON DUPLICATE KEY UPDATE state='member'`,[String(link.telegram_user_id)]);
+   await conn.commit();
+   // Only revoke unused invitation. NEVER call banChatMember/unbanChatMember.
+   if(oldInvite?.invite_link)await revokeInvitationLink(oldInvite.invite_link);
+   return res.json({ok:true,message:'Desvinculación forzada completada. El Telegram anterior NO fue expulsado y el cliente ya puede vincular otro. Mientras el VIP esté activo, el canal conservará al anterior; solo el creador puede retirar manualmente ese acceso. Máximo un anterior conservado por cliente.'});
+  }catch(error){if(conn)try{await conn.rollback();}catch{}
+   console.error('telegram creator force unlink',error.code||error.message);
+   res.status(503).json({error:'No se pudo completar la desvinculación forzada.'});
+  }finally{conn?.release();}
+ });
+ // Creator can release a preserved slot only after Telegram confirms the old ID left.
+ app.post('/api/admin/telegram/check-preserved',limit,authenticate,async(req,res)=>{
+  if(req.admin.role!=='owner')return res.status(403).json({error:'Solo el creador puede comprobar plazas conservadas.'});
+  const userId=String(req.body?.user_id||'');
+  if(!/^[1-9]\d{0,18}$/.test(userId))return res.status(400).json({error:'ID de cliente inválido.'});
+  if(!telegramEnabled())return res.status(503).json({error:'Telegram no está configurado.'});
+  try{
+   const [[preserved]]=await db.execute('SELECT telegram_user_id FROM telegram_owner_preserved WHERE user_id=?',[userId]);
+   if(!preserved)return res.json({ok:true,released:true,message:'Este cliente no tiene ninguna cuenta anterior conservada.'});
+   const oldId=String(preserved.telegram_user_id);
+   const member=await api('getChatMember',{chat_id:process.env.TELEGRAM_VIP_CHAT_ID,user_id:oldId});
+   const gone=['left','kicked'].includes(member.status)||(member.status==='restricted'&&member.is_member===false);
+   if(!gone)return res.json({ok:true,released:false,message:'El Telegram anterior todavía pertenece al canal VIP. El creador debe retirarlo manualmente si desea liberar la excepción.'});
+   await db.execute('DELETE FROM telegram_owner_preserved WHERE user_id=? AND telegram_user_id=?',[userId,oldId]);
+   await markChecked(oldId,'left');
+   return res.json({ok:true,released:true,message:'Telegram confirmó que el anterior salió. La plaza excepcional quedó liberada.'});
+  }catch(error){console.error('telegram creator preserved check',error.code||error.message);
+   return res.status(503).json({error:'No se pudo comprobar la salida mediante Telegram.'});}
  });
  app.post('/api/admin/telegram/change-exception',limit,authenticate,async(req,res)=>{
   if(req.admin.role!=='owner')return res.status(403).json({error:'Solo el dueño puede autorizar una excepción'});
