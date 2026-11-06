@@ -1,4 +1,4 @@
-# v2.0.0 — Centro de notificaciones
+# v2.0.1 — Centro de notificaciones
 
 Base: Fijas de Élite v1.9.5. Esta versión NO cambia las credenciales PayPal, sus reglas de pago, los rangos ni las invitaciones privadas del bot.
 
@@ -13,7 +13,7 @@ Base: Fijas de Élite v1.9.5. Esta versión NO cambia las credenciales PayPal, s
 
 ## Instalación
 
-1. **Haz copia de seguridad de MySQL.** Descomprime el ZIP y reemplaza todo el código en GitHub; comprueba **Railway Success** y `GET /health` con `"version":"2.0.0"`.
+1. **Haz copia de seguridad de MySQL.** Descomprime el ZIP y reemplaza todo el código en GitHub; comprueba **Railway Success** y `GET /health` con `"version":"2.0.1"`.
 2. Conserva las variables actuales: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_VIP_CHAT_ID`, `TELEGRAM_WEBHOOK_SECRET`, `PUBLIC_BASE_URL`, `JWT_SECRET` y todas las de PayPal. **No hace falta crear variables nuevas**.
 3. La migración automática crea `telegram_notice_prefs`, `telegram_notice_outbox` y `telegram_notice_events` de forma aditiva. No toca membresías existentes.
 4. Con una cuenta de prueba, vincula Telegram desde **Telegram VIP**, abre **Notificaciones**, marca avisos y guarda.

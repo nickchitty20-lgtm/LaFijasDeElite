@@ -332,9 +332,17 @@ async function loadTelegramAdmin(){
   $('telegramAdminSetup').textContent=[s.bot_configured?'Bot ✓':'Falta bot',s.vip_channel_configured?'VIP ✓':'Falta canal',s.free_group_configured?'Grupo ✓':'Falta grupo',s.webhook_secret_configured?'Secreto ✓':'Falta secreto'].join(' · ');
   $('telegramAdminLinked').textContent=String(s.linked);
   $('telegramAdminMembers').textContent=String(s.vip_members);
-  $('telegramCoverage').textContent=`Telegram informa ${s.telegram_member_count??'—'} miembros; IDs de miembros conocidos: ${s.tracked_members}. El bot no puede descargar la lista total: revisa manualmente usuarios antiguos no registrados.`;
+  $('telegramCoverage').textContent=`Telegram informa ${s.telegram_member_count??'—'} miembros; IDs de miembros conocidos: ${s.tracked_members}. Desvinculados pendientes de salida: ${s.detached_pending}. El bot no puede descargar la lista total: revisa manualmente usuarios antiguos no registrados.`;
  }catch(error){$('telegramAdminResult').textContent=error.message;}
 }
+$('telegramOwnerUnlinkForm').addEventListener('submit',async event=>{
+ event.preventDefault();if(currentAdminRole!=='owner')return;
+ const form=event.currentTarget,msg=$('telegramOwnerUnlinkResult');
+ if(!confirm('¿Desvincular sin expulsar del canal? El Telegram anterior SEGUIRÁ dentro. Se bloqueará una segunda vinculación mientras la plaza esté ocupada.'))return;
+ const data=Object.fromEntries(new FormData(form));msg.textContent='Desvinculando sin expulsar…';
+ try{const r=await api('/api/admin/telegram/unlink',{method:'POST',body:JSON.stringify(data)});msg.textContent=r.message;form.reset();await loadTelegramAdmin();}
+ catch(error){msg.textContent=error.message;}
+});
 $('telegramChangeExceptionForm').addEventListener('submit',async event=>{
  event.preventDefault();if(currentAdminRole!=='owner')return;
  const form=event.currentTarget;const msg=$('telegramChangeExceptionResult');
@@ -366,11 +374,11 @@ async function loadMyTelegram(){
  try{
   const r=await api('/api/customers/telegram');
   $('myTelegramPrepare').hidden=true;
-  $('myTelegramLink').hidden=Boolean(r.linked)||!r.configured;
+  $('myTelegramLink').hidden=Boolean(r.linked)||Boolean(r.detached_pending)||r.change_cooldown_minutes>0||!r.configured;
   $('myTelegramInvite').hidden=!r.linked||!r.has_vip||r.change_pending||!r.configured;
   $('myTelegramInvite').disabled=Boolean(r.is_member);
   $('myTelegramInvite').textContent=r.is_member?'✓ Ya estás dentro del canal':'Solicitar acceso al canal VIP';
-  $('myTelegramChange').hidden=!r.linked||!r.configured;
+  $('myTelegramChange').hidden=true; // Se retiró el cambio automático que expulsaba otra cuenta.
   msg.textContent=r.staff_vip?`♛ VIP por cargo · sin vencimiento. ${r.linked?'Telegram vinculado'+(r.telegram_username?' @'+r.telegram_username:''):'Telegram no vinculado'}. ${r.is_member?'Ya estás en el canal VIP.':''}`:
     (r.has_vip?'VIP pagado activo':'No tienes VIP')+' · '+(r.linked?'Telegram vinculado':'Vincula tu Telegram');
  }catch(e){

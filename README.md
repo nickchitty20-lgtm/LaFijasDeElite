@@ -1,8 +1,8 @@
-# Fijas de Élite v2.0.0 — Centro de notificaciones por Telegram
+# Fijas de Élite v2.0.1 — Centro de notificaciones por Telegram
 
 **Sobre v1.9.5:** nueva sección de preferencias en el dashboard, mensajes privados optativos sobre activación/renovación VIP, vencimiento y nuevos pronósticos, con cola persistente y controles de acceso. Configuración e instalación detalladas en [VERSION.md](VERSION.md).
 
-Mantén PayPal Live en la configuración ya verificada; esta actualización **no habilita cobros Live por sí misma ni cambia sus credenciales**. Haz respaldo de MySQL y comprueba que Railway muestre `2.0.0` en `/health`.
+Mantén PayPal Live en la configuración ya verificada; esta actualización **no habilita cobros Live por sí misma ni cambia sus credenciales**. Haz respaldo de MySQL y comprueba que Railway muestre `2.0.1` en `/health`.
 
 ---
 

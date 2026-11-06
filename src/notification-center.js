@@ -17,7 +17,7 @@ const botEnabled=()=>Boolean(process.env.TELEGRAM_BOT_TOKEN);
 export async function enqueueVipActivation(conn,userId,membershipId){
  await conn.execute(`INSERT IGNORE INTO telegram_notice_outbox(user_id,kind,reference_key,message)
   SELECT p.user_id,'vip_activated',?,? FROM telegram_notice_prefs p
-  JOIN users u ON u.id=p.user_id JOIN telegram_links t ON t.user_id=p.user_id
+  JOIN users u ON u.id=p.user_id JOIN telegram_links t ON t.user_id=p.user_id AND t.link_status='active'
   WHERE p.user_id=? AND p.vip_enabled=1 AND u.account_status='active'`,
   [`membership:${membershipId}`,`♛ Tu membresía VIP fue activada o renovada. Consulta su fecha de vencimiento en ${baseUrl()}`,userId]);
 }
@@ -28,7 +28,7 @@ export function installNotificationCenter(app,{db,customerAuth,limit}){
  app.get('/api/customers/notifications/preferences',customerAuth,async(req,res)=>{
   try{
    const [[p]]=await db.execute('SELECT vip_enabled,expiry_enabled,picks_enabled FROM telegram_notice_prefs WHERE user_id=?',[req.customer.id]);
-   const [[link]]=await db.execute('SELECT telegram_user_id FROM telegram_links WHERE user_id=?',[req.customer.id]);
+   const [[link]]=await db.execute("SELECT telegram_user_id FROM telegram_links WHERE user_id=? AND link_status='active'",[req.customer.id]);
    res.json({linked:Boolean(link),vip_enabled:Boolean(p?.vip_enabled),expiry_enabled:Boolean(p?.expiry_enabled),picks_enabled:Boolean(p?.picks_enabled)});
   }catch(error){console.error('notice preferences',error.code||error.message);res.status(503).json({error:'No se pudieron consultar tus avisos.'});}
  });
@@ -36,7 +36,7 @@ export function installNotificationCenter(app,{db,customerAuth,limit}){
   const p=notificationSettingsSchema.safeParse(req.body);
   if(!p.success)return res.status(400).json({error:'Preferencias no válidas.'});
   try{
-   const [[link]]=await db.execute('SELECT telegram_user_id FROM telegram_links WHERE user_id=?',[req.customer.id]);
+   const [[link]]=await db.execute("SELECT telegram_user_id FROM telegram_links WHERE user_id=? AND link_status='active'",[req.customer.id]);
    if(!link && Object.values(p.data).some(Boolean))return res.status(409).json({error:'Primero debes vincular tu Telegram desde Telegram VIP.'});
    await db.execute(`INSERT INTO telegram_notice_prefs(user_id,vip_enabled,expiry_enabled,picks_enabled)
     VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE vip_enabled=VALUES(vip_enabled),expiry_enabled=VALUES(expiry_enabled),picks_enabled=VALUES(picks_enabled)`,
@@ -53,7 +53,7 @@ export function installNotificationCenter(app,{db,customerAuth,limit}){
   for(const e of events){
    const vipCond=e.visibility==='vip'?`AND ${effectiveVipSql('u')}`:'';
    const [users]=await db.execute(`SELECT p.user_id FROM telegram_notice_prefs p
-    JOIN users u ON u.id=p.user_id JOIN telegram_links t ON t.user_id=p.user_id
+    JOIN users u ON u.id=p.user_id JOIN telegram_links t ON t.user_id=p.user_id AND t.link_status='active'
     WHERE p.picks_enabled=1 AND u.account_status='active' AND p.user_id>? ${vipCond}
     ORDER BY p.user_id ASC LIMIT 200`,[e.last_user_id]);
    const msg=formatPredictionNotice(e.visibility,baseUrl());
@@ -69,7 +69,7 @@ export function installNotificationCenter(app,{db,customerAuth,limit}){
   const [rows]=await db.query(`SELECT m.user_id,DATE_FORMAT(MAX(m.ends_at),'%Y-%m-%d') AS last_date,
    DATEDIFF(DATE(MAX(m.ends_at)),UTC_DATE()) AS days_left
    FROM memberships m JOIN telegram_notice_prefs p ON p.user_id=m.user_id
-   JOIN users u ON u.id=m.user_id JOIN telegram_links t ON t.user_id=m.user_id
+   JOIN users u ON u.id=m.user_id JOIN telegram_links t ON t.user_id=m.user_id AND t.link_status='active'
    WHERE m.status='active' AND m.archived_at IS NULL AND m.ends_at>UTC_TIMESTAMP()
     AND p.expiry_enabled=1 AND u.account_status='active'
     AND NOT EXISTS (SELECT 1 FROM admins a WHERE a.email=u.email AND a.is_active=1)
@@ -92,13 +92,13 @@ export function installNotificationCenter(app,{db,customerAuth,limit}){
   for(const n of items){
    try{
     const col=noticeKindColumn[n.kind];
-    const [[target]]=await db.execute(`SELECT u.account_status,t.telegram_user_id,p.${col} AS opted_in,
+    const [[target]]=await db.execute(`SELECT u.account_status,t.telegram_user_id,t.link_status,p.${col} AS opted_in,
      EXISTS(SELECT 1 FROM telegram_change_state c WHERE c.user_id=u.id AND c.status='awaiting_new') AS pending_change,
      ${effectiveVipSql('u')} AS has_vip
      FROM users u LEFT JOIN telegram_links t ON t.user_id=u.id
      LEFT JOIN telegram_notice_prefs p ON p.user_id=u.id WHERE u.id=?`,[n.user_id]);
     const eligible=(n.kind==='vip_activated'||n.kind==='vip_expiring'||Boolean(n.requires_vip))?Boolean(target?.has_vip):true;
-    if(!noticeShouldSend({active:target?.account_status==='active',linked:Boolean(target?.telegram_user_id),pendingChange:target?.pending_change,optedIn:target?.opted_in,eligible})){
+    if(!noticeShouldSend({active:target?.account_status==='active',linked:Boolean(target?.telegram_user_id)&&target?.link_status==='active',pendingChange:target?.pending_change,optedIn:target?.opted_in,eligible})){
      await db.execute("UPDATE telegram_notice_outbox SET status='disabled',lease_id=NULL WHERE id=? AND lease_id=?",[n.id,lease]);continue;
     }
     await telegramApi('sendMessage',{chat_id:String(target.telegram_user_id),text:n.message,disable_web_page_preview:true});

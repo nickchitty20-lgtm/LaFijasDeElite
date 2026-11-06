@@ -79,6 +79,23 @@ export async function initializeDatabase() {
       last_verified_at DATETIME NULL,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     ) ENGINE=InnoDB`);
+    // v2.0.1: a detached link keeps the former Telegram ID reserved until it leaves
+    // the VIP channel. This does NOT ban, expel or silently grant a second VIP seat.
+    const [telegramLinkColumns]=await connection.query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='telegram_links'");
+    if(!telegramLinkColumns.some(c=>c.COLUMN_NAME==='link_status'))
+      await connection.query("ALTER TABLE telegram_links ADD COLUMN link_status ENUM('active','detached') NOT NULL DEFAULT 'active'");
+    await connection.query(`CREATE TABLE IF NOT EXISTS telegram_unlink_events (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      user_id BIGINT UNSIGNED NOT NULL,
+      telegram_user_id BIGINT NOT NULL,
+      performed_by ENUM('customer','owner') NOT NULL,
+      actor_admin_id BIGINT UNSIGNED NULL,
+      reason VARCHAR(250) NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_telegram_unlink_user (user_id,created_at),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB`);
+
     await connection.query(`CREATE TABLE IF NOT EXISTS telegram_link_tokens (
       user_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
       token_hash CHAR(64) NOT NULL UNIQUE,

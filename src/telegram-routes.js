@@ -1,10 +1,10 @@
 import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
-import {changeCooldownMinutes,changeIsAllowed,TELEGRAM_CHANGE_COOLDOWN_DAYS,TELEGRAM_CHANGE_TOKEN_MINUTES,TELEGRAM_CHANGE_REISSUE_MINUTES} from './telegram-change-policy.js';
 import {sha256,safeTelegramId,telegramApi,telegramLinkStart,telegramWebhookSecretValid} from './telegram-bridge.js';
 import {canApproveJoinRequest} from './telegram-invite-policy.js';
 import {effectiveVipSql,getVipEntitlement} from './vip-access.js';
 import {rank0ActionMatchesStatus,rank0DesiredAction} from './telegram-rank0-policy.js';
+import {shouldPreserveDetachedMember,shouldReleaseDetachedReservation,canBeginNewTelegramLink} from './telegram-detach-policy.js';
 
 const BOT_ENDPOINT='/api/telegram/webhook';
 const VIP_SQL=`SELECT ${effectiveVipSql('u')} AS vip FROM users u WHERE u.id=? AND u.account_status='active'`;
@@ -28,7 +28,7 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
  async function allowedToJoin(telegramUserId){
   const [[row]]=await db.execute(`SELECT t.user_id,t.telegram_user_id,u.account_status,
    ${effectiveVipSql('u')} AS active_vip
-   FROM telegram_links t JOIN users u ON u.id=t.user_id WHERE t.telegram_user_id=?
+   FROM telegram_links t JOIN users u ON u.id=t.user_id WHERE t.link_status='active' AND t.telegram_user_id=?
    AND NOT EXISTS(SELECT 1 FROM telegram_change_state c WHERE c.user_id=t.user_id AND c.status='awaiting_new')
    LIMIT 1`,[String(telegramUserId)]);
   return row?.account_status==='active' && Boolean(row?.active_vip)?row:null;
@@ -45,12 +45,60 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
    VALUES(?, ?,UTC_TIMESTAMP(),UTC_TIMESTAMP(),?) ON DUPLICATE KEY UPDATE state=VALUES(state),
    last_checked_at=UTC_TIMESTAMP(),last_error=VALUES(last_error)`,[String(telegramId),state,error?String(error).slice(0,250):null]);
  }
+ // A detached Telegram stays inside the channel untouched. Its VIP seat remains
+ // reserved until it has actually left; this prevents sharing one subscription.
+ async function checkDetachedAndRelease(userId){
+  const [[link]]=await db.execute('SELECT telegram_user_id,link_status FROM telegram_links WHERE user_id=?',[userId]);
+  if(!link||link.link_status!=='detached')return {pending:false,linked:link?.link_status==='active'};
+  if(!telegramEnabled())return {pending:true,warning:'Telegram no está configurado para comprobar la salida.'};
+  const id=String(link.telegram_user_id);
+  const member=await api('getChatMember',{chat_id:process.env.TELEGRAM_VIP_CHAT_ID,user_id:id});
+  const left=shouldReleaseDetachedReservation(link.link_status,member.status,member.is_member);
+  if(!left)return {pending:true,telegram_member_status:member.status};
+  await db.execute("DELETE FROM telegram_links WHERE user_id=? AND telegram_user_id=? AND link_status='detached'",[userId,id]);
+  await markChecked(id,'left');
+  return {pending:false,released:true};
+ }
+ async function detachLink(userId,{actor='customer',adminId=null,reason=null}={}){
+  let conn;
+  try{
+   conn=await db.getConnection();await conn.beginTransaction();
+   const [[link]]=await conn.execute('SELECT telegram_user_id,link_status FROM telegram_links WHERE user_id=? FOR UPDATE',[userId]);
+   if(!link){await conn.rollback();return {status:404,error:'Esta cuenta no tiene Telegram vinculado.'};}
+   if(link.link_status==='detached'){
+    await conn.rollback();return {status:409,error:'Telegram ya está desvinculado. Primero debe salir del canal VIP antes de vincular otro.'};
+   }
+   const [[state]]=await conn.execute('SELECT status FROM telegram_change_state WHERE user_id=? FOR UPDATE',[userId]);
+   if(state?.status==='awaiting_new'){
+    await conn.rollback();return {status:409,error:'Hay un cambio de Telegram en curso. Termínalo antes de desvincular.'};
+   }
+   const [[invite]]=await conn.execute('SELECT invite_link FROM telegram_vip_invites WHERE user_id=? FOR UPDATE',[userId]);
+   await conn.execute("UPDATE telegram_links SET link_status='detached' WHERE user_id=? AND link_status='active'",[userId]);
+   await conn.execute('DELETE FROM telegram_vip_invites WHERE user_id=?',[userId]);
+   await conn.execute('DELETE FROM telegram_link_tokens WHERE user_id=?',[userId]);
+   await conn.execute(`INSERT INTO telegram_change_state(user_id,status,cooldown_until)
+    VALUES (?,'idle',DATE_ADD(UTC_TIMESTAMP(),INTERVAL 30 DAY))
+    ON DUPLICATE KEY UPDATE status='idle',pending_token_hash=NULL,pending_expires_at=NULL,
+    cooldown_until=GREATEST(COALESCE(cooldown_until,UTC_TIMESTAMP()),DATE_ADD(UTC_TIMESTAMP(),INTERVAL 30 DAY))`,[userId]);
+   await conn.execute('UPDATE telegram_notice_prefs SET vip_enabled=0,expiry_enabled=0,picks_enabled=0 WHERE user_id=?',[userId]);
+   await conn.execute(`INSERT INTO telegram_unlink_events(user_id,telegram_user_id,performed_by,actor_admin_id,reason)
+    VALUES (?,?,?,?,?)`,[userId,String(link.telegram_user_id),actor,adminId,reason]);
+   if(actor==='owner')await conn.execute(`INSERT INTO audit_logs(actor_admin_id,action,entity_type,entity_id,details)
+    VALUES (?,'telegram_unlinked_no_kick','user',?,?)`,[adminId,String(userId),JSON.stringify({telegram_user_id:String(link.telegram_user_id),reason})]);
+   await conn.commit();
+   // No banChatMember, unbanChatMember, or other Telegram membership change here.
+   if(invite?.invite_link)await revokeInvitationLink(invite.invite_link);
+   return {status:200,ok:true,message:'Telegram desvinculado sin expulsar del canal VIP. La cuenta anterior conserva su plaza hasta que salga o el creador la retire; no se puede vincular otro Telegram mientras tanto.'};
+  }catch(error){if(conn)try{await conn.rollback();}catch{}throw error;}
+  finally{conn?.release();}
+ }
  // Never tamper with Telegram channel admins/owner: the bot cannot remove other admins reliably.
  async function evaluateMember(telegramId){
   const id=String(telegramId);
   const state=await api('getChatMember',{chat_id:process.env.TELEGRAM_VIP_CHAT_ID,user_id:id});
   if(['left','kicked'].includes(state.status)){
    await markChecked(id,'left');await db.execute('UPDATE telegram_links SET is_member=0 WHERE telegram_user_id=?',[id]);
+   await db.execute("DELETE FROM telegram_links WHERE telegram_user_id=? AND link_status='detached'",[id]);
    return 'not_member';
   }
   if(['administrator','creator'].includes(state.status)){
@@ -59,6 +107,12 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
   }
   if(state.status!=='member'){
    await markChecked(id,'left');return 'not_member';
+  }
+  const [[detached]]=await db.execute(`SELECT t.link_status,u.account_status,${effectiveVipSql('u')} AS active_vip FROM telegram_links t
+   JOIN users u ON u.id=t.user_id WHERE t.telegram_user_id=? LIMIT 1`,[id]);
+  if(shouldPreserveDetachedMember(detached?.link_status,detached?.account_status,detached?.active_vip)){
+   await markChecked(id,'member','Desvinculado: retiro manual pendiente del creador');
+   return 'detached_kept';
   }
   const eligible=await allowedToJoin(id);
   if(eligible){
@@ -185,7 +239,7 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
  // Return only non-secret status to an authenticated customer.
  app.get('/api/customers/telegram',customerAuth,async(req,res)=>{
   try{
-   const [[link]]=await db.execute('SELECT telegram_user_id,telegram_username,is_member,linked_at FROM telegram_links WHERE user_id=?',[req.customer.id]);
+   const [[link]]=await db.execute('SELECT telegram_user_id,telegram_username,is_member,linked_at,link_status FROM telegram_links WHERE user_id=?',[req.customer.id]);
    const entitlement=await getVipEntitlement(db,req.customer.id);
    const vip=entitlement.hasVip;
    const [[change]]=await db.execute(`SELECT status,
@@ -193,9 +247,9 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
      GREATEST(0,CEIL(TIMESTAMPDIFF(SECOND,UTC_TIMESTAMP(),DATE_ADD(last_issue_at,INTERVAL 30 MINUTE))/60)) AS reissue_minutes,
      GREATEST(0,CEIL(TIMESTAMPDIFF(SECOND,UTC_TIMESTAMP(),pending_expires_at)/60)) AS expires_minutes
      FROM telegram_change_state WHERE user_id=?`,[req.customer.id]);
-   res.json({configured:telegramEnabled(),linked:Boolean(link),telegram_username:link?.telegram_username||null,
+   res.json({configured:telegramEnabled(),linked:Boolean(link)&&link.link_status==='active',detached_pending:link?.link_status==='detached',telegram_username:link?.link_status==='active'?link.telegram_username:null,
     telegram_user_id:link?.telegram_user_id?String(link.telegram_user_id):null,
-    is_member:!change||change.status!=='awaiting_new'?Boolean(link?.is_member):false,has_vip:vip,
+    is_member:link?.link_status==='active'&&(!change||change.status!=='awaiting_new')?Boolean(link?.is_member):false,has_vip:vip,
     staff_vip:entitlement.staff,access_reason:entitlement.staff?'staff':entitlement.paid?'paid':null,
     change_pending:change?.status==='awaiting_new',change_cooldown_minutes:Number(change?.cooldown_minutes||0),
     change_reissue_minutes:Number(change?.reissue_minutes||0),change_expires_minutes:Number(change?.expires_minutes||0),
@@ -206,7 +260,9 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
   if(!telegramEnabled())return res.status(503).json({error:'El dueño todavía no habilitó el bot y el canal VIP.'});
   try{
    const [[linked]]=await db.execute('SELECT telegram_user_id FROM telegram_links WHERE user_id=?',[req.customer.id]);
-   if(linked)return res.status(409).json({error:'Tu cuenta ya tiene Telegram vinculado. Contacta a soporte si necesitas cambiarlo.'});
+   if(linked)return res.status(409).json({error:'Ya tienes una cuenta Telegram vinculada o reservada. Si la desvinculaste, primero debe salir del canal VIP y debes comprobar la salida.'});
+   const [[cooldown]]=await db.execute('SELECT GREATEST(0,TIMESTAMPDIFF(MINUTE,UTC_TIMESTAMP(),cooldown_until)) AS minutes FROM telegram_change_state WHERE user_id=?',[req.customer.id]);
+   if(!canBeginNewTelegramLink(Boolean(linked),cooldown?.minutes))return res.status(429).json({error:`Por seguridad debes esperar ${Math.ceil(cooldown.minutes/1440)} día(s) antes de vincular otro Telegram, salvo excepción del dueño.`});
    const code=crypto.randomBytes(24).toString('hex');
    const username=await botUsername();
    await db.execute(`INSERT INTO telegram_link_tokens(user_id,token_hash,expires_at) VALUES(?,?,DATE_ADD(UTC_TIMESTAMP(),INTERVAL 10 MINUTE))
@@ -214,68 +270,35 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
    res.json({url:`https://t.me/${username}?start=${code}`,expires_in_minutes:10,message:'Abre Telegram y pulsa Iniciar. Luego vuelve a la web.'});
   }catch(error){console.error('telegram link',error.code||error.message);res.status(503).json({error:'No se pudo preparar la vinculación de Telegram'});}
  });
- // Changing a linked Telegram is a privileged operation, not the same as first-time linking.
- // Password reauthentication + a 30-day cooldown + immediate old-account ban protect a paid seat.
- app.post('/api/customers/telegram/change',limit,customerAuth,async(req,res)=>{
-  if(!telegramEnabled())return res.status(503).json({error:'El bot y el canal VIP aún no están configurados.'});
+ // v2.0.1: self-service unlink, without expelling the Telegram subscriber.
+ // A detached VIP seat cannot be reassigned while its previous Telegram is still inside.
+ app.post('/api/customers/telegram/unlink',limit,customerAuth,async(req,res)=>{
   const password=req.body?.password;
   if(typeof password!=='string'||password.length<1||password.length>256||req.body?.confirm!==true)
-   return res.status(400).json({error:'Escribe tu contraseña actual y confirma que la cuenta anterior perderá el acceso.'});
-  let conn;
+   return res.status(400).json({error:'Confirma con tu contraseña que quieres desvincular sin expulsar.'});
   try{
-   const [[customer]]=await db.execute('SELECT password_hash,account_status FROM users WHERE id=?',[req.customer.id]);
-   if(!customer?.password_hash||customer.account_status!=='active'||!await bcrypt.compare(password,customer.password_hash))
-    return res.status(403).json({error:'Contraseña incorrecta o cuenta no autorizada.'});
-   const username=await botUsername();
-   conn=await db.getConnection();await conn.beginTransaction();
-   // Lock link FIRST; requests by same account serialize even before change-state row exists.
-   const [[link]]=await conn.execute('SELECT telegram_user_id FROM telegram_links WHERE user_id=? FOR UPDATE',[req.customer.id]);
-   const [[change]]=await conn.execute(`SELECT status,old_telegram_user_id,
-    GREATEST(0,CEIL(TIMESTAMPDIFF(SECOND,UTC_TIMESTAMP(),cooldown_until)/60)) AS cooldown_minutes,
-    GREATEST(0,CEIL(TIMESTAMPDIFF(SECOND,UTC_TIMESTAMP(),DATE_ADD(last_issue_at,INTERVAL 30 MINUTE))/60)) AS reissue_minutes
-    FROM telegram_change_state WHERE user_id=? FOR UPDATE`,[req.customer.id]);
-   const vip=await activeVip(req.customer.id);
-   const pending=change?.status==='awaiting_new';
-   const policy=changeIsAllowed({hasVip:vip,hasLink:Boolean(link),pending,cooldownMinutes:change?.cooldown_minutes,reissueMinutes:change?.reissue_minutes});
-   if(!policy.allowed){await conn.rollback();return res.status(policy.status).json({error:policy.error});}
-   if(pending&&String(change.old_telegram_user_id)!==String(link.telegram_user_id)){
-    await conn.rollback();return res.status(409).json({error:'El vínculo cambió mientras procesábamos la solicitud. Actualiza el panel.'});
-   }
-   const code=crypto.randomBytes(24).toString('hex');
-   if(!pending){
-    // Fail closed: a failed Telegram ban must not create an active replacement link.
-    // Leave the old Telegram BANNED; don't unban it until it is legitimately linked again.
-    await api('banChatMember',{chat_id:process.env.TELEGRAM_VIP_CHAT_ID,user_id:String(link.telegram_user_id),revoke_messages:false});
-    await conn.execute('UPDATE telegram_links SET is_member=0 WHERE user_id=?',[req.customer.id]);
-   }
-   await conn.execute(`INSERT INTO telegram_change_state
-    (user_id,status,old_telegram_user_id,pending_token_hash,pending_expires_at,last_issue_at)
-    VALUES (?,'awaiting_new',?, ?,DATE_ADD(UTC_TIMESTAMP(),INTERVAL 10 MINUTE),UTC_TIMESTAMP())
-    ON DUPLICATE KEY UPDATE status='awaiting_new',old_telegram_user_id=VALUES(old_telegram_user_id),
-    pending_token_hash=VALUES(pending_token_hash),pending_expires_at=VALUES(pending_expires_at),last_issue_at=UTC_TIMESTAMP()`,
-    [req.customer.id,String(link.telegram_user_id),sha256(code)]);
-   // Invalidate the previous invitation immediately; best-effort remote revocation after commit.
-   const [[oldInvitation]]=await conn.execute('SELECT invite_link FROM telegram_vip_invites WHERE user_id=? FOR UPDATE',[req.customer.id]);
-   await conn.execute('DELETE FROM telegram_vip_invites WHERE user_id=?',[req.customer.id]);
-   await conn.execute('DELETE FROM telegram_link_tokens WHERE user_id=?',[req.customer.id]);
-   await conn.execute(`INSERT INTO telegram_change_events(user_id,event_type,old_telegram_user_id,detail)
-    VALUES(?,?,?,?)`,[req.customer.id,pending?'reissued':'requested',String(link.telegram_user_id),pending?'Nuevo enlace tras espera':'Cambio autorizado con contraseña; antigua cuenta retirada']);
-   await conn.commit();
-   if(oldInvitation?.invite_link)await revokeInvitationLink(oldInvitation.invite_link);
-   res.json({url:`https://t.me/${username}?start=${code}`,expires_in_minutes:TELEGRAM_CHANGE_TOKEN_MINUTES,
-    message:'La cuenta anterior fue retirada y bloqueada del canal VIP. Abre el bot con tu nuevo Telegram antes de que venza el enlace.'});
-  }catch(error){if(conn)try{await conn.rollback();}catch{}console.error('telegram change request',error.code||error.message);
-   res.status(503).json({error:'No se pudo retirar la cuenta anterior de Telegram. Comprueba que el bot pueda expulsar miembros y vuelve a intentarlo. No se autorizó el cambio.'});}
-  finally{conn?.release();}
+   const [[u]]=await db.execute('SELECT password_hash FROM users WHERE id=?',[req.customer.id]);
+   if(!u?.password_hash||!await bcrypt.compare(password,u.password_hash))return res.status(403).json({error:'Contraseña incorrecta.'});
+   const result=await detachLink(req.customer.id);
+   return res.status(result.status).json(result.status===200?{ok:true,message:result.message}:{error:result.error});
+  }catch(error){console.error('telegram unlink',error.code||error.message);return res.status(503).json({error:'No se pudo desvincular Telegram.'});}
  });
+ app.post('/api/customers/telegram/check-departure',limit,customerAuth,async(req,res)=>{
+  try{const result=await checkDetachedAndRelease(req.customer.id);res.json({ok:true,...result,message:result.pending?'La cuenta anterior todavía está dentro del canal VIP. El creador puede retirarla manualmente, o puede salir voluntariamente.':result.released?'Se confirmó su salida. La plaza ya no está reservada; se aplicará el plazo de seguridad del cambio.':'No hay ninguna salida pendiente.'});}
+  catch(error){console.error('telegram departure check',error.code||error.message);res.status(503).json({error:'Telegram no permitió comprobar la salida. Inténtalo de nuevo.'});}
+ });
+ // The older one-click 'change' route automatically banned the previous account.
+ // v2.0.1 retires that route: unlinking must NEVER kick an existing member.
+ app.post('/api/customers/telegram/change',limit,customerAuth,(req,res)=>
+  res.status(410).json({error:'Para cambiar de Telegram usa «Desvincular sin expulsar». La cuenta anterior debe salir voluntariamente o el creador retirarla; no se expulsará a nadie desde este botón.'}));
  app.post('/api/customers/telegram/invite',limit,customerAuth,async(req,res)=>{
   if(!telegramEnabled())return res.status(503).json({error:'El canal VIP aún no está configurado.'});
   let conn;let createdLink=null;let committed=false;
   try{
    conn=await db.getConnection();await conn.beginTransaction();
    // Serialize invitations for this customer; repeated clicks invalidate the previous link.
-   const [[link]]=await conn.execute('SELECT telegram_user_id FROM telegram_links WHERE user_id=? FOR UPDATE',[req.customer.id]);
-   if(!link){await conn.rollback();return res.status(409).json({error:'Primero vincula tu cuenta de Telegram.'});}
+   const [[link]]=await conn.execute('SELECT telegram_user_id,link_status FROM telegram_links WHERE user_id=? FOR UPDATE',[req.customer.id]);
+   if(!link||link.link_status!=='active'){await conn.rollback();return res.status(409).json({error:'Vincula tu Telegram y confirma que no hay otra cuenta reservada.'});}
    const [[account]]=await conn.execute('SELECT account_status FROM users WHERE id=?',[req.customer.id]);
    if(account?.account_status!=='active'){await conn.rollback();return res.status(403).json({error:'Tu cuenta no está autorizada.'});}
    const [[change]]=await conn.execute("SELECT status FROM telegram_change_state WHERE user_id=?",[req.customer.id]);
@@ -333,7 +356,7 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
      await conn.rollback();reply='No puedes completar el cambio con el Telegram anterior. Usa otra cuenta o solicita ayuda al dueño.';
     }else{
      const [[existing]]=await conn.execute('SELECT user_id FROM telegram_links WHERE telegram_user_id=? FOR UPDATE',[String(message.from.id)]);
-     const [[previous]]=await conn.execute('SELECT telegram_user_id FROM telegram_links WHERE user_id=? FOR UPDATE',[replacement.user_id]);
+     const [[previous]]=await conn.execute('SELECT telegram_user_id,link_status FROM telegram_links WHERE user_id=? FOR UPDATE',[replacement.user_id]);
      if(existing||String(previous?.telegram_user_id)!==String(replacement.old_telegram_user_id)){
       await conn.rollback();reply='Este Telegram ya está vinculado a otra cuenta o el cambio fue modificado. Contacta a soporte.';
      }else{
@@ -355,7 +378,8 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
    if(!token||token.account_status!=='active'){await conn.rollback();reply='El enlace venció o no está disponible. Solicita otro desde tu panel.';}
    else{
     const [[linked]]=await conn.execute('SELECT user_id,telegram_user_id FROM telegram_links WHERE user_id=? OR telegram_user_id=? FOR UPDATE',[token.user_id,String(message.from.id)]);
-    if(linked){await conn.rollback();reply='Esta cuenta o usuario de Telegram ya está vinculado. Contacta a soporte para cambiarlo.';}
+    const [[cooldown]]=await conn.execute('SELECT cooldown_until>UTC_TIMESTAMP() AS blocked FROM telegram_change_state WHERE user_id=?',[token.user_id]);
+    if(linked||cooldown?.blocked){await conn.rollback();reply='Este Telegram ya está vinculado o reservado, o tu plazo de seguridad aún no termina. Contacta al dueño si necesitas una excepción.';}
     else{
      await conn.execute('INSERT INTO telegram_links(user_id,telegram_user_id,telegram_username,is_member) VALUES(?,?,?,0)',[token.user_id,String(message.from.id),String(message.from.username||'').slice(0,100)||null]);
      await conn.execute('DELETE FROM telegram_link_tokens WHERE user_id=?',[token.user_id]);
@@ -415,6 +439,9 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
   }
   if(status==='member'){
    await rememberMember(user.id,'member');
+   const [[detached]]=await db.execute(`SELECT t.link_status,u.account_status,${effectiveVipSql('u')} AS active_vip FROM telegram_links t
+    JOIN users u ON u.id=t.user_id WHERE t.telegram_user_id=? LIMIT 1`,[String(user.id)]);
+   if(shouldPreserveDetachedMember(detached?.link_status,detached?.account_status,detached?.active_vip))return; // No automatic kick on unlink.
    const allowed=await allowedToJoin(user.id);
    if(!allowed){
     const [[linked]]=await db.execute(`SELECT u.account_status FROM telegram_links t
@@ -430,6 +457,7 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
   }else if(['left','kicked'].includes(status)){
    await rememberMember(user.id,'left');
    await db.execute('UPDATE telegram_links SET is_member=0 WHERE telegram_user_id=?',[String(user.id)]);
+   await db.execute("DELETE FROM telegram_links WHERE telegram_user_id=? AND link_status='detached'",[String(user.id)]);
   }
  }
  app.post(BOT_ENDPOINT,async(req,res)=>{
@@ -486,11 +514,11 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
  app.get('/api/admin/telegram',authenticate,async(req,res)=>{
   if(req.admin.role!=='owner')return res.status(403).json({error:'Solo el dueño puede configurar Telegram'});
   try{
-   const [[stats]]=await db.query('SELECT COUNT(*) AS linked,COALESCE(SUM(is_member),0) AS members FROM telegram_links');
+   const [[stats]]=await db.query("SELECT COALESCE(SUM(link_status='active'),0) AS linked,COALESCE(SUM(is_member AND link_status='active'),0) AS members,COALESCE(SUM(link_status='detached'),0) AS detached_pending FROM telegram_links");
    const [[tracking]]=await db.query(`SELECT COUNT(*) AS total,COALESCE(SUM(state='member'),0) AS known_current FROM telegram_channel_members`);
    let reportedChannelMembers=null;
    if(telegramEnabled())try{reportedChannelMembers=Number(await api('getChatMemberCount',{chat_id:process.env.TELEGRAM_VIP_CHAT_ID}));}catch(error){console.error('Telegram channel count',error.message);}
-   res.json({bot_configured:Boolean(process.env.TELEGRAM_BOT_TOKEN),vip_channel_configured:Boolean(process.env.TELEGRAM_VIP_CHAT_ID),free_group_configured:Boolean(process.env.TELEGRAM_FREE_CHAT_ID),webhook_secret_configured:validWebhookSecret(),public_base_url_configured:Boolean(process.env.PUBLIC_BASE_URL),linked:Number(stats.linked),vip_members:Number(stats.members),tracked_members:Number(tracking.known_current||0),tracked_total:Number(tracking.total||0),telegram_member_count:reportedChannelMembers,full_scan_available:false});
+   res.json({bot_configured:Boolean(process.env.TELEGRAM_BOT_TOKEN),vip_channel_configured:Boolean(process.env.TELEGRAM_VIP_CHAT_ID),free_group_configured:Boolean(process.env.TELEGRAM_FREE_CHAT_ID),webhook_secret_configured:validWebhookSecret(),public_base_url_configured:Boolean(process.env.PUBLIC_BASE_URL),linked:Number(stats.linked),vip_members:Number(stats.members),detached_pending:Number(stats.detached_pending),tracked_members:Number(tracking.known_current||0),tracked_total:Number(tracking.total||0),telegram_member_count:reportedChannelMembers,full_scan_available:false});
   }catch(error){console.error('telegram admin',error.code||error.message);res.status(503).json({error:'No se pudo consultar Telegram'});}
  });
  // The original owner is created before customer registration and may lack a user row.
@@ -510,6 +538,17 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
    res.json({ok:true,message:'Tu identidad para Telegram VIP quedó preparada. Ahora vincula tu Telegram desde Mi Telegram VIP.'});
   }catch(error){console.error('telegram prepare owner profile',error.code||error.message);res.status(503).json({error:'No se pudo preparar el perfil del dueño.'});}
  });
+ // Owner can detach another user's identity without touching the Telegram channel.
+ app.post('/api/admin/telegram/unlink',limit,authenticate,async(req,res)=>{
+  if(req.admin.role!=='owner')return res.status(403).json({error:'Solo el dueño puede desvincular otras cuentas.'});
+  const userId=String(req.body?.user_id||''),reason=String(req.body?.reason||'').trim();
+  if(!/^[1-9]\d{0,18}$/.test(userId)||reason.length<8||reason.length>250)
+   return res.status(400).json({error:'Indica un ID de cliente y motivo de 8 a 250 caracteres.'});
+  try{
+   const result=await detachLink(userId,{actor:'owner',adminId:req.admin.id,reason});
+   return res.status(result.status).json(result.status===200?{ok:true,message:result.message}:{error:result.error});
+  }catch(error){console.error('telegram owner unlink',error.code||error.message);res.status(503).json({error:'No se pudo desvincular la cuenta.'});}
+ });
  app.post('/api/admin/telegram/change-exception',limit,authenticate,async(req,res)=>{
   if(req.admin.role!=='owner')return res.status(403).json({error:'Solo el dueño puede autorizar una excepción'});
   const userId=String(req.body?.user_id||'');const reason=String(req.body?.reason||'').trim();
@@ -520,8 +559,8 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
    conn=await db.getConnection();await conn.beginTransaction();
    const [[linked]]=await conn.execute('SELECT user_id FROM telegram_links WHERE user_id=? FOR UPDATE',[userId]);
    const [[state]]=await conn.execute('SELECT status FROM telegram_change_state WHERE user_id=? FOR UPDATE',[userId]);
-   if(!linked||state?.status==='awaiting_new'){
-    await conn.rollback();return res.status(409).json({error:!linked?'El cliente aún no tiene Telegram vinculado.':'El cliente ya tiene un cambio pendiente; debe completar el enlace desde su cuenta.'});
+   if(state?.status==='awaiting_new'||(!linked&&!state)){
+    await conn.rollback();return res.status(409).json({error:state?.status==='awaiting_new'?'El cliente tiene un cambio pendiente.':'El cliente todavía no tiene una vinculación ni un plazo de seguridad que exceptuar.'});
    }
    await conn.execute(`INSERT INTO telegram_change_state(user_id,status,cooldown_until)
     VALUES (?,'idle',NULL) ON DUPLICATE KEY UPDATE cooldown_until=NULL`,[userId]);
@@ -529,7 +568,7 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
     VALUES(?,'owner_exception',?,?)`,[userId,req.admin.id,reason]);
    await conn.execute(`INSERT INTO audit_logs(actor_admin_id,action,entity_type,entity_id,details)
     VALUES(?,'telegram_change_exception','user',?,?)`,[req.admin.id,userId,JSON.stringify({reason})]);
-   await conn.commit();res.json({ok:true,message:'Excepción autorizada. El cliente puede solicitar el cambio desde su panel con su propia contraseña. La antigua cuenta será retirada antes del nuevo vínculo.'});
+   await conn.commit();res.json({ok:true,message:linked?'Excepción autorizada. El cliente puede solicitar el cambio y confirmar su contraseña.':'Excepción autorizada. Cuando el Telegram anterior haya salido del canal, el cliente podrá vincular otra cuenta.'});
   }catch(error){if(conn)try{await conn.rollback();}catch{}console.error('telegram owner exception',error.code||error.message);res.status(503).json({error:'No se pudo registrar la excepción'});}
   finally{conn?.release();}
  });

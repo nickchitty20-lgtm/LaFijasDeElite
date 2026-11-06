@@ -58,6 +58,16 @@
     <article class="telegram-client-card"><span class="eyebrow">COMUNIDAD PÚBLICA</span><h4>⚽ Fijas de Élite | Comunidad</h4><p>Conversación y avisos de nuevos pronósticos. Para consultar los gratuitos completos, inicia sesión en la web.</p><div id="telegramPublicLink"></div></article>
     <article class="telegram-client-card telegram-client-vip"><span class="eyebrow">♛ CANAL PRIVADO</span><h4>Fijas de Élite | VIP</h4><p>Solo clientes con membresía activa y una cuenta Telegram vinculada.</p><p id="telegramAccountStatus" role="status">Comprobando estado…</p><button id="telegramLinkButton" type="button">Vincular mi Telegram</button><button id="telegramInviteButton" type="button" hidden>Solicitar acceso al canal VIP</button>
      <button id="telegramChangeButton" type="button" class="secondary" hidden>Cambiar mi cuenta Telegram</button>
+     <button id="telegramUnlinkButton" type="button" class="secondary" hidden>Desvincular sin expulsar</button>
+     <button id="telegramCheckDeparture" type="button" class="secondary" hidden>Comprobar salida del Telegram anterior</button>
+     <form id="telegramUnlinkForm" class="telegram-change-form" hidden>
+       <h5>Desvincular Telegram, sin expulsarlo</h5>
+       <p>La cuenta anterior seguirá dentro del canal mientras conserve VIP activo, hasta que salga voluntariamente, el creador la retire o venza su VIP. No podrás vincular otro Telegram mientras esa plaza siga ocupada. Además, habrá un plazo de seguridad de 30 días salvo excepción del dueño.</p>
+       <label>Contraseña de tu cuenta <input type="password" name="password" autocomplete="current-password" required></label>
+       <label class="telegram-change-confirm"><input type="checkbox" name="confirm" required> Entiendo que no podré usar otro Telegram mientras el anterior permanezca en el canal.</label>
+       <button type="submit">Confirmar desvinculación</button>
+       <button id="telegramUnlinkCancel" type="button" class="secondary">Cancelar</button>
+     </form>
      <p id="telegramChangeHelp" class="telegram-change-help" aria-live="polite"></p>
      <form id="telegramChangeForm" class="telegram-change-form" hidden>
        <h5>Cambiar Telegram de forma segura</h5>

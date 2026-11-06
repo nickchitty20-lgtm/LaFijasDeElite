@@ -226,12 +226,14 @@ async function refreshTelegramStatus(){
  if(!status)return;
  try{
   const r=await call('/api/customers/telegram');
-  $('telegramLinkButton').hidden=!r.configured||r.linked;
+  $('telegramLinkButton').hidden=!r.configured||r.linked||r.detached_pending||r.change_cooldown_minutes>0;
+  $('telegramUnlinkButton').hidden=!r.linked||r.change_pending;
+  $('telegramCheckDeparture').hidden=!r.detached_pending;
   $('telegramInviteButton').hidden=!r.configured||!r.linked||!r.has_vip||r.change_pending;
   $('telegramInviteButton').disabled=Boolean(r.is_member);
   $('telegramInviteButton').textContent=r.is_member?'✓ Ya perteneces al canal VIP':'Solicitar acceso al canal VIP';
   const changeButton=$('telegramChangeButton');
-  changeButton.hidden=!r.configured||!r.linked||!r.has_vip||(!r.change_pending&&r.change_cooldown_minutes>0);
+  changeButton.hidden=true; // Cambio antiguo con expulsión deshabilitado; usar desvinculación sin expulsión.
   changeButton.disabled=Boolean(r.change_pending&&r.change_reissue_minutes>0);
   changeButton.textContent=r.change_pending?'Generar otro enlace de cambio':'Cambiar mi cuenta Telegram';
   $('telegramChangeHelp').textContent=r.change_pending
@@ -240,7 +242,8 @@ async function refreshTelegramStatus(){
    :r.linked?'Puedes solicitar un cambio cada 30 días. Necesitarás confirmar tu contraseña.':'';
   status.textContent=!r.configured?'El dueño todavía no configuró el bot y el canal VIP.':
    r.change_pending?'Cambio de Telegram en curso. Tu cuenta anterior ya no tiene acceso al canal. Vincula la nueva cuenta mediante el enlace generado.':
-   !r.linked?'Primero vincula tu Telegram para verificar tu identidad.':
+   r.detached_pending?'Telegram desvinculado: la cuenta antigua todavía tiene su plaza reservada. Puede salir del canal o el creador retirarla manualmente. No puedes vincular otra por ahora.':
+   !r.linked?r.change_cooldown_minutes>0?'El Telegram anterior ya salió. Espera el plazo de seguridad de 30 días, salvo excepción autorizada por el dueño.':'Primero vincula tu Telegram para verificar tu identidad.':
    `${r.telegram_username?'@'+r.telegram_username:'Cuenta Telegram vinculada'} · ${r.is_member?'Ya perteneces al canal VIP':r.has_vip?'VIP activo: puedes solicitar acceso':'VIP no activo: renueva tu membresía para ingresar'}`;
   const group=$('telegramPublicLink');group.replaceChildren();
   if(r.public_group_url && /^https:\/\/t\.me\//i.test(r.public_group_url)){
@@ -280,6 +283,25 @@ $('telegramChangeForm').addEventListener('submit',async(event)=>{
   await refreshTelegramStatus();
  }catch(error){$('telegramClientResult').textContent=error.message;}
  finally{button.disabled=false;}
+});
+$('telegramUnlinkButton').addEventListener('click',()=>{$('telegramUnlinkForm').hidden=!$('telegramUnlinkForm').hidden;});
+$('telegramUnlinkCancel').addEventListener('click',()=>{$('telegramUnlinkForm').reset();$('telegramUnlinkForm').hidden=true;});
+$('telegramUnlinkForm').addEventListener('submit',async event=>{
+ event.preventDefault();const form=event.currentTarget;
+ if(!form.elements.namedItem('confirm').checked)return;
+ if(!confirm('¿Desvincular SIN expulsar del canal? No podrás enlazar otro Telegram hasta que el antiguo salga y termine el plazo de seguridad.'))return;
+ const button=form.querySelector('button[type="submit"]');button.disabled=true;
+ $('telegramClientResult').textContent='Desvinculando sin expulsar…';
+ try{
+  const r=await call('/api/customers/telegram/unlink',{password:form.elements.namedItem('password').value,confirm:true},true);
+  form.reset();form.hidden=true;$('telegramClientResult').textContent=r.message;
+  await refreshTelegramStatus();await loadNoticePreferences();
+ }catch(error){$('telegramClientResult').textContent=error.message;}finally{button.disabled=false;}
+});
+$('telegramCheckDeparture').addEventListener('click',async()=>{
+ const button=$('telegramCheckDeparture');button.disabled=true;$('telegramClientResult').textContent='Consultando el estado del canal…';
+ try{const r=await call('/api/customers/telegram/check-departure',{},true);$('telegramClientResult').textContent=r.message;await refreshTelegramStatus();}
+ catch(error){$('telegramClientResult').textContent=error.message;}finally{button.disabled=false;}
 });
 $('telegramInviteButton').addEventListener('click',async()=>{
  const button=$('telegramInviteButton');button.disabled=true;$('telegramClientResult').textContent='Generando solicitud VIP…';

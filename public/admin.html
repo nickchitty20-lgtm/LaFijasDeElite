@@ -62,6 +62,14 @@
   <p id="telegramCoverage" class="telegram-coverage" role="status"></p><p id="telegramAdminResult" role="status"></p>
   <button type="button" id="telegramWebhookConfigure">Activar webhook Telegram</button>
   <button type="button" id="telegramSync" class="secondary">Auditar y limpiar miembros conocidos</button>
+  <form id="telegramOwnerUnlinkForm" class="telegram-admin-exception">
+    <h3>Desvincular Telegram sin expulsar</h3>
+    <p>El creador puede desvincular una cuenta de la web sin expulsarla del canal VIP. La antigua plaza queda reservada: el cliente no podrá enlazar otro Telegram hasta que salga o sea retirado manualmente.</p>
+    <label>ID interno del cliente<input name="user_id" type="text" inputmode="numeric" pattern="[1-9][0-9]*" required></label>
+    <label>Motivo<input name="reason" type="text" minlength="8" maxlength="250" required placeholder="Ej. Solicitud de desvinculación del cliente"></label>
+    <button type="submit" class="secondary">Desvincular sin expulsar</button>
+    <p id="telegramOwnerUnlinkResult" role="status"></p>
+  </form>
   <form id="telegramChangeExceptionForm" class="telegram-admin-exception">
     <h3>Autorizar un cambio anticipado de Telegram</h3>
     <p>Solo para casos de recuperación. No vincula otra cuenta ni concede VIP: el cliente deberá confirmar su propia contraseña y el bot retirará el Telegram antiguo.</p>
