@@ -1,3 +1,44 @@
+# Fijas de Élite v2.2.0 — Investigación deportiva avanzada
+
+**Actualización sobre v2.1.9; ZIP completo para GitHub y Railway.**
+
+## Nuevo motor: lesiones, alineaciones, forma y goles
+- `/predictions`: conserva el modelo 1X2, forma reciente de ambos equipos y proyecciones de goles; estas probabilidades NO son tasas de acierto históricas demostradas.
+- `/injuries?fixture=...`: obtiene ausencias y dudas conocidas, indicando quién, motivo y tipo. **Sin registros no equivale a plantel sin lesiones**.
+- `/teams/statistics` (solo cuando hay IDs de liga y temporada válidos): partidos, victorias, empates, derrotas y promedios de goles a favor/en contra, separados por equipo.
+- `/fixtures/lineups?fixture=...`: consulta onces reportados solo cerca del inicio, porque suelen estar disponibles 20–40 minutos antes. Si no hay datos, el sistema dice Pendiente/No disponible. Los once reportados deben verificarse en la fuente.
+- Los datos se guardan como `football_candidates.evidence_json.advanced` y en el análisis de cada propuesta. La web VIP muestra tarjetas por equipo, lesiones y onces, mientras el canal VIP recibe una síntesis.
+- En **Dueño → Análisis automático → propuesta pendiente** existe el botón **Actualizar lesiones y alineaciones**. Puede usarse entre 120 y 10 minutos antes del inicio; máximo tres actualizaciones al día en total y separación de veinte minutos por propuesta. Solo actualiza propuestas sin publicar.
+- **Consumo de API-Football Free:** se estudia en profundidad un máximo de **un candidato elegible por escaneo** (1 llamada de lesiones + 2 estadísticas de temporada si hay datos), además de las consultas previas. La actualización manual cerca del inicio puede consumir 1–2 llamadas adicionales. El presupuesto de cuota mínima del escáner se incrementó a 16 solicitudes disponibles. Los fallos de endpoints suplementarios son recuperables: el motor conserva el pronóstico base e informa lo que falta.
+- Nunca se transforma el número de lesionados o la formación en una falsa garantía ni se eleva automáticamente el porcentaje estimado por el proveedor.
+
+## Instalación
+1. Respalda MySQL. Sube el **contenido** del ZIP a GitHub, conservando las carpetas originales, y despliega en Railway.
+2. Comprueba `/health` → versión `2.2.0`. No se requieren nuevas variables obligatorias ni una migración destructiva.
+3. Mantén `FOOTBALL_AUTO_PUBLISH=false` mientras pruebas. Ve a **Análisis automático → Analizar ahora y guardar propuestas**.
+4. Abre la tarjeta de una propuesta. Puedes actualizar su estudio al acercarse el inicio, antes de pulsar **Aprobar y publicar**.
+5. Comprueba la ficha del cliente VIP y el mensaje del canal privado. El adelanto en el grupo gratuito no revela detalles VIP.
+6. Los candidatos de versiones antiguas no incorporan automáticamente los nuevos campos de investigación. No borres sus registros; crea propuestas nuevas.
+
+**Limitaciones**: API-Football Free tiene 100 solicitudes/día y cobertura desigual por competición/temporada. En la ventana general de 1–6 horas anterior al inicio casi nunca estarán disponibles los onces completos; para ellos sirve la actualización cercana al partido. No se ha probado con tus credenciales reales en Railway. No se prometen aciertos del 99 % ni beneficios garantizados.
+
+---
+
+## Actualización v2.1.9 — Retirar pronósticos con seguridad
+
+- **Dueño → Pronósticos → Últimos pronósticos → Eliminar pronóstico**: solicita motivo y doble confirmación.
+- Se archiva (borrado lógico) y desaparece inmediatamente de la web del cliente, pronósticos públicos y listados activos. No se borran los resultados históricos, evidencias ni auditoría.
+- Los próximos mensajes a Telegram (gratis, VIP y adelantos VIP) guardan ID de mensaje. Al retirar una publicación, el bot intenta borrar sus mensajes del canal VIP o grupo público.
+- **Mensajes antiguos:** el bot no había guardado sus IDs antes de v2.1.9; podrían requerir eliminación manual desde Telegram. Telegram también puede impedir eliminar mensajes demasiado antiguos o sin permisos.
+- Se bloquean las notificaciones privadas pendientes de un pronóstico retirado. Los mensajes ya leídos o reenviados no pueden recuperarse.
+- Solo el **dueño** puede retirar. Los demás cargos conservan sus permisos de publicación y resultados.
+- Puedes consultar el historial desde **Ver pronósticos retirados** y desde **Actividad**.
+- Los resultados ya confirmados y su rendimiento histórico no se alteran al retirar un pronóstico.
+
+Instalación: respaldo de MySQL, actualización de todos los archivos en GitHub, Railway `Success`, luego comprobar `/health` → `2.1.9`. No necesitas nuevas variables; la migración agrega columnas y tablas sin eliminar datos.
+
+---
+
 ## Actualización v2.1.8 — Anuncios VIP limitados en la comunidad
 
 - **Cada nueva fija VIP** publica el análisis completo solamente en `TELEGRAM_VIP_CHAT_ID` y un **adelanto limitado** en `TELEGRAM_FREE_CHAT_ID`.

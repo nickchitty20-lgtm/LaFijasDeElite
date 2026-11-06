@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import {telegramMatchSchedule} from './match-schedule.js';
+import {recordPredictionTelegramMessage} from './prediction-removal.js';
 
 // Never put TELEGRAM_BOT_TOKEN or webhook secrets into browser responses/logs.
 export const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
@@ -29,12 +30,29 @@ export function telegramGoalsSummary(p){
   line('Diferencia de goles',f.estimated_margin!=null?`${f.estimated_margin} gol(es)`:null);
  return msg+'\n<i>Estimaciones, no apuestas garantizadas ni cuotas verificadas para goles.</i>';
 }
+export function telegramAdvancedSummary(p){
+ const a=p?.football_details?.advanced;if(!a)return '';
+ const status={available:'Datos disponibles',partial:'Parcial',pending:'Pendiente',no_records:'Sin registros informados',unavailable:'No disponible'};
+ let msg='\n\n<b>🔎 ESTUDIO AVANZADO</b>';
+ msg+='\n🩹 Bajas reportadas: '+h(a.injuries?.reported??'sin datos')+' ('+h(status[a.status?.injuries]||'no disponible')+')';
+ for(const [side,label] of [['home','Local'],['away','Visitante']]){
+  const abs=(a.injuries?.[side]||[]).slice(0,3);
+  if(abs.length)msg+='\n'+label+': '+abs.map(x=>h(x.name)+' ('+h(x.type)+')').join(', ');
+  const f=a.form?.[side],s=a.season?.[side];
+  if(f?.form_pct!=null)msg+='\n📈 '+label+' forma 5: '+f.form_pct+'% (indicador del proveedor)';
+  if(s?.played!=null)msg+='\n📊 '+label+' temporada: '+s.played+' PJ, '+(s.avg_scored??'—')+' GF/PJ, '+(s.avg_conceded??'—')+' GC/PJ';
+  const xi=a.lineups?.[side];
+  if(xi?.starting?.length)msg+='\n🧩 '+label+' '+h(xi.formation||'once reportado')+': '+xi.starting.slice(0,11).map(h).join(', ');
+ }
+ msg+='\n🧩 Alineaciones: '+h(status[a.status?.lineups]||'no disponibles');
+ return msg+'\n<i>Lesiones y onces sujetos a actualización. Sin garantías de resultado.</i>';
+}
 export function telegramMatchContext(p){
  const c=p?.football_details?.match_context;if(!c)return '';
  return (c.round?'\n🏆 Jornada: '+h(c.round):'')+(c.venue?'\n🏟 Estadio: '+h(c.venue):'')+(c.city?' · '+h(c.city):'');
 }
 export function telegramVipPost(p){
- return `♛ <b>FIJAS DE ÉLITE · VIP</b>\n<b>${h(p.title)}</b>\n🏆 ${h(p.league)}${h(telegramMatchSchedule(p.match_date))}\n🎯 <b>${h(p.market)}:</b> ${h(p.selection)}\n📊 Cuota: ${p.odds!=null && Number.isFinite(Number(p.odds))?Number(p.odds).toFixed(2):'No disponible (sin cuota verificada)'}${telegramMatchContext(p)}${telegramGoalsSummary(p)}\n\n<b>Análisis y riesgos:</b>\n${h(String(p.analysis||'').slice(0,2300))}\n\nInformación deportiva, no una garantía de resultado.`;
+ return `♛ <b>FIJAS DE ÉLITE · VIP</b>\n<b>${h(p.title)}</b>\n🏆 ${h(p.league)}${h(telegramMatchSchedule(p.match_date))}\n🎯 <b>${h(p.market)}:</b> ${h(p.selection)}\n📊 Cuota: ${p.odds!=null && Number.isFinite(Number(p.odds))?Number(p.odds).toFixed(2):'No disponible (sin cuota verificada)'}${telegramMatchContext(p)}${telegramGoalsSummary(p)}${telegramAdvancedSummary(p)}\n\n<b>Análisis y riesgos:</b>\n${h(String(p.analysis||'').slice(0,2300))}\n\nInformación deportiva, no una garantía de resultado.`;
 }
 export async function telegramApi(method,payload={},env=process.env){
  if(!env.TELEGRAM_BOT_TOKEN)throw Error('Bot de Telegram no configurado');
@@ -86,14 +104,16 @@ export async function sendPredictionToTelegram(p,env=process.env,{db=null}={}){
  if(!env.TELEGRAM_BOT_TOKEN)return {state:'not_configured'};
  if(p.visibility==='vip'){
   if(!vipChat||!/^[A-Za-z0-9_-]{24,256}$/.test(env.TELEGRAM_WEBHOOK_SECRET||''))return {state:'not_configured'};
-  await telegramApi('sendMessage',{chat_id:vipChat,text:telegramVipPost(p),parse_mode:'HTML',disable_web_page_preview:true,protect_content:true},env);
+  const sent=await telegramApi('sendMessage',{chat_id:vipChat,text:telegramVipPost(p),parse_mode:'HTML',disable_web_page_preview:true,protect_content:true},env);
+  await recordPredictionTelegramMessage(db,p.id,'vip',vipChat,sent?.message_id);
   // Full VIP content stays private. A minimal preview accompanies EACH unique VIP publication.
   try{await maybeSendVipTeaser(p,env,db);}catch(error){console.error('VIP teaser no disponible:',error.message);}
   return {state:'sent'};
  }
  if(!publicChat)return {state:'not_configured'};
  // The public group explicitly receives complete FREE picks, manual or automatic.
- await telegramApi('sendMessage',{chat_id:publicChat,text:telegramFreeAutoPost(p),parse_mode:'HTML',disable_web_page_preview:true},env);
+ const sent=await telegramApi('sendMessage',{chat_id:publicChat,text:telegramFreeAutoPost(p),parse_mode:'HTML',disable_web_page_preview:true},env);
+ await recordPredictionTelegramMessage(db,p.id,'free',publicChat,sent?.message_id);
  return {state:'sent'};
 }
 

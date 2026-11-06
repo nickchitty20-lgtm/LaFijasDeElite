@@ -28,7 +28,7 @@ async function loadCustomerPicks(){
    if(p.locked){const desc=document.createElement('p');desc.textContent='🔒 Selección, mercados y análisis ocultos. Necesitas una membresía VIP activa.';article.append(desc);
     const go=document.createElement('a');go.className='vip-unlock';go.href='#request';go.textContent='Desbloquear VIP';article.append(go);
    }else{
-    if(window.FijasPickReport){article.append(window.FijasPickReport.pickInfo(p));const goalBox=window.FijasPickReport.goals(p);if(goalBox)article.append(goalBox);const detail=window.FijasPickReport.analysis(p);if(detail)article.append(detail);}
+    if(window.FijasPickReport){article.append(window.FijasPickReport.pickInfo(p));const goalBox=window.FijasPickReport.goals(p);if(goalBox)article.append(goalBox);const advancedBox=window.FijasPickReport.advanced?.(p);if(advancedBox)article.append(advancedBox);const detail=window.FijasPickReport.analysis(p);if(detail)article.append(detail);}
     else{const desc=document.createElement('p');desc.textContent=`${p.market||''}: ${p.selection||''} · ${p.analysis||''}`;article.append(desc);}
     const status=document.createElement('span');status.className='outcome outcome-'+(p.outcome||'pending');status.textContent=({won:'Ganado',lost:'Perdido',pending:'Pendiente',void:'Anulado'})[p.outcome]||'Pendiente';article.append(status);
    }

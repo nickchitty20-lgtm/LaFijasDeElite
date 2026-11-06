@@ -1,3 +1,4 @@
+import {advancedReportForPublic} from './football-advanced.js';
 /** Extract vetted structured information for published model-backed forecasts.
  * A preview/candidate is not a bet, and unavailable markets are never fabricated. */
 const goodLine=value=>value&&typeof value==='object'&&
@@ -21,6 +22,7 @@ export function publishedFootballDetails(raw){
   estimated_margin:numeric(g.illustrative_margin,0,6),
   provider_1x2:{home:numeric(data.percent?.home,0,100),draw:numeric(data.percent?.draw,0,100),away:numeric(data.percent?.away,0,100)},
   match_context:Object.fromEntries(['country','round','venue','city'].map(k=>[k,typeof data.match_context?.[k]==='string'?data.match_context[k].slice(0,130):'']).filter(x=>x[1])),
+  advanced:advancedReportForPublic(data.advanced),
   source:'API-Football; estadísticas H2H solo cuando hay datos',
   disclaimer:'Estimaciones orientativas. El historial es una muestra pequeña; no hay porcentajes garantizados ni cuota confirmada para mercados de goles.'
  };

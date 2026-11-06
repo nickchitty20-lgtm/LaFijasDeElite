@@ -49,6 +49,9 @@ export function installNotificationCenter(app,{db,customerAuth,limit}){
  // A durable event fan-out means restarts do not lose customer recipients.
  // Each iteration covers at most 200 users and advances its cursor persistently.
  async function processPredictionEvents(){
+  // Retired predictions must not fan out new private notifications.
+  await db.query(`UPDATE telegram_notice_events e JOIN predictions p ON p.id=e.prediction_id
+   SET e.status='done' WHERE e.status='pending' AND p.archived_at IS NOT NULL`);
   const [events]=await db.query("SELECT id,prediction_id,visibility,last_user_id FROM telegram_notice_events WHERE status='pending' ORDER BY id LIMIT 4");
   for(const e of events){
    const vipCond=e.visibility==='vip'?`AND ${effectiveVipSql('u')}`:'';
@@ -88,9 +91,17 @@ export function installNotificationCenter(app,{db,customerAuth,limit}){
    WHERE (status IN ('pending','failed') AND (retry_after IS NULL OR retry_after<=UTC_TIMESTAMP()))
     OR (status='sending' AND leased_at<DATE_SUB(UTC_TIMESTAMP(),INTERVAL 3 MINUTE))
    ORDER BY id ASC LIMIT 12`,[lease]);
-  const [items]=await db.execute("SELECT id,user_id,kind,message,attempts,requires_vip FROM telegram_notice_outbox WHERE lease_id=? AND status='sending' ORDER BY id",[lease]);
+  const [items]=await db.execute("SELECT id,user_id,kind,reference_key,message,attempts,requires_vip FROM telegram_notice_outbox WHERE lease_id=? AND status='sending' ORDER BY id",[lease]);
   for(const n of items){
    try{
+    if(n.kind==='new_prediction' && /^prediction:[1-9]\d{0,17}$/.test(String(n.reference_key))){
+     const id=String(n.reference_key).slice('prediction:'.length);
+     const [active]=await db.execute('SELECT id FROM predictions WHERE id=? AND archived_at IS NULL',[id]);
+     if(!active.length){
+      await db.execute("UPDATE telegram_notice_outbox SET status='disabled',lease_id=NULL WHERE id=? AND lease_id=?",[n.id,lease]);
+      continue;
+     }
+    }
     const col=noticeKindColumn[n.kind];
     const [[target]]=await db.execute(`SELECT u.account_status,t.telegram_user_id,t.link_status,p.${col} AS opted_in,
      EXISTS(SELECT 1 FROM telegram_change_state c WHERE c.user_id=u.id AND c.status='awaiting_new') AS pending_change,

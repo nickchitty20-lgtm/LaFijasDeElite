@@ -6,6 +6,7 @@ import {sendPredictionToTelegram} from './telegram-bridge.js';
 import {enqueuePredictionEvent} from './notification-center.js';
 import {publishedFootballDetails} from './football-report.js';
 import {canAutoPublishCandidate} from './football-publication-policy.js';
+import {fetchAdvancedSnapshot,advancedAnalysisLines} from './football-advanced.js';
 
 const SCAN_COOLDOWN_MINUTES=180;
 const DEFAULT_SCAN_INTERVAL_MS=4*60*60*1000;
@@ -52,7 +53,7 @@ export function installFootballAutomation(app,{db,authenticate}){
    // when there are insufficient remaining calls on the provider account.
    const account=await footballApi('status');
    const used=Number(account?.requests?.current), limit=Number(account?.requests?.limit_day);
-   if(Number.isFinite(used)&&Number.isFinite(limit)&&limit>0&&limit-used<10){
+   if(Number.isFinite(used)&&Number.isFinite(limit)&&limit>0&&limit-used<16){
     return {cooldown:true,message:`API-Football: quedan ${Math.max(0,limit-used)} de ${limit} consultas hoy. No se analiza para no agotar la cuota.`,provider_quota_remaining:Math.max(0,limit-used)};
    }
    const [created]=await lock.execute('INSERT INTO football_scans (status,initiated_by,started_at) VALUES (?,?,UTC_TIMESTAMP())',['running',manual?'manual':'scheduled']);
@@ -74,7 +75,7 @@ export function installFootballAutomation(app,{db,authenticate}){
     // quota-consuming requests per scan. Prefer distinct leagues.
     const fixtures=pickScanFixtures(upcoming);
     const candidateCount={free:0,vip:0};
-    let h2hQueries=0,oddsQueries=0;
+    let h2hQueries=0,oddsQueries=0,advancedQueries=0;
     for(const fixture of fixtures){
      examined++;
      let predictionArr;
@@ -132,6 +133,17 @@ export function installFootballAutomation(app,{db,authenticate}){
        const exact=extractMatchWinnerOdds(oddsArr,assessment.selection,assessment.home,assessment.away);
        if(exact){assessment.odds=exact.odds;assessment.raw_evidence.bookmaker=exact.bookmaker;}
       }catch(e){console.warn('football odds optional:',safeError(e));}
+     }
+     // Supplementary research is capped to ONE eligible match per scan for
+     // Free API quotas (~3 requests); other matches retain provider form data.
+     if(advancedQueries<1){
+      advancedQueries++;
+      try{
+       const extended=await fetchAdvancedSnapshot({fixture,prediction:pred,api:footballApi,now});
+       assessment.raw_evidence.advanced=extended;
+       const base=assessment.analysis.split('\n\n[ESTUDIO AVANZADO V2.2]')[0].slice(0,5700);
+       assessment.analysis=(base+'\n\n[ESTUDIO AVANZADO V2.2]\n'+advancedAnalysisLines(extended).join('\n')).slice(0,7900);
+      }catch(err){console.warn('football advanced optional:',safeError(err));}
      }
      const [insert]=await lock.execute(`INSERT IGNORE INTO football_candidates
       (provider,fixture_id,visibility,home_team,away_team,league,kickoff,market,selection,provider_probability,odds,analysis,evidence_json,status)
@@ -219,7 +231,7 @@ export function installFootballAutomation(app,{db,authenticate}){
   try{
    const [[stats]]=await db.query(`SELECT
     (SELECT COUNT(*) FROM football_candidates WHERE status='draft') AS drafts,
-    (SELECT COUNT(*) FROM football_candidates WHERE status='published') AS published,
+    (SELECT COUNT(*) FROM football_candidates f JOIN predictions p ON p.id=f.prediction_id WHERE f.status='published' AND p.archived_at IS NULL) AS published,
     (SELECT SUM(outcome='won') FROM predictions p JOIN football_candidates f ON f.prediction_id=p.id WHERE f.status='published') AS won,
     (SELECT SUM(outcome='lost') FROM predictions p JOIN football_candidates f ON f.prediction_id=p.id WHERE f.status='published') AS lost`);
    const [[latest]]=await db.query('SELECT status,initiated_by,started_at,finished_at,error_message,examined,drafts_created,window_matches,without_prediction,below_filters,provider_errors FROM football_scans ORDER BY id DESC LIMIT 1');
@@ -244,7 +256,7 @@ export function installFootballAutomation(app,{db,authenticate}){
     let evidence={};
     try{evidence=typeof row.evidence_json==='string'?JSON.parse(row.evidence_json):row.evidence_json||{};}catch{}
     const {evidence_json,...publicRow}=row;
-    return {...publicRow,goal_projection:evidence.goals||null,match_context:evidence.match_context||null};
+    return {...publicRow,goal_projection:evidence.goals||null,match_context:evidence.match_context||null,advanced:evidence.advanced||null};
    });
    res.json({candidates});
   }
@@ -283,6 +295,53 @@ export function installFootballAutomation(app,{db,authenticate}){
   if(!isOwner(req))return res.status(403).json({error:'Solo creador'});
   try{res.json(await scan({manual:true}));}
   catch(e){console.error('football scan:',safeError(e));res.status(502).json({error:safeError(e)});}
+ });
+ // Refresh draft injury and lineup evidence before kickoff, separately from full scan.
+ // No automatic re-publication or silently changing already published picks.
+ app.post('/api/admin/football/candidates/:id/refresh-advanced',authenticate,async(req,res)=>{
+  if(!isOwner(req))return res.status(403).json({error:'Solo creador'});
+  if(!validId(req.params.id))return res.status(400).json({error:'ID inválido'});
+  let conn,acquired=false;
+  try{
+   conn=await db.getConnection();
+   const [[lk]]=await conn.query("SELECT GET_LOCK('fijas_football_auto_scan',1) AS acquired");
+   if(Number(lk.acquired)!==1)return res.status(409).json({error:'Ya hay un análisis en curso'});
+   acquired=true;
+   const [[count]]=await conn.query("SELECT COUNT(*) AS total FROM audit_logs WHERE action='football_advanced_refresh' AND DATE(created_at)=UTC_DATE()");
+   if(Number(count.total)>=3)return res.status(429).json({error:'Límite de 3 actualizaciones al día para proteger la API gratuita'});
+   const [[row]]=await conn.execute("SELECT * FROM football_candidates WHERE id=? LIMIT 1",[req.params.id]);
+   if(!row||row.status!=='draft')return res.status(409).json({error:'Solo se actualizan propuestas pendientes'});
+   const kickoff=sqlDateToUtc(row.kickoff),mins=(kickoff.getTime()-Date.now())/60000;
+   if(!(mins>=10&&mins<=120))return res.status(400).json({error:'Actualiza entre 10 y 120 minutos antes del inicio. Los onces suelen publicarse cerca del partido.'});
+   let evidence={};try{evidence=typeof row.evidence_json==='string'?JSON.parse(row.evidence_json):row.evidence_json||{};}catch{}
+   const homeId=Number(evidence.team_ids?.home),awayId=Number(evidence.team_ids?.away);
+   if(!homeId||!awayId)return res.status(400).json({error:'Esta propuesta antigua no tiene IDs de equipos. Crea una nueva propuesta para actualizarla.'});
+   const last=Date.parse(evidence.advanced?.collected_at||'');
+   if(Number.isFinite(last)&&Date.now()-last<20*60000)return res.status(429).json({error:'El análisis se actualizó recientemente; espera al menos 20 minutos'});
+   const fixture={fixture:{id:Number(row.fixture_id),date:kickoff.toISOString()},teams:{home:{id:homeId,name:row.home_team},away:{id:awayId,name:row.away_team}},league:{}};
+   // 1 injury request + 1 lineup request near kickoff; no season refill here.
+   const refreshed=await fetchAdvancedSnapshot({fixture,api:footballApi,now:new Date(),fetchSeason:false,fetchLineups:true});
+   const previous=evidence.advanced||{};
+   // Keep previously collected season/form stats and never erase valid evidence on an API outage.
+   refreshed.form=previous.form||refreshed.form;
+   refreshed.season=previous.season||refreshed.season;
+   refreshed.status.season=previous.status?.season||refreshed.status.season;
+   if(refreshed.status.injuries==='unavailable'&&previous.status?.injuries==='available'){
+    refreshed.injuries=previous.injuries;refreshed.status.injuries=previous.status.injuries;
+   }
+   if(!['available','partial'].includes(refreshed.status.lineups)&&['available','partial'].includes(previous.status?.lineups)){
+    refreshed.lineups=previous.lineups;refreshed.status.lineups=previous.status.lineups;
+   }
+   evidence.advanced=refreshed;
+   const marker='\n\n[ESTUDIO AVANZADO V2.2]';
+   const base=String(row.analysis||'').split(marker)[0].slice(0,5900);
+   const updated=(base+marker+'\n'+advancedAnalysisLines(refreshed).join('\n')).slice(0,7900);
+   const [result]=await conn.execute("UPDATE football_candidates SET analysis=?,evidence_json=? WHERE id=? AND status='draft'",[updated,JSON.stringify(evidence),row.id]);
+   if(!result.affectedRows)return res.status(409).json({error:'La propuesta ya cambió de estado'});
+   await conn.execute("INSERT INTO audit_logs(actor_admin_id,action,entity_type,entity_id,details) VALUES (?,'football_advanced_refresh','football_candidate',?,JSON_OBJECT('injuries',?,'lineups',?))",[req.admin.id,String(row.id),refreshed.status.injuries,refreshed.status.lineups]);
+   return res.json({ok:true,message:'Datos del partido actualizados. Revisa los onces y las bajas antes de publicar.',status:refreshed.status});
+  }catch(e){console.error('football refresh:',safeError(e));return res.status(502).json({error:'No se pudo actualizar: '+safeError(e)});}
+  finally{if(acquired)await conn.query("SELECT RELEASE_LOCK('fijas_football_auto_scan')").catch(()=>{});conn?.release();}
  });
  app.post('/api/admin/football/candidates/:id/publish',authenticate,async(req,res)=>{
   if(!isOwner(req))return res.status(403).json({error:'Solo creador'});

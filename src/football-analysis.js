@@ -1,4 +1,5 @@
 import {goalProjection,goalAnalysisLines} from './football-goals.js';
+import {advancedAnalysisLines,createAdvancedSnapshot} from './football-advanced.js';
 /**
  * Evidence-first football analysis. No LLM-generated facts and no fabricated odds.
  * API-Football: https://www.api-football.com/documentation_v3
@@ -64,7 +65,7 @@ export function latestCompletedHeadToHead(h2h,limit=5){
   .sort((a,b)=>fixtureKickoff(b).getTime()-fixtureKickoff(a).getTime())
   .slice(0,Math.max(0,Math.min(20,Math.floor(Number(limit)||0))));
 }
-export function createAssessment(fixture,predictionResponse,{h2h=[],injuries=[]}={}){
+export function createAssessment(fixture,predictionResponse,{h2h=[],injuries=[],advanced=null}={}){
  const fixtureId=Number(fixture?.fixture?.id);
  const kickoff=fixtureKickoff(fixture);
  const home=clean(fixture?.teams?.home?.name,90),away=clean(fixture?.teams?.away?.name,90);
@@ -108,17 +109,16 @@ export function createAssessment(fixture,predictionResponse,{h2h=[],injuries=[]}
  // market remains 1X2 and the source goal lines are not exact scores.
  const goals=goalProjection(fixture,predictionResponse,h2hRows);
  lines.push(...goalAnalysisLines(goals));
- const injuryCount=Array.isArray(injuries)?injuries.length:null;
- if(injuryCount!==null&&injuryCount>0)lines.push(`El proveedor registra ${injuryCount} incidencias de bajas/lesiones asociadas al partido; confirma su vigencia antes de apostar.`);
- else lines.push('Lesiones y alineaciones: no se consideran confirmadas con la información disponible; revisar antes del inicio.');
+ const advancedData=advanced||createAdvancedSnapshot({fixture,prediction:predictionResponse});
  lines.push('Riesgos: cambios de última hora en alineaciones, rotación, tarjetas, arbitraje y varianza deportiva. Ningún pronóstico es una certeza.');
  lines.push('No se ha estimado rentabilidad ni se presupone una cuota de mercado. La confianza del proveedor no equivale a una tasa de acierto verificada.');
+ lines.push('[ESTUDIO AVANZADO V2.2]\n'+advancedAnalysisLines(advancedData).join('\n'));
  return {provider:FOOTBALL_PROVIDER,fixture_id:fixtureId,home,away,league,kickoff: kickOffString(kickoff),
   selection,market:'Resultado final 1X2',visibility,confidence:pick.confidence,evidence_count:evidence,
   analysis:lines.join('\n\n').slice(0,7900),odds:null,
   raw_evidence:{percent:pick.percent,margin:pick.margin,evidence_count:evidence,home_form:homeForm,away_form:awayForm,
    attack:{home:attackH,away:attackA},defence:{home:defenceH,away:defenceA},h2h_count:h2hRows.length,
-   injuries_reported:injuryCount,goals,match_context:{country:clean(fixture?.league?.country,65),round:clean(fixture?.league?.round,90),venue:clean(fixture?.fixture?.venue?.name,130),city:clean(fixture?.fixture?.venue?.city,95)},source:'API-Football /predictions, /fixtures/headtohead, /injuries'}
+   advanced:advancedData,team_ids:{home:Number(fixture.teams.home.id),away:Number(fixture.teams.away.id)},injuries_reported:advancedData.injuries?.reported??null,goals,match_context:{country:clean(fixture?.league?.country,65),round:clean(fixture?.league?.round,90),venue:clean(fixture?.fixture?.venue?.name,130),city:clean(fixture?.fixture?.venue?.city,95)},source:'API-Football /predictions, /fixtures/headtohead, /injuries, /fixtures/lineups, /teams/statistics'}
  };
 }
 export function kickOffString(date){return date.toISOString().slice(0,19).replace('T',' ');}

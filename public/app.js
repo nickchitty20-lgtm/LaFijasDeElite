@@ -74,17 +74,52 @@ predictionForm.addEventListener('submit',async e=>{
  $('predictionMsg').textContent=`Publicado #${r.id}. Telegram: ${r.telegram}.`;form.reset();await loadPredictions();await dashboard();}
  catch(err){$('predictionMsg').textContent=err.message;}finally{btn.disabled=false;}
 });
+let showArchivedPredictions=false;
+$('predictionArchivedToggle')?.addEventListener('click',async()=>{
+ showArchivedPredictions=!showArchivedPredictions;
+ await loadPredictions();
+});
 async function loadPredictions(){
  const area=$('predictionList');area.replaceChildren();
- try{const {predictions}=await api('/api/admin/predictions');
- if(!predictions.length){area.textContent='Todavía no hay pronósticos.';return;}
- for(const p of predictions){const item=document.createElement('div');item.className='prediction-item';
- const title=document.createElement('strong');title.textContent=`#${p.id} ${p.title}`;item.append(title);
- const meta=document.createElement('p');meta.textContent=`${p.visibility.toUpperCase()} · ${p.market} · ${p.selection} · cuota ${p.odds} · Telegram: ${p.telegram_status}`;item.append(meta);
- const select=document.createElement('select');for(const v of ['pending','won','lost','void']){const o=document.createElement('option');o.value=v;o.textContent=({pending:'Pendiente',won:'Acertado',lost:'Fallado',void:'Anulado'})[v];select.append(o);}select.value=p.outcome;
- const button=document.createElement('button');button.className='secondary';button.textContent='Guardar resultado';button.addEventListener('click',async()=>{try{await api(`/api/admin/predictions/${p.id}/outcome`,{method:'PATCH',body:JSON.stringify({outcome:select.value})});button.textContent='Guardado';}catch(err){alert(err.message);}});
- item.append(select,button);area.append(item);}
+ const toggle=$('predictionArchivedToggle');
+ if(toggle){toggle.hidden=currentAdminRole!=='owner';toggle.textContent=showArchivedPredictions?'Ver pronósticos activos':'Ver pronósticos retirados';}
+ try{
+  const {predictions}=await api('/api/admin/predictions'+(showArchivedPredictions&&currentAdminRole==='owner'?'?archived=1':''));
+  if(!predictions.length){area.textContent=showArchivedPredictions?'No hay pronósticos retirados.':'Todavía no hay pronósticos.';return;}
+  for(const p of predictions){
+   const item=document.createElement('div');item.className='prediction-item';
+   const title=document.createElement('strong');title.textContent=`#${p.id} ${p.title}`;item.append(title);
+   const meta=document.createElement('p');meta.textContent=`${p.visibility.toUpperCase()} · ${p.market} · ${p.selection} · cuota ${p.odds} · Telegram: ${p.telegram_status}`;item.append(meta);
+   if(showArchivedPredictions){const archived=document.createElement('p');archived.textContent=`Retirado: ${p.archived_at||'—'} · Motivo: ${p.archive_reason||'—'}`;item.append(archived);}
+   else {
+    const select=document.createElement('select');for(const v of ['pending','won','lost','void']){const o=document.createElement('option');o.value=v;o.textContent=({pending:'Pendiente',won:'Acertado',lost:'Fallado',void:'Anulado'})[v];select.append(o);}select.value=p.outcome;
+    const button=document.createElement('button');button.className='secondary';button.textContent='Guardar resultado';button.addEventListener('click',async()=>{try{await api(`/api/admin/predictions/${p.id}/outcome`,{method:'PATCH',body:JSON.stringify({outcome:select.value})});button.textContent='Guardado';}catch(err){alert(err.message);}});
+    item.append(select,button);
+    if(currentAdminRole==='owner'){
+     const del=document.createElement('button');del.type='button';del.className='secondary';del.textContent='Eliminar pronóstico';del.style.color='#ffa8a8';
+     del.addEventListener('click',async()=>{
+      const reason=prompt(`¿Por qué quieres retirar el pronóstico #${p.id}? (mínimo 8 caracteres)`);
+      if(reason===null)return;
+      if(reason.trim().length<8){alert('Indica un motivo de al menos 8 caracteres.');return;}
+      if(!confirm(`¿Confirmas que quieres retirar el pronóstico #${p.id} de la web? El bot también intentará borrar sus mensajes de Telegram. Esta acción no se puede deshacer desde el panel.`))return;
+      del.disabled=true;
+      try{
+       const result=await api(`/api/admin/predictions/${p.id}`,{method:'DELETE',body:JSON.stringify({reason:reason.trim()})});
+       const tg=result.telegram||{};
+       const detail=`Pronóstico #${p.id} retirado. Telegram: ${tg.removed||0} mensaje(s) eliminado(s), ${tg.failed||0} fallo(s). ${(tg.warnings||[]).join(' ')}`;
+       $('predictionDeleteStatus').textContent=detail;
+       await loadPredictions();await refreshPredictionSummary();
+      }catch(err){$('predictionDeleteStatus').textContent=err.message;del.disabled=false;}
+     });
+     item.append(del);
+    }
+   }
+   area.append(item);
+  }
  }catch(err){area.textContent=err.message;}
+}
+async function refreshPredictionSummary(){
+ try{const {stats}=await api('/api/admin/overview');$('predictions').textContent=Number(stats.predictions||0).toLocaleString('es-PE');}catch{}
 }
 
 $('planForm').addEventListener('submit',async e=>{e.preventDefault();const f=e.currentTarget;try{const r=await api('/api/admin/plans',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(f)))});$('planMsg').textContent=`Plan #${r.id} creado`;f.reset();await loadCommerce();}catch(err){$('planMsg').textContent=err.message;}});
@@ -450,7 +485,7 @@ async function loadMyTelegram(){
    card.append(h);
    const schedule=window.FijasMatchSchedule?.render(p.match_date,p.locked?null:p.football_details?.match_context);if(schedule)card.append(schedule);
    if(p.locked){const body=document.createElement('p');body.textContent='Necesitas acceso VIP vigente.';card.append(body);}
-   else if(window.FijasPickReport){card.append(window.FijasPickReport.pickInfo(p));const goals=window.FijasPickReport.goals(p);if(goals)card.append(goals);const details=window.FijasPickReport.analysis(p);if(details)card.append(details);}
+   else if(window.FijasPickReport){card.append(window.FijasPickReport.pickInfo(p));const goals=window.FijasPickReport.goals(p);if(goals)card.append(goals);const adv=window.FijasPickReport.advanced?.(p);if(adv)card.append(adv);const details=window.FijasPickReport.analysis(p);if(details)card.append(details);}
    else{const body=document.createElement('p');body.textContent=p.analysis||'Sin análisis';card.append(body);}
    root.append(card);
   }
@@ -533,10 +568,25 @@ async function loadFootballEngine(){
     const disclaimer=document.createElement('small');disclaimer.textContent='Proyecciones orientativas; no garantizan el resultado. El mercado recomendado sigue siendo 1X2.';goalBox.append(disclaimer);
     item.append(goalBox);
    }
+   if(c.advanced){
+    const adv=document.createElement('div');adv.className='football-advanced-preview';
+    const headline=document.createElement('strong');headline.textContent='🔎 Lesiones, alineaciones y forma';adv.append(headline);
+    const statuses=c.advanced.status||{};
+    const labels={available:'Datos disponibles',no_records:'Sin reportes',unavailable:'No disponible',pending:'Pendiente',partial:'Parcial'};
+    for(const [label,value] of [['Bajas reportadas',statuses.injuries==='unavailable'?'Sin datos':String(c.advanced.injuries?.reported??0)],['Alineaciones',labels[statuses.lineups]||'Pendiente'],['Estadísticas temporada',labels[statuses.season]||'Sin datos']]){
+     const p=document.createElement('p');p.textContent=`${label}: ${value}`;adv.append(p);
+    }
+    item.append(adv);
+   }
    const detail=document.createElement('details');const heading=document.createElement('summary');heading.textContent='Leer análisis, datos y riesgos';const paragraph=document.createElement('p');paragraph.textContent=c.analysis;paragraph.className='football-analysis';detail.append(heading,paragraph);
    item.append(title,info);if(schedule)item.append(schedule);item.append(pick,detail);
    if(c.status==='draft'){
     const actions=document.createElement('div');actions.className='football-candidate-actions';
+    const refresh=document.createElement('button');refresh.type='button';refresh.className='secondary';refresh.textContent='🔄 Actualizar lesiones y alineaciones';
+    refresh.addEventListener('click',async()=>{refresh.disabled=true;try{
+      const r=await api(`/api/admin/football/candidates/${c.id}/refresh-advanced`,{method:'POST',body:'{}'});
+      message.textContent=r.message||'Datos actualizados';await loadFootballEngine();
+    }catch(error){message.textContent=error.message;refresh.disabled=false;}});actions.append(refresh);
     for(const [action,label] of [['publish','Aprobar y publicar'],['discard','Descartar']]){
      const button=document.createElement('button');button.className=action==='discard'?'secondary':'';button.textContent=label;
      button.addEventListener('click',async()=>{

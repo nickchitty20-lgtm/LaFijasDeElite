@@ -14,7 +14,8 @@ export async function initializeDatabase() {
     const additions = {
       league:'VARCHAR(120) NULL', match_date:'DATETIME NULL', market:'VARCHAR(120) NULL',
       selection:'VARCHAR(160) NULL', odds:'DECIMAL(8,2) NULL',
-      telegram_status:"ENUM('pending','sent','failed','not_configured') NOT NULL DEFAULT 'pending'"
+      telegram_status:"ENUM('pending','sent','failed','not_configured') NOT NULL DEFAULT 'pending'",
+      archived_at:'DATETIME NULL', archived_by:'BIGINT UNSIGNED NULL', archive_reason:'VARCHAR(350) NULL'
     };
     for (const [name,definition] of Object.entries(additions)) {
       if (!existing.has(name)) await connection.query(`ALTER TABLE predictions ADD COLUMN ${name} ${definition}`);
@@ -130,6 +131,25 @@ export async function initializeDatabase() {
       telegram_message_id BIGINT NULL,
       FOREIGN KEY (prediction_id) REFERENCES predictions(id)
     ) ENGINE=InnoDB`);
+
+    // v2.1.9: durable IDs for Telegram messages. Never hard-delete predictions;
+    // football candidates and notification events reference them.
+    await connection.query(`CREATE TABLE IF NOT EXISTS telegram_prediction_messages (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      prediction_id BIGINT UNSIGNED NOT NULL,
+      kind ENUM('free','vip') NOT NULL,
+      chat_id BIGINT NOT NULL,
+      message_id BIGINT NOT NULL,
+      removed_at DATETIME NULL,
+      removal_error VARCHAR(200) NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_prediction_telegram_kind (prediction_id,kind),
+      FOREIGN KEY (prediction_id) REFERENCES predictions(id)
+    ) ENGINE=InnoDB`);
+    const [teaserColumns]=await connection.query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='telegram_vip_public_announcements'");
+    const teaserExisting=new Set(teaserColumns.map(c=>c.COLUMN_NAME));
+    if(!teaserExisting.has('removed_at'))await connection.query('ALTER TABLE telegram_vip_public_announcements ADD COLUMN removed_at DATETIME NULL');
+    if(!teaserExisting.has('removal_error'))await connection.query('ALTER TABLE telegram_vip_public_announcements ADD COLUMN removal_error VARCHAR(200) NULL');
 
     // v1.9.1: Telegram identity linking and time-limited join requests.
     // Never stores bot credentials or plaintext one-time linking codes.

@@ -28,7 +28,7 @@ test('VIP requiere confianza estimada, margen y varias evidencias',()=>{
  assert.equal(out.visibility,'vip');
  assert.equal(out.odds,null);
  assert.match(out.analysis,/no calibradas ni garantizadas/);
- assert.match(out.analysis,/Lesiones y alineaciones: no se consideran confirmadas/);
+ assert.match(out.analysis,/Alineaciones: (No disponible|Pendiente)/);
  assert.equal(out.fixture_id,102);
  assert.equal(out.market,'Resultado final 1X2');
 });
