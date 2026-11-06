@@ -551,3 +551,12 @@ En producción, define y publica una política de sanciones, apelaciones, membre
 - Los nuevos reportes se muestran **después de analizar, guardar y aprobar una propuesta**. El diagnóstico de API no publica nada. Los datos de los pronósticos publicados anteriormente en v2.1.4 también aparecen si su `football_candidates.evidence_json` contiene la proyección.
 
 - Se versionan los CSS y scripts de la portada y ambos dashboards para evitar cachés antiguos.
+
+
+## v2.1.6 — Horario y cuenta regresiva
+
+El campo `match_date` se almacena en UTC. En la web se muestra el horario de Perú (America/Lima) y una cuenta regresiva dinámica que se actualiza cada 30 segundos. Los mensajes Telegram muestran una estimación del tiempo restante **al momento de envío**. No se presenta como información de marcador en vivo.
+
+- Cliente gratuito y VIP: `Pronósticos` → tarjeta de inicio. VIP bloqueado solo ve datos públicos del encuentro.
+- Dueño: `Análisis automático` → candidatos y hora de inicio. Personal: `Mi Telegram VIP` → ficha.
+- La primera vez tras instalar, forzar actualización (`Ctrl+F5`) para evitar caché.

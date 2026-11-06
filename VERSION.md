@@ -1,8 +1,8 @@
-# Fijas de Élite v2.1.5 — Detalle de goles y marcador orientativo
+# Fijas de Élite v2.1.6 — Inicio y cuenta regresiva de partidos
 
-- Líneas de goles de API-Football: por equipo y total; se muestran sin convertirlas en un marcador exacto.
-- Cuando hay por lo menos tres enfrentamientos directos completos, se muestra un escenario de marcador y la diferencia de goles basada en un cálculo exploratorio Poisson (no calibrado, no apuesta recomendada).
-- Con antecedentes insuficientes, el sistema lo indica explícitamente y no inventa un resultado.
-- Las notas se guardan junto al análisis en MySQL y aparecen al publicarse en la web y Telegram VIP.
-- El mercado aprobado continúa siendo 1X2. No se generan cuotas falsas ni pronósticos de goleadores sin datos.
-- No altera cookies, membresías, PayPal, Telegram ni la protección móvil.
+- Tarjeta con hora programada del encuentro en **hora de Perú (UTC-5)**, fecha completa y **cuenta regresiva** que se actualiza cada 30 segundos en la web.
+- Los clientes registrados y VIP la ven dentro de las fichas; los clientes sin VIP pueden consultar el horario sin ver la selección protegida.
+- Los administradores ven el mismo horario en las propuestas y sus fichas VIP.
+- Los mensajes a Telegram incluyen la fecha y hora programada y una **instantánea** del tiempo restante al enviarse. Los mensajes no se actualizan continuamente.
+- Al alcanzar la hora programada, la web **no declara que el encuentro esté en vivo** sin datos oficiales.
+- Sin nuevas variables ni migraciones de MySQL. Mantiene la v2.1.5 y todos sus módulos.

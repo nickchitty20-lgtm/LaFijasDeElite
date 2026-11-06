@@ -1,0 +1,151 @@
+/* Fijas de Élite — administración v1.4 */
+#dashboard{width:100%}body:has(#dashboard:not([hidden]))>header{display:none}body:has(#dashboard:not([hidden])) main{max-width:none;margin:0;padding:0}#dashboard .admin-shell{display:grid;grid-template-columns:250px minmax(0,1fr);min-height:100vh}#dashboard .admin-sidebar{position:sticky;top:0;height:100vh;background:#0d1016;border-right:1px solid #292d34;padding:30px 16px;display:flex;flex-direction:column}#dashboard .side-brand{font-weight:900;letter-spacing:1.3px;color:#e2b969;font-size:18px;padding:10px 13px}#dashboard .side-brand span{color:#f1ede6}#dashboard .side-brand b{color:#d9ae62}#dashboard .side-caption{color:#7f8791;letter-spacing:2px;font-size:10px;padding:6px 14px 27px}#dashboard .admin-nav{display:grid;gap:7px}#dashboard .admin-nav button{width:100%;text-align:left;background:transparent;color:#aab0bc;border:1px solid transparent;border-radius:11px;padding:14px 16px;font-weight:600;display:flex;gap:12px;align-items:center;transition:background .2s,color .2s,border-color .2s}#dashboard .admin-nav button:hover{background:#1c222b;color:#fff}#dashboard .admin-nav button.active{background:linear-gradient(100deg,#342c1c,#201f1c);border-color:#78603a;color:#f2c875}#dashboard .admin-nav button[hidden]{display:none}#dashboard .side-footer{margin-top:auto;font-size:10px;letter-spacing:1.4px;color:#656d78;padding:12px}#dashboard .admin-content{min-width:0;padding:0 clamp(18px,3.5vw,54px) 60px;background:radial-gradient(ellipse at 80% 0,#2a251a 0,transparent 40%),#101319}#dashboard .admin-topline{height:74px;border-bottom:1px solid #2b3038;display:flex;align-items:center;justify-content:space-between;color:#a6adb7;font-size:13px;margin-bottom:38px}#dashboard .admin-live{color:#8bc8a5}#dashboard .heading h1{font-size:clamp(26px,3vw,38px);letter-spacing:-.8px}#dashboard .heading p{margin:8px 0}#dashboard .stats{grid-template-columns:repeat(4,minmax(0,1fr));gap:18px}#dashboard .stats article{background:linear-gradient(145deg,#1c212a,#15191f);border:1px solid #333841;border-radius:17px;padding:25px;min-height:145px}#dashboard .stats strong{font-size:clamp(28px,3vw,42px)}#dashboard .card{margin:0 0 20px;max-width:none;background:#191e26;border:1px solid #303742;border-radius:18px;padding:clamp(20px,2.8vw,32px);box-shadow:0 12px 35px #0002}#dashboard .card h2{margin-top:0;font-size:21px}#dashboard form:not(#loginForm){display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 20px}#dashboard form label{margin:8px 0}#dashboard form button{grid-column:1/-1;width:auto;justify-self:start}#dashboard .prediction-item,#dashboard .staff-row{padding:18px 0;border-bottom:1px solid #333b46}#dashboard .staff-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(150px,220px) auto;gap:12px;align-items:center}#dashboard .staff-row small{display:block;color:#929ba7;margin-top:5px;overflow-wrap:anywhere}#dashboard .staff-row select{margin:0}#dashboard button{transition:transform .18s,filter .18s}#dashboard button:hover{filter:brightness(1.1)}#dashboard .card[hidden],#dashboard [data-panel][hidden]{display:none!important}@media(max-width:1000px){#dashboard .admin-shell{grid-template-columns:210px minmax(0,1fr)}#dashboard .stats{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:700px){#dashboard .admin-shell{display:block}#dashboard .admin-sidebar{position:sticky;top:0;z-index:20;height:auto;padding:10px 12px 12px;border-right:0;border-bottom:1px solid #313741}#dashboard .side-brand{font-size:14px;padding:4px 8px}#dashboard .side-caption,#dashboard .side-footer{display:none}#dashboard .admin-nav{display:flex;overflow-x:auto;gap:6px;padding-top:8px;scrollbar-width:thin}#dashboard .admin-nav button{flex:0 0 auto;width:auto;padding:10px 12px;font-size:12px}#dashboard .admin-content{padding:0 16px 35px}#dashboard .admin-topline{height:50px;margin-bottom:25px}#dashboard .stats{gap:10px}#dashboard .stats article{padding:17px;min-height:112px}#dashboard form:not(#loginForm){grid-template-columns:1fr}#dashboard .staff-row{grid-template-columns:1fr}#dashboard .staff-row button{justify-self:start}}@media(prefers-reduced-motion:reduce){#dashboard button{transition:none}}
+
+/* v1.8.7: Rank 0 / owner-only blacklist management */
+.staff-toolbar{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:17px 0 20px;color:#c7c0b2}
+.staff-toolbar select{max-width:300px;min-width:180px}
+#staffCount{font-size:12px;color:#a9b3c0}
+.staff-row{gap:15px;align-items:center}
+.staff-user{display:grid;gap:4px;min-width:200px;flex:1}
+.staff-user small{font-size:12px;color:#aab2bd;overflow-wrap:anywhere}
+.staff-rank{display:inline-block;width:fit-content;font-size:11px;color:#e7ca8c;border:1px solid #75613a;border-radius:40px;padding:5px 10px}
+.staff-rank.rank-zero{color:#ffb2a5;border-color:#99443a;background:rgba(142,48,40,.18)}
+.staff-blacklisted{background:linear-gradient(110deg,rgba(121,33,34,.12),rgba(15,18,23,.6));border-color:#633333!important}
+.staff-controls{display:grid;grid-template-columns:minmax(165px,1fr) minmax(150px,1fr) auto;gap:8px;align-items:center;flex:1.4}
+.staff-controls .staff-reason[hidden]{display:none}
+.staff-controls select,.staff-controls input{margin:0;min-width:0;width:100%}
+.staff-controls button{white-space:nowrap;margin:0}
+@media(max-width:990px){.staff-controls{grid-template-columns:1fr}.staff-controls button{width:100%}}
+
+/* Specificity override for legacy three-column staff rows */
+#dashboard .staff-row{grid-template-columns:minmax(220px,1fr) minmax(310px,1.45fr)}
+@media(max-width:990px){#dashboard .staff-row{grid-template-columns:1fr}}
+
+/* v1.8.8 — Manual VIP management: dedicated responsive two-action workspace */
+#vipPanel .vip-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin-bottom:20px}
+#vipPanel .vip-eyebrow{font-size:10px;color:#d8b46a;letter-spacing:2px;font-weight:800}
+#vipPanel .vip-heading h2{margin:8px 0}
+#vipPanel .vip-trust{border:1px solid #685435;border-radius:50px;color:#c9aa6b;padding:9px 14px;font-size:11px;white-space:nowrap}
+#vipPanel .vip-search-form{display:block!important;padding:20px;border:1px solid #353e48;background:#131820;border-radius:14px;margin-bottom:16px}
+#vipPanel .vip-search-form label{margin:0 0 8px}
+#vipPanel .vip-search-row{display:flex;align-items:center;gap:12px}
+#vipPanel .vip-search-row input{margin:0;flex:1;min-width:0}
+#vipPanel .vip-search-row button{white-space:nowrap;margin:0}
+#vipPanel .vip-search-results{display:grid;grid-template-columns:repeat(auto-fill,minmax(235px,1fr));gap:10px;margin:16px 0 22px;color:#a9b3be}
+#vipPanel .vip-customer-choice{display:flex;flex-direction:column;align-items:flex-start;gap:6px;background:#20252d;color:#f3e9d6;border:1px solid #38414d;border-radius:12px;padding:14px;text-align:left;font-weight:400}
+#vipPanel .vip-customer-choice span{font-size:12px;color:#9ba6b3;overflow-wrap:anywhere}
+#vipPanel .vip-customer-choice:hover{border-color:#c9a365;background:#292921}
+#vipPanel .vip-selected{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid #675434;border-radius:14px;padding:20px;background:linear-gradient(125deg,#29251c,#191e26);margin-bottom:18px}
+#vipPanel .vip-selected h3{margin:8px 0;font-size:21px}
+#vipPanel .vip-selected p{margin:0;font-size:12px;overflow-wrap:anywhere}
+#vipPanel .vip-status{border-radius:50px;background:#333a44;color:#bcc6d1;font-size:12px;padding:10px 15px;white-space:normal;text-align:center}
+#vipPanel .vip-status.vip-status-active{background:#1d4533;color:#a6ecc0}
+#vipPanel .vip-status.vip-status-blocked{background:#512b2c;color:#ffbec0}
+#vipPanel .vip-action-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+#vipPanel .vip-action-grid form{display:flex!important;flex-direction:column;gap:0;border:1px solid #37414b;border-radius:14px;padding:24px;background:#151a22}
+#vipPanel .vip-action-grid .vip-revoke{background:#211b1d;border-color:#594044}
+#vipPanel .vip-action-head{display:flex;align-items:center;gap:12px}
+#vipPanel .vip-action-head span{font-size:27px;color:#d6b36e}
+#vipPanel .vip-action-head h3{margin:0;font-size:18px}
+#vipPanel .vip-action p{font-size:13px;min-height:62px}
+#vipPanel .vip-action label{margin:10px 0 2px}
+#vipPanel .vip-action input,#vipPanel .vip-action select{margin:4px 0 10px;width:100%}
+#vipPanel .vip-action button{width:100%;margin-top:auto;justify-self:stretch}
+#vipPanel .vip-danger{background:#8c3c3d;color:#fff}
+#vipPanel .vip-action button:disabled{cursor:not-allowed;opacity:.42}
+#vipPanel .vip-history-title{margin-top:30px;font-size:17px}
+#vipPanel .vip-history{display:grid;gap:8px;max-height:330px;overflow:auto}
+#vipPanel .vip-history-row{display:grid;gap:5px;padding:13px 16px;border:1px solid #303944;border-radius:11px;background:#151b23}
+#vipPanel .vip-history-row strong{font-size:13px;color:#e1cfad}
+#vipPanel .vip-history-row span,#vipPanel .vip-history-row small{font-size:12px;color:#aeb8c6}
+#vipPanel .vip-feedback{color:#e1bc78;min-height:28px;padding-top:8px}
+@media(max-width:900px){#vipPanel .vip-action-grid{grid-template-columns:1fr}#vipPanel .vip-action p{min-height:0}}
+@media(max-width:590px){#vipPanel .vip-heading,#vipPanel .vip-selected{flex-direction:column;align-items:stretch}#vipPanel .vip-search-row{flex-direction:column;align-items:stretch}#vipPanel .vip-action-grid form{padding:16px}#vipPanel .vip-trust{width:fit-content}}
+
+/* v1.8.9: owner-only per-membership archive button */
+#vipPanel .vip-history-help{font-size:12px;color:#aeb7c3;max-width:750px;line-height:1.6}
+#vipPanel .vip-archive-button{background:transparent;border:1px solid #925657;color:#ffb5b5;font-size:12px;border-radius:9px;padding:8px 11px;justify-self:start;margin-top:4px;max-width:100%}
+#vipPanel .vip-archive-button:hover{background:#44262a;border-color:#d18a8a}
+#vipPanel .vip-archive-button:disabled{opacity:.5;cursor:wait}
+
+/* v1.9: Dark premium financial control, fully responsive */
+.finance-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:20px 0}
+.finance-tile{background:#161c25;border:1px solid #343d48;border-radius:14px;padding:17px;display:flex;flex-direction:column;gap:13px}
+.finance-tile small{color:#aeb6c3;font-size:12px}.finance-tile strong{color:#e8c887;font-size:clamp(16px,2.3vw,24px);overflow-wrap:anywhere}
+.finance-panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px;margin:18px 0}
+.finance-panels>section{background:#151b24;border:1px solid #303846;border-radius:14px;padding:18px}
+.finance-line{margin:9px 0;padding:10px;border-bottom:1px solid #333b46;color:#d4d8df;overflow-wrap:anywhere}
+#financePanel details{padding:14px;background:#171d25;border-radius:12px}
+#financePanel summary{cursor:pointer;color:#dec28c;font-weight:700}
+
+/* Telegram owner admin */
+.telegram-admin-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px;margin:18px 0}
+.telegram-admin-cards>div{border-radius:12px;padding:17px;background:#1b232e;border:1px solid #37404d;display:grid;gap:9px}
+.telegram-admin-cards small{color:#aeb7c5}.telegram-admin-cards strong{color:#e8c77e;overflow-wrap:anywhere}
+@media(max-width:800px){.telegram-admin-cards{grid-template-columns:1fr}}
+
+/* v1.9.2 · Restricted Telegram recovery */
+.telegram-admin-exception{display:grid;gap:12px;margin-top:22px;padding:20px;border:1px solid #6d5b3c;border-radius:16px;background:#181d24}
+.telegram-admin-exception h3{margin:0}
+.telegram-admin-exception p{margin:0;color:#aeb6c3}
+.telegram-admin-exception label{display:grid;gap:8px;max-width:550px}
+.telegram-admin-exception input{max-width:550px;width:100%}
+.telegram-admin-exception button{width:fit-content}
+
+/* v1.9.4 · Personal Telegram and VIP card */
+.my-telegram-head{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.my-telegram-head small{color:#cfa969;letter-spacing:.15em;font-weight:800}
+.my-telegram-head>span{padding:9px 13px;background:#3a3020;border:1px solid #887041;border-radius:40px;color:#ecc880;font-size:11px;letter-spacing:.1em}
+.my-telegram-actions{display:flex;gap:10px;flex-wrap:wrap;margin:20px 0}
+.my-telegram-actions button{margin:0}
+#myTelegramStatus{background:#151b23;border-left:3px solid #d6b36e;border-radius:8px;padding:15px;color:#e3d1a9}
+#myTelegramResult a{color:#f1c779;text-decoration:underline;overflow-wrap:anywhere}
+.my-telegram-change{border:1px solid #4a3c2a;border-radius:13px;padding:15px;background:#161b23;margin:12px 0}
+.my-vip-picks{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.my-vip-pick{border:1px solid #3d414a;background:#151b22;padding:16px;border-radius:13px}
+.my-vip-pick strong{color:#e5bc75}.my-vip-pick p{color:#c3cbd4;line-height:1.5;overflow-wrap:anywhere;font-size:13px}
+.telegram-coverage{color:#d8ba84;background:#262115;padding:12px;border-radius:9px;line-height:1.5;font-size:13px}
+
+#dashboard form[hidden]{display:none!important}
+#dashboard .admin-nav{min-height:0;overflow-y:auto;align-content:start}
+
+/* v2.0.2 — hidden must win over navigation/layout display rules */
+#dashboard [hidden]{display:none!important}
+
+/* v2.0.4 — Owner confirmation, compact even on phones. */
+#telegramOwnerForceUnlinkForm{border-color:#ac8641;background:linear-gradient(120deg,#242017,#171c24)}
+#telegramOwnerForceUnlinkForm label:has(input[type="checkbox"]){display:flex;align-items:flex-start;gap:12px;max-width:100%;line-height:1.5}
+#telegramOwnerForceUnlinkForm input[type="checkbox"]{flex:0 0 18px;width:18px;height:18px;min-width:18px;margin:2px 0 0;accent-color:#d6b36e}
+#telegramOwnerForceUnlinkForm button{max-width:100%;white-space:normal;overflow-wrap:anywhere}
+
+/* v2.1.5: structured market report, no sideways overflow */
+.fe-research-card{min-width:0;overflow-wrap:anywhere;display:grid;gap:12px}
+.fe-research-card h4{margin-bottom:0}
+.fe-betting-context{padding:14px 16px;border-radius:12px;background:#252219;border:1px solid #867047;color:#f6e3b7;display:grid;gap:7px;min-width:0}
+.fe-main-pick{display:grid;gap:5px}.fe-main-pick span{font-size:11px;letter-spacing:.075em;color:#cbbb95}.fe-main-pick strong{font-size:16px;line-height:1.5}
+.fe-pick-odds{font-size:12px;margin:0!important;color:#bfb9ae;line-height:1.5}
+.fe-goals-breakdown{border:1px solid #4e5661;border-radius:14px;padding:16px;background:#121820;min-width:0}
+.fe-goals-breakdown h5{font-size:15px;letter-spacing:0;margin:0 0 12px;color:#eecb88}
+.fe-goal-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.fe-goal-metric{border:1px solid #354356;border-radius:10px;background:#1d2631;padding:12px;display:grid;gap:5px;min-width:0}
+.fe-goal-label{font-size:11px;color:#bac6d3}.fe-goal-value{font-size:14px;color:#edd4a0;line-height:1.45;overflow-wrap:anywhere}
+.fe-goal-detail{font-size:10px;color:#aab5c5;line-height:1.45}
+.fe-goal-history,.fe-goal-probabilities{font-size:12px;color:#bfccd6;line-height:1.6;margin:12px 0 4px!important}
+.fe-goal-warning{display:block;font-size:11px;color:#dfbd84;line-height:1.6;margin-top:9px}
+.fe-full-research{border-top:1px solid #4b545e;padding-top:12px;min-width:0}
+.fe-full-research summary{cursor:pointer;font-weight:700;color:#e1c48c;line-height:1.5}
+.fe-full-research p{margin:10px 0 0!important;white-space:pre-line;overflow-wrap:anywhere;color:#cad2dc;line-height:1.7;font-size:13px}
+@media(max-width:600px){.fe-goal-metrics{grid-template-columns:1fr}.fe-research-card{padding:16px!important}.fe-goals-breakdown{padding:12px}}
+
+
+/* v2.1.6 — Kickoff clock, dark/gold cards, safe on narrow screens. */
+.fe-match-schedule{display:grid;gap:6px;min-width:0;max-width:100%;box-sizing:border-box;padding:13px 15px;margin:10px 0 13px;border:1px solid #655437;border-radius:12px;background:linear-gradient(120deg,#252117,#181e28);overflow-wrap:anywhere}
+.fe-match-label{font-weight:750;font-size:12px;letter-spacing:.05em;color:#d9bb7c}
+.fe-match-date{font-weight:700;font-size:14px;color:#f1e5cd;line-height:1.5}
+.fe-match-countdown{display:block;color:#eac677;font-weight:800;font-size:16px;line-height:1.45}
+.fe-match-countdown[data-match-phase="passed"]{color:#c5ccd5;font-size:13px}
+.fe-match-countdown[data-match-phase="soon"]{color:#a9deca}
+.fe-match-disclaimer{color:#a7afb9;font-size:10px;line-height:1.5}
+@media(max-width:600px){.fe-match-schedule{padding:11px 12px}.fe-match-date{font-size:13px}.fe-match-countdown{font-size:14px}}
+
+.fe-match-extra{font-size:11px;color:#c6ccd4;line-height:1.5;overflow-wrap:anywhere}
