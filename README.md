@@ -1,3 +1,82 @@
+# Fijas de Élite v2.2.2 — Reintentos y diagnóstico automático
+
+**Instala el ZIP completo en GitHub/Railway y verifica `/health` → `2.2.2`.** Esta versión corrige la pausa injustificada de cuatro horas cuando el motor no consiguió ninguna fija. También permite considerar partidos nuevos aun si muchos fixtures anteriores ya fueron descartados. Conserva Telegram gratis/VIP, membresías, análisis avanzado, eliminación y PayPal.
+
+## Para comprobar por qué no publica
+
+1. Railway → Variables: `FOOTBALL_API_KEY`, `FOOTBALL_AUTO_SCAN=true`, `FOOTBALL_AUTO_PUBLISH=true`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_FREE_CHAT_ID`, `TELEGRAM_VIP_CHAT_ID`. No compartas ni publiques los tokens.
+2. Panel dueño → **Análisis automático**. Comprueba los cinco indicadores (API, búsqueda, publicación, chat gratuito, chat VIP) y el dato **Próximo escaneo estimado**.
+3. Revisa **Último escaneo: revisados / sin modelo / por filtros**. Cero partidos evaluados puede indicar cuota insuficiente o ausencia de partidos nuevos. Muchos descartes significan que el proveedor no aportó datos aptos, no un fallo de Telegram.
+4. En **Motivo de cero publicaciones** se muestra si faltan canales, si hay propuestas sin requisitos o si no había candidatos futuros. Abre los logs de Railway si hay errores del proveedor.
+5. Para comprobar al momento, pulsa **Analizar ahora y guardar propuestas** (máximo 2 análisis manuales al día; 10 min entre ellos). Ese botón inicia la búsqueda, no fuerza la publicación de datos insuficientes. Cuando `FOOTBALL_AUTO_PUBLISH=true`, el despachador intenta enviar las propuestas aptas.
+
+## Frecuencias y límites
+
+- Motor: chequeos cada 15 minutos, también al iniciar Railway.
+- Escaneo completo con alguna propuesta creada: próximo intento después de 4 horas.
+- Escaneo con partidos analizados pero sin propuestas: próximo intento después de 1 hora.
+- Escaneo sin partidos nuevos evaluados: próximo intento después de 30 minutos.
+- Proveedor Free: máximo 100 solicitudes al día, 10 por minuto; se conserva una reserva de cuota y pausas entre peticiones. Por ello algunos intentos pueden aplazarse si ya se consumió la cuota.
+- Cada pronóstico sigue requiriendo evidencia y confianza mínima; no se garantiza encontrar selecciones ni enviar mensajes todos los días.
+
+**Esta entrega pasa pruebas locales de lógica con API y Telegram simuladas; no prueba la conexión de la cuenta real de Railway ni su envío a Telegram.**
+
+---
+
+# Fijas de Élite v2.2.1 — Automatización corregida ⚽
+
+**Proyecto completo para GitHub y Railway.** Basado en v2.2.0; conserva clientes, PayPal, Telegram, rangos, eliminación segura de pronósticos y análisis avanzado.
+
+## Por qué no aparecían fijas en versiones anteriores
+
+- El escáner examinaba solo **5 partidos**, exclusivamente entre 1 y 6 horas antes del comienzo.
+- El filtro VIP exigía una probabilidad estimada ≥72%, margen ≥18 puntos, al menos dos familias de evidencia **y una cuota de bookmaker**. Muchas ligas no ofrecían cuotas; por ello los borradores VIP no podían publicarse automáticamente.
+- El filtro gratuito también era rígido (40–50% de probabilidad estimada y margen ≥12 puntos).
+- La publicación se intentaba durante un escaneo programado, pero no se revisaban regularmente los borradores previamente creados.
+- Las llamadas sucesivas podían alcanzar el límite gratuito de **10 peticiones/minuto**.
+
+## Comportamiento nuevo
+
+1. **Ventana de 1–24 horas** desde el escaneo; hasta **10 encuentros nuevos** por ejecución, dando preferencia a competiciones conocidas y diversificando ligas.
+2. **No gastar cuota dos veces en la misma propuesta**: evita volver a consultar fixtures ya registrados; guarda una pausa de 6 horas para partidos sin modelo disponible y de 8 horas para resultados que no superan los filtros. Prueba otros encuentros mientras tanto.
+3. **Filtros verificables, no promesas**: gratuita, 40–50% de probabilidad 1X2 estimada, margen ≥8 puntos y ≥2 tipos de evidencia; VIP, ≥63%, margen ≥12 y ≥2 tipos de evidencia. Son **probabilidades no calibradas**, no porcentajes reales de acierto. Ningún partido que carezca de evidencia será fabricado para conseguir publicaciones.
+4. **Cuota opcional**: las apuestas sin una cuota del proveedor muestran «No disponible»; no se calcula rentabilidad. La ausencia de cuota **ya no impide publicar** una propuesta estadísticamente válida.
+5. **Publicación automática independiente**: cada 30 minutos revisa borradores aptos y próximos (más de 20 minutos antes del encuentro), aun si el escaneo está en espera; máximo 1 gratuita y 2 VIP automáticas cada día. No duplica publicaciones gracias al estado MySQL y bloqueo por ID.
+6. **Escaneo completo cada 4 horas** cuando `FOOTBALL_AUTO_SCAN=true`. El proceso se inicia también cuando arranca Railway, tras la migración.
+7. **Límites API Free**: hasta 18 consultas suplementarias por escaneo más la consulta al estado, reserva mínimo 20 consultas para el resto del día y espacia las peticiones al proveedor a 6.5 segundos (máximo ~9/minuto en la instancia). La cuota de 100/día es del proveedor y se comparte si se reutiliza la clave en otra aplicación.
+8. **Panel de diagnóstico**: indica si faltan token o IDs de Telegram, configuración de automatización, estado del escaneo, cuántos partidos se revisaron, cuántos se descartaron o estaban pausados, consultas estimadas y publicación automática. La búsqueda manual se inicia como trabajo de servidor y el panel consulta el resultado, para evitar timeouts del proxy.
+9. **Canales**: gratuita completa → Fijas de Élite Comunidad. VIP completa → canal VIP, con adelanto limitado en grupo público. Requiere bot administrador y IDs de chat correctos.
+
+## Variables Railway
+
+```env
+FOOTBALL_API_KEY=tu_clave_privada
+FOOTBALL_AUTO_SCAN=true
+FOOTBALL_AUTO_PUBLISH=true
+TELEGRAM_BOT_TOKEN=tu_token_privado
+TELEGRAM_FREE_CHAT_ID=-100xxxxxxxxxx
+TELEGRAM_VIP_CHAT_ID=-100yyyyyyyyyy
+```
+
+**Recomendación:** deja `FOOTBALL_AUTO_PUBLISH=false` durante la primera revisión real y actívala cuando hayas comprobado que los pronósticos y canales son correctos. Solo activa el envío autónomo si aceptas publicar selecciones sin aprobación humana.
+
+## Cómo instalar y verificar
+
+1. Respalda Railway MySQL. Sube los archivos del ZIP completo al repositorio GitHub, respetando las carpetas; espera a que Railway despliegue correctamente.
+2. Comprueba que `/health` responda con `2.2.1`; recarga el panel con Ctrl+F5.
+3. Como dueño, visita **Análisis automático**: las tres configuraciones de API/escaneo/publicación y los dos chats deben aparecer correctas.
+4. Si quieres probar sin Telegram, usa **Diagnosticar API (sin guardar)**. Para crear propuestas reales, usa **Analizar ahora y guardar propuestas**, que continúa en segundo plano; el panel consulta su progreso.
+5. Con publicación habilitada, las propuestas elegibles nuevas o previamente pendientes se intentan publicar al siguiente chequeo de 30 minutos; también al reiniciar el servidor. Si un partido no cumple los filtros, queda fuera y el motivo aparece en el historial.
+6. Verifica la recepción real en ambos chats de Telegram y las fichas en `/clientes.html`. Si `telegram_status=failed`, consulta el bot y sus permisos.
+
+Se crean de forma **aditiva** `football_fixture_checks` y nuevas columnas de métricas en `football_scans`, sin borrar pronósticos ni usuarios. No hay que ejecutar SQL manual.
+
+**Validación:** pruebas locales con API y Telegram simulados prueban las reglas y flujo completo de publicación, pero **no** validan tu clave de API-Football, tu Railway, tus credenciales ni el envío real al grupo/canal. Ninguna versión puede garantizar que existirá una selección válida todos los días.
+
+---
+
+## Historial de versiones (informativo; las configuraciones antiguas pueden estar obsoletas)
+
 # Fijas de Élite v2.2.0 — Investigación deportiva avanzada
 
 **Actualización sobre v2.1.9; ZIP completo para GitHub y Railway.**

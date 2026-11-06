@@ -5,14 +5,15 @@ import {pickScanFixtures,canRunManual,FOOTBALL_SCAN_FIXTURES_LIMIT} from '../src
 const fixture=(id,league)=>({fixture:{id},league:{id:league,name:`Liga ${league}`}});
 
 test('prioriza variedad de ligas para analizar partidos, sin duplicar fixtures',()=>{
- const matches=[fixture(1,1),fixture(2,1),fixture(3,1),fixture(4,2),fixture(5,3),fixture(6,4),fixture(7,5),fixture(8,6),fixture(1,1)];
- assert.deepEqual(pickScanFixtures(matches).map(m=>m.fixture.id),[1,4,5,6,7]);
- assert.equal(pickScanFixtures(matches).length,FOOTBALL_SCAN_FIXTURES_LIMIT);
+ const matches=[fixture(1,901),fixture(2,901),fixture(3,901),fixture(4,902),fixture(5,903),fixture(6,904),fixture(7,905),fixture(8,906),fixture(1,901)];
+ assert.deepEqual(pickScanFixtures(matches).map(m=>m.fixture.id),[1,4,5,6,7,8,2,3]);
+ assert.equal(FOOTBALL_SCAN_FIXTURES_LIMIT,10);
+ assert.equal(pickScanFixtures(matches).length,8);
  assert.deepEqual(pickScanFixtures(matches,3).map(m=>m.fixture.id),[1,4,5]);
 });
 
 test('completa el cupo con partidos de ligas repetidas cuando no hay más ligas',()=>{
- assert.deepEqual(pickScanFixtures([fixture(1,1),fixture(2,1),fixture(3,2),fixture(4,2)],4).map(m=>m.fixture.id),[1,3,2,4]);
+ assert.deepEqual(pickScanFixtures([fixture(1,991),fixture(2,991),fixture(3,992),fixture(4,992)],4).map(m=>m.fixture.id),[1,3,2,4]);
 });
 
 test('permite escaneo manual inmediato independiente del automático, pero solo dos al día',()=>{

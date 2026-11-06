@@ -26,7 +26,7 @@ import {installFootballAutomation} from './football-automation.js';
 import {publishedFootballDetails} from './football-report.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
-const APP_VERSION = '2.2.0';
+const APP_VERSION = '2.2.2';
 const app = express();
 let telegramVipControl=null;
 let notificationControl=null;

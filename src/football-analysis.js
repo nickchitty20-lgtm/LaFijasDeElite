@@ -8,7 +8,7 @@ import {advancedAnalysisLines,createAdvancedSnapshot} from './football-advanced.
  */
 export const FOOTBALL_PROVIDER='api-football';
 export const DEFAULT_MIN_HOURS=1;
-export const DEFAULT_MAX_HOURS=6;
+export const DEFAULT_MAX_HOURS=24;
 
 export function parseProviderPercent(value){
  if(value==null)return null;
@@ -31,7 +31,7 @@ export function upcomingFixtures(fixtures,now=new Date(),minHours=DEFAULT_MIN_HO
    &&Number.isSafeInteger(Number(f.fixture?.id))
    &&Number.isSafeInteger(Number(f.teams?.home?.id))
    &&Number.isSafeInteger(Number(f.teams?.away?.id));
- }).sort((a,b)=>fixtureKickoff(a)-fixtureKickoff(b));
+ }).filter((f,i,list)=>list.findIndex(x=>String(x.fixture.id)===String(f.fixture.id))===i).sort((a,b)=>fixtureKickoff(a)-fixtureKickoff(b));
 }
 
 export function predictedResult(p){
@@ -87,12 +87,12 @@ export function createAssessment(fixture,predictionResponse,{h2h=[],injuries=[],
  if(defenceH!==null&&defenceA!==null)evidence++;
  if(h2hRows.length>=2)evidence++;
  // These are UNCAlIBRATED provider probabilities, not measured hit rates.
- // Free = modest statistical lead of 40-50% (1X2), with at least two evidence
- // families and a >=12-point lead. Weak data is discarded, not sold as a "fija".
- // VIP remains highly selective; neither tier guarantees a win.
+ // Two independent evidence families required; do not confuse estimated
+ // probabilities with historical accuracy. A free pick remains <=50% as agreed.
+ // VIP needs a clear 1X2 favorite, but not the extremely rare 72% threshold.
  let visibility=null;
- if(pick.confidence>=72&&pick.margin>=18&&evidence>=2)visibility='vip';
- else if(pick.confidence>=40&&pick.confidence<=50&&pick.margin>=12&&evidence>=2)visibility='free';
+ if(pick.confidence>=63&&pick.margin>=12&&evidence>=2)visibility='vip';
+ else if(pick.confidence>=40&&pick.confidence<=50&&pick.margin>=8&&evidence>=2)visibility='free';
  if(!visibility)return null;
  const selection=pick.outcome==='home'?home:pick.outcome==='away'?away:'Empate';
  const lines=[
@@ -138,10 +138,25 @@ export function extractMatchWinnerOdds(response,selection,home,away){
  return null;
 }
 
+// API-FOOTBALL Free is 10 requests/minute. Queue requests in-process, not only
+// within a scan, to avoid self-inflicted 429 errors from the diagnostic/refresh.
+// Other installations using the SAME key still count toward the shared limit.
+let nextProviderCall=0;
+let providerQueue=Promise.resolve();
+async function awaitProviderSlot(){
+ const slot=providerQueue.then(async()=>{
+  const delay=Math.max(0,nextProviderCall-Date.now());
+  if(delay)await new Promise(resolve=>setTimeout(resolve,delay));
+  nextProviderCall=Date.now()+6500;
+ });
+ providerQueue=slot.catch(()=>{});
+ await slot;
+}
 export async function footballApi(endpoint,params={},env=process.env){
  if(!env.FOOTBALL_API_KEY)throw Error('FOOTBALL_API_KEY sin configurar');
  const url=new URL(`https://v3.football.api-sports.io/${endpoint}`);
  for(const [k,v] of Object.entries(params))url.searchParams.set(k,String(v));
+ await awaitProviderSlot();
  const response=await fetch(url,{headers:{'x-apisports-key':env.FOOTBALL_API_KEY},signal:AbortSignal.timeout(13000)});
  if(!response.ok)throw Error(`API-Football HTTP ${response.status}`);
  const json=await response.json();

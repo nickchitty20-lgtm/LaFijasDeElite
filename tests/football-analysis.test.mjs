@@ -13,8 +13,8 @@ const prediction=(home,draw,away)=>({
  comparison:{att:{home:'58%',away:'42%'},def:{home:'55%',away:'45%'}}
 });
 const now=new Date('2026-11-06T15:00:00Z');
-test('filtra partidos todavía por comenzar en 1–6 horas',()=>{
- assert.equal(upcomingFixtures([fixture(),fixture('2026-11-06T15:02:00Z'),fixture('2026-11-07T08:00:00Z')],now).length,1);
+test('filtra partidos todavía por comenzar en 1–24 horas',()=>{
+ assert.equal(upcomingFixtures([fixture(),fixture('2026-11-06T15:02:00Z'),fixture('2026-11-08T08:00:00Z')],now).length,1);
  assert.equal(upcomingFixtures([{...fixture(),fixture:{...fixture().fixture,status:{short:'FT'}}}],now).length,0);
 });
 test('parsea las estimaciones sin inventar probabilidades',()=>{
@@ -39,7 +39,7 @@ test('GRATIS se clasifica por estimación <=50%, nunca por tasa real de aciertos
  assert.equal(free.confidence,45);
  assert.equal(free.raw_evidence.evidence_count>=2,true);
  assert.equal(createAssessment(fixture(),prediction(58,25,17)),null);
- assert.equal(createAssessment(fixture(),prediction(40,30,30)),null);
+ assert.equal(createAssessment(fixture(),prediction(40,30,30)).visibility,'free');
  assert.equal(createAssessment(fixture(),{predictions:{percent:{home:'75%',draw:'15%',away:'10%'}}}),null);
 });
 test('no se inventan cuotas, ni siquiera si el proveedor no las tiene',()=>{

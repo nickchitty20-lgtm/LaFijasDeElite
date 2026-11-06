@@ -527,11 +527,20 @@ async function loadFootballEngine(){
    ['Fuente de datos',status.configured?'API key configurada':'Sin API key'],
    ['Búsqueda automática',status.auto_scan?'Activada':'Desactivada'],
    ['Publicación automática',status.auto_publish?'Activada':'Solo revisión'],
+   ['Telegram comunidad',status.telegram_free_ready?'Configurado':'Falta token o chat ID'],
+   ['Telegram VIP',status.telegram_vip_ready?'Configurado':'Falta token o chat ID'],
+   ['Estado del motor',status.scanning?'Analizando partidos…':status.publishing?'Publicando pronósticos…':'En espera'],
    ['Propuestas pendientes',status.drafts],
    ['Publicadas',status.published],
    ['Resultados ganados / perdidos',`${status.won} / ${status.lost}`],
    ['Acierto observado',status.accuracy==null?'Sin suficientes resultados':`${status.accuracy}%`],
    ['Último escaneo',status.latest?`${status.latest.status} · ${new Date(status.latest.started_at).toLocaleString('es-PE')} · ${status.latest.drafts_created||0} propuestas`:'Todavía no se ejecutó'],
+   ['Programador de análisis',status.last_scheduler_message||'Todavía sin comprobaciones'],
+   ['Próximo escaneo estimado',status.auto_scan?(status.scheduled_retry_at?new Date(status.scheduled_retry_at).toLocaleString('es-PE',{timeZone:'America/Lima'})+' (Perú) · '+status.scheduled_retry_reason:'Al iniciar o en el siguiente control'):'Desactivado'],
+   ['Último escaneo: revisados / sin modelo / por filtros',status.latest?`${status.latest.examined||0} / ${status.latest.without_prediction||0} / ${status.latest.below_filters||0}`:'Sin datos'],
+   ['Motivo de cero publicaciones',status.last_publish_report?.reason||'Mira el estado y los filtros; puede que no existan candidatos válidos'],
+   ['Candidatos sin canal / sin requisitos',status.last_publish_report?`${status.last_publish_report.missing_channel||0} / ${status.last_publish_report.blocked_by_filters||0}`:'Sin comprobación'],
+   ['Última publicación automática',status.last_publish_report?`${status.last_publish_report.published} publicadas · ${status.last_publish_report.failed} fallos`:'Aún sin ejecución'],
    ['Escaneos manuales disponibles hoy',`${status.manual_scan?.remaining??'—'} / ${status.manual_scan?.daily_limit??2}`]
   ];
   for(const [title,value] of stats){const div=document.createElement('div');const small=document.createElement('small');small.textContent=title;const strong=document.createElement('strong');strong.textContent=String(value);div.append(small,strong);summary.append(div);}
@@ -542,6 +551,12 @@ async function loadFootballEngine(){
   if(allowance)allowance.textContent=status.manual_scan?.available?
    `Puedes iniciar un análisis ahora. Quedan ${status.manual_scan.remaining} escaneos manuales hoy (UTC).`:
    (status.manual_scan?.reason||'Análisis en ejecución.');
+  if(!status.configured)message.textContent='⚠️ Falta FOOTBALL_API_KEY en Railway.';
+  else if(!status.auto_scan||!status.auto_publish)message.textContent='⚠️ Para anunciar automáticamente, activa FOOTBALL_AUTO_SCAN=true y FOOTBALL_AUTO_PUBLISH=true en Railway.';
+  else if(!status.telegram_free_ready||!status.telegram_vip_ready)message.textContent='⚠️ Revisa el token del bot y los IDs de los canales de Telegram.';
+  else if(status.last_error)message.textContent='⚠️ Último error del motor: '+status.last_error;
+  else if(status.latest?.status==='failed')message.textContent='⚠️ Último escaneo fallido: '+(status.latest.error_message||'Revisa los logs de Railway');
+  else if(status.drafts===0&&status.latest?.status==='completed')message.textContent='ℹ️ El último escaneo terminó sin propuestas. Mira el contador de descartes y cuándo se intentará de nuevo.';
   list.replaceChildren();
   if(!result.candidates.length){list.textContent='No hay propuestas todavía. Configura tu API key y busca partidos.';return;}
   for(const c of result.candidates){
@@ -609,7 +624,7 @@ function footballDiagnosticSummary(d){
  const items=[
   ['Conexión',d.api_connected?'Correcta':'Sin verificar'],
   ['Partidos recibidos',d.fixtures_returned??'—'],
-  ['Partidos entre 1 y 6 horas',d.fixtures_in_window??'—'],
+  ['Partidos entre 1 y 24 horas',d.fixtures_in_window??'—'],
   ['Predicción de muestra',d.sample?.prediction_available===true?'Disponible':d.sample?.prediction_available===false?'No disponible':'No comprobada'],
   ['Aprobación de filtros',d.sample?.passes_filters===true?'Sí':d.sample?.passes_filters===false?'No':'Sin muestra'],
  ];
@@ -624,21 +639,48 @@ $('footballTestButton')?.addEventListener('click',async()=>{
  try{const report=await api('/api/admin/football/test',{method:'POST',body:'{}'});footballDiagnosticSummary(report);$('footballEngineMsg').textContent=report.cached?'Mostrando la última prueba (sin gastar más consultas).':'Prueba completada. Revisa los resultados debajo.';}
  catch(err){$('footballEngineMsg').textContent=err.message;}finally{btn.disabled=false;}
 });
-$('footballScanButton')?.addEventListener('click',async()=>{
- const btn=$('footballScanButton');btn.disabled=true;$('footballEngineMsg').textContent='Analizando próximos partidos…';
- try{const r=await api('/api/admin/football/scan',{method:'POST',body:'{}'});
-  const report=$('footballScanReport');
-  if(report){
-   report.hidden=false;report.replaceChildren();
-   const line=(label,value)=>{const p=document.createElement('p');const b=document.createElement('strong');b.textContent=label+': ';p.append(b,document.createTextNode(String(value)));report.append(p);};
-   line('Resultado',r.message||r.note||'Búsqueda terminada');
-   if(r.ok){line('Partidos disponibles en 1–6 horas',r.fixtures_in_window);line('Partidos analizados',r.examined);line('Propuestas guardadas',r.drafts_created);line('Sin predicciones',r.without_prediction);line('Descartados por filtros',r.below_filters);line('Errores del proveedor',r.provider_errors);
-    for(const example of r.rejection_examples||[])line(example.match,example.reason);
-    for(const warning of r.warnings||[])line('Aviso API',warning);
-   }
-  }
-  $('footballEngineMsg').textContent=r.message||(r.drafts_created?`¡${r.drafts_created} propuesta(s) guardada(s)! Revisa las tarjetas de abajo para publicar.`:r.note||'Sin propuestas.');
+function showFootballScanReport(r){
+ const report=$('footballScanReport');if(!report)return;
+ report.hidden=false;report.replaceChildren();
+ const line=(label,value)=>{const row=document.createElement('p');const b=document.createElement('strong');b.textContent=label+': ';row.append(b,document.createTextNode(String(value)));report.append(row);};
+ line('Resultado',r?.message||r?.note||r?.error||'Escaneo finalizado');
+ if(r?.ok){
+  line('Partidos próximos (1–24 horas)',r.fixtures_in_window);
+  line('Partidos realmente consultados',r.examined);
+  line('Propuestas aptas',r.qualified);
+  line('Propuestas nuevas guardadas',r.drafts_created);
+  line('Partidos ya registrados',r.already_present);
+  line('Partidos pausados temporalmente (ahorro API)',r.recently_skipped);
+  line('Predicciones no disponibles',r.without_prediction);
+  line('Rechazados por filtros',r.below_filters);
+  line('Errores del proveedor',r.provider_errors);
+  line('Consultas de este escaneo',`${r.provider_calls} / ${r.provider_budget} presupuestadas`);
+  for(const example of r.rejection_examples||[])line(example.match,example.reason);
+  for(const warning of r.warnings||[])line('Aviso API',warning);
  }
- catch(err){$('footballEngineMsg').textContent=err.message;}finally{btn.disabled=false;await loadFootballEngine();}
+}
+$('footballScanButton')?.addEventListener('click',async()=>{
+ const btn=$('footballScanButton');btn.disabled=true;
+ const msg=$('footballEngineMsg');msg.textContent='Iniciando análisis… API-Football Free limita las consultas a 10 por minuto.';
+ try{
+  const start=await api('/api/admin/football/scan',{method:'POST',body:'{}'});
+  if(start.accepted){
+   msg.textContent='Escaneo en curso; actualizaremos esta pantalla cuando termine.';
+   // Manual requests return immediately because the provider's Free limit
+   // makes a complete analysis longer than the HTTP proxy timeout.
+   const until=Date.now()+10*60*1000;
+   const poll=async()=>{
+    try{
+     const status=await api('/api/admin/football/status');
+     if(status.scanning&&Date.now()<until){setTimeout(poll,10000);return;}
+     if(status.scanning){msg.textContent='Escaneo aún en curso: vuelve a cargar el panel para ver el resultado.';btn.disabled=false;return;}
+     showFootballScanReport(status.last_scan_report||{message:'Escaneo terminado; revisa el último registro.'});
+     msg.textContent=status.last_scan_report?.note||status.last_scan_report?.message||status.last_scan_report?.error||'Escaneo terminado.';
+     await loadFootballEngine();btn.disabled=false;
+    }catch(error){msg.textContent='La consulta de estado falló: '+error.message;btn.disabled=false;}
+   };
+   setTimeout(poll,12000);
+  }else{showFootballScanReport(start);btn.disabled=false;await loadFootballEngine();}
+ }catch(error){msg.textContent=error.message;btn.disabled=false;}
 });
 $('footballReloadButton')?.addEventListener('click',loadFootballEngine);

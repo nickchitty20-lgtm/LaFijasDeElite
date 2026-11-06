@@ -82,9 +82,11 @@ export async function initializeDatabase() {
     // v2.1.3: persistent manual-scan limits and last-scan reasons.
     const [scanColumns]=await connection.query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='football_scans'");
     const scanNames=new Set(scanColumns.map(c=>c.COLUMN_NAME));
-    const footballScanColumns={initiated_by:"ENUM('manual','scheduled') NOT NULL DEFAULT 'scheduled'",window_matches:'INT UNSIGNED NOT NULL DEFAULT 0',without_prediction:'INT UNSIGNED NOT NULL DEFAULT 0',below_filters:'INT UNSIGNED NOT NULL DEFAULT 0',provider_errors:'INT UNSIGNED NOT NULL DEFAULT 0'};
+    const footballScanColumns={initiated_by:"ENUM('manual','scheduled') NOT NULL DEFAULT 'scheduled'",window_matches:'INT UNSIGNED NOT NULL DEFAULT 0',without_prediction:'INT UNSIGNED NOT NULL DEFAULT 0',below_filters:'INT UNSIGNED NOT NULL DEFAULT 0',provider_errors:'INT UNSIGNED NOT NULL DEFAULT 0',qualified:'INT UNSIGNED NOT NULL DEFAULT 0',already_present:'INT UNSIGNED NOT NULL DEFAULT 0',recently_skipped:'INT UNSIGNED NOT NULL DEFAULT 0'};
     for(const [name,definition] of Object.entries(footballScanColumns))if(!scanNames.has(name))
       await connection.query(`ALTER TABLE football_scans ADD COLUMN ${name} ${definition}`);
+    // Release stale scans after an interrupted Railway deployment.
+    await connection.query("UPDATE football_scans SET status='failed',finished_at=UTC_TIMESTAMP(),error_message='Escaneo interrumpido por reinicio' WHERE status='running' AND started_at<DATE_SUB(UTC_TIMESTAMP(),INTERVAL 20 MINUTE)");
     await connection.query(`CREATE TABLE IF NOT EXISTS football_candidates (
       id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
       provider VARCHAR(40) NOT NULL,
@@ -107,6 +109,18 @@ export async function initializeDatabase() {
       UNIQUE KEY uq_football_fixture (provider,fixture_id),
       INDEX idx_football_pending (status,kickoff),
       FOREIGN KEY (prediction_id) REFERENCES predictions(id)
+    ) ENGINE=InnoDB`);
+
+    // v2.2.1: avoid repeatedly spending Free calls on unsupported fixtures.
+    // Missing predictions retry after 6h; filtered models after 8h.
+    await connection.query(`CREATE TABLE IF NOT EXISTS football_fixture_checks (
+      provider VARCHAR(40) NOT NULL DEFAULT 'api-football',
+      fixture_id BIGINT UNSIGNED NOT NULL,
+      reason ENUM('no_prediction','below_filters') NOT NULL,
+      checked_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      next_retry_at DATETIME NOT NULL,
+      PRIMARY KEY (provider,fixture_id),
+      INDEX idx_football_fixture_retry (next_retry_at)
     ) ENGINE=InnoDB`);
 
     // Legacy v2.1.7 weekly VIP preview gate (preserved for compatibility).

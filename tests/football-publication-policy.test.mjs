@@ -11,10 +11,11 @@ test('free between 40 and 50 with evidence can auto-publish WITHOUT bookmaker od
  assert.equal(canAutoPublishCandidate(candidate('free',39)),false);
  assert.equal(canAutoPublishCandidate(candidate('free',45,{evidence_json:{evidence_count:1,margin:20}})),false);
 });
-test('VIP requires much higher provider confidence and verified bookmaker odds',()=>{
- assert.equal(canAutoPublishCandidate(candidate('vip',80)),false);
- assert.equal(canAutoPublishCandidate(candidate('vip',80,{odds:1.45})),true);
- assert.equal(canAutoPublishCandidate(candidate('vip',68,{odds:1.5})),false);
+test('VIP requiere evidencia y confianza, pero las cuotas opcionales no bloquean el envío',()=>{
+ assert.equal(canAutoPublishCandidate(candidate('vip',80)),true);
+ assert.equal(canAutoPublishCandidate(candidate('vip',63)),true);
+ assert.equal(canAutoPublishCandidate(candidate('vip',62)),false);
+ assert.equal(canAutoPublishCandidate(candidate('vip',80,{evidence_json:{evidence_count:1,margin:25}})),false);
 });
 test('public VIP preview shows safe fixture, competition and kickoff, hides actual bet',()=>{
  const p={id:34,auto_generated:true,visibility:'vip',title:'Local FC vs Visita FC',league:'Liga Demostración',market:'Resultado exacto',selection:'2-1',analysis:'ANALISIS SECRETISIMO 1199',odds:2.3,match_date:'2026-11-06T20:00:00Z'};

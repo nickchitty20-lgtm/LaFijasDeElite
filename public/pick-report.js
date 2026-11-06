@@ -1,4 +1,4 @@
-/* Fijas de Élite v2.2.0 — Structured football report for authorized sessions. */
+/* Fijas de Élite v2.2.2 — Structured football report for authorized sessions. */
 (()=>{'use strict';
 const el=(tag,klass,text)=>{const node=document.createElement(tag);if(klass)node.className=klass;if(text!=null)node.textContent=String(text);return node;};
 const unknown='Sin estimación disponible';
