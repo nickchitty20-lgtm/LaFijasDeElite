@@ -5,27 +5,15 @@ async function api(url,options={}){
  const data=await r.json().catch(()=>({error:'Respuesta inesperada'}));
  if(!r.ok)throw new Error(data.error||'Error de conexión');return data;
 }
-function show(id){for(const x of ['login','setup','dashboard'])$(x).hidden=x!==id;}
-async function refreshSetup(){try{const s=await api('/api/setup/status');$('showSetup').hidden=!s.setupAvailable;}catch{$('showSetup').hidden=true;}}
-$('showSetup').addEventListener('click',()=>show('setup'));
-$('back').addEventListener('click',()=>show('login'));
-$('setupForm').addEventListener('submit',async e=>{
- e.preventDefault();const form=e.currentTarget;$('setupMsg').textContent='Creando cuenta...';
- const body=Object.fromEntries(new FormData(form));
- try{const r=await api('/api/auth/setup-owner',{method:'POST',body:JSON.stringify(body)});$('setupMsg').textContent=r.message;form.reset();await refreshSetup();
-// One-time same-tab handoff from the unified customer/admin login.
-setTimeout(()=>show('login'),1800);}catch(err){$('setupMsg').textContent=err.message;}
-});
-$('loginForm').addEventListener('submit',async e=>{
- e.preventDefault();const form=e.currentTarget;$('loginMsg').textContent='Comprobando acceso...';
- try{const body=Object.fromEntries(new FormData(form));const r=await api('/api/auth/login',{method:'POST',body:JSON.stringify(body)});form.reset();$('loginMsg').textContent='';await dashboard();}catch(err){$('loginMsg').textContent=err.message;}
-});
+// El acceso de todas las cuentas se realiza en la portada con /api/login.
+// Esta pagina solo se sirve tras validar una sesion administrativa en el servidor.
+function show(id){if(id==='dashboard')$('dashboard').hidden=false;}
 // La navegación depende del cargo, NUNCA de si una tarjeta estaba oculta por otra pestaña.
 async function dashboard(){
  let me;
  try{
   me=await api('/api/admin/me');
- }catch(err){$('loginMsg').textContent=err.message;show('login');return;}
+ }catch(err){location.replace('/');return;}
  currentAdminRole=me.role;
  $('identity').textContent=`${me.email} · ${me.role}`;
  show('dashboard');
@@ -57,14 +45,12 @@ async function dashboard(){
  // No ocultar el dashboard completo por errores de una sección.
 }
 $('logout').addEventListener('click',async()=>{
- try{await api('/api/logout',{method:'POST',body:'{}'});currentAdminRole='';show('login');}
- catch(err){$('loginMsg').textContent='No se pudo cerrar sesión: '+err.message;}
+ try{await api('/api/logout',{method:'POST',body:'{}'});location.replace('/');}
+ catch(err){$('dashMsg').textContent='No se pudo cerrar sesión: '+err.message;}
 });
-refreshSetup();
-(async()=>{
- try{const s=await api('/api/session');if(s.authenticated&&s.accountType==='admin')await dashboard();}
- catch{show('login');}
-})();
+// El servidor ya verifico el rol antes de servir /panel. Se vuelve a validar aqui
+// y en cada endpoint sensible: el HTML nunca otorga permisos por si solo.
+dashboard();
 
 const predictionForm=$('predictionForm');
 predictionForm.addEventListener('submit',async e=>{

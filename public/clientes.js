@@ -120,7 +120,7 @@ $('signin').addEventListener('submit',async e=>{
  e.preventDefault();$('loginMsg').textContent='Comprobando acceso…';
  try{
   const r=await call('/api/login',form('signin'));
-  if(r.accountType==='admin'){location.replace('/admin.html');return;}
+  if(r.accountType==='admin'){location.replace('/panel');return;}
   await enterCustomerPanel();$('loginMsg').textContent='';
  }catch(err){$('loginMsg').textContent=err.message;}
 });
@@ -237,7 +237,7 @@ async function resumeCustomerSession(){
  if(new URLSearchParams(location.search).has('reset_token'))return;
  try{
   const session=await call('/api/session');
-  if(session.accountType==='admin'){location.replace('/admin.html');return;}
+  if(session.accountType==='admin'){location.replace('/panel');return;}
   if(session.authenticated && session.accountType==='customer')await enterCustomerPanel();
  }catch(err){$('loginMsg').textContent='Tu sesión no pudo restaurarse. Inicia sesión para continuar.';}
 }

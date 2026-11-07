@@ -1,3 +1,12 @@
+# v3.2.7.2 — inicio de sesión único (sin /admin.html)
+
+- El pie de página público ya no tiene botón de Administración.
+- El panel se ofrece por `/panel`, previa autorización como personal en el servidor.
+- Un único formulario de inicio de sesión en portada tanto para usuarios como para administradores.
+- Se conserva la comprobación de roles y la validez de sesión en todas las APIs administrativas.
+- Se elimina el antiguo HTML estático público de administración.
+- No necesita nuevas variables ni migraciones.
+
 # v3.2.7.1 — corrección de espacio superior en móvil
 
 - La ventana de inicio de sesión y registro ahora se sitúa cerca del borde superior en pantallas pequeñas en lugar de centrarse con un hueco vacío.

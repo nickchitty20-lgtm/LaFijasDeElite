@@ -61,7 +61,7 @@
    session = { authenticated: Boolean(data?.authenticated), accountType: data?.accountType || null };
    if (session.authenticated) {
     const topLink = document.querySelector('.topbar [data-auth-open="login"]');
-    if (topLink) { topLink.textContent = 'Mi panel ↗'; topLink.href = session.accountType === 'admin' ? '/admin.html' : '/clientes.html'; }
+    if (topLink) { topLink.textContent = 'Mi panel ↗'; topLink.href = session.accountType === 'admin' ? '/panel' : '/clientes.html'; }
     document.querySelectorAll('[data-auth-open="register"]').forEach(link => { link.textContent = 'Ir a mi panel ↗'; });
    }
   } catch { /* Offline or unavailable session: preserve sign-in path. */ }
@@ -74,7 +74,7 @@
    event.preventDefault();
    const plan = opener.hasAttribute('data-plan-auth') ? opener.dataset.planAuth : null;
    if (session.authenticated) {
-    location.assign(session.accountType === 'admin' ? '/admin.html' : destination(plan));
+    location.assign(session.accountType === 'admin' ? '/panel' : destination(plan));
     return;
    }
    openAuth(plan ? 'register' : (opener.dataset.authOpen || 'login'), plan, opener.dataset.planName);
@@ -106,7 +106,7 @@
     if (name === 'login') {
      const result = await api('/api/login', values);
      showMessage(name, 'Sesión iniciada. Abriendo tu panel…', true);
-     location.assign(result.accountType === 'admin' ? '/admin.html' : destination(selectedPlan));
+     location.assign(result.accountType === 'admin' ? '/panel' : destination(selectedPlan));
     } else if (name === 'register') {
      await api('/api/customers/register', values);
      forms.login.elements.email.value = values.email;

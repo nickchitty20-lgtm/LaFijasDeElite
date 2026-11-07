@@ -1,3 +1,12 @@
+## v3.2.7.2 — Acceso unificado y panel privado
+
+- El botón «Administración» se elimina del pie de página de la portada.
+- Se elimina físicamente `public/admin.html`; no hay pantalla de login separada para el personal.
+- Todos usan **Iniciar sesión** en la portada, mediante `/api/login`. Tras autenticar, los usuarios normales acceden a `/clientes.html` y el personal autorizado a `/panel`.
+- El panel de gestión se sirve desde `views/panel.html` **fuera de la carpeta pública**, solo mediante la ruta `/panel` que valida sesión administrativa con la misma protección de los endpoints.
+- Las sesiones, roles, privilegios por cargo, pagos, Telegram y el motor permanecen sin cambios. No hay migraciones MySQL.
+- Primer dueño: se mantiene el comando existente de instalación inicial desde servidor (`src/create-owner.js` / `OWNER_SETUP_TOKEN` según despliegue), sin pantalla pública de administración.
+
 > Actualización **v3.2.7.1**: acceso y registro móviles sin espacio superior excesivo. Modales alineados arriba; formulario directo en `/clientes.html`; sin cambios de backend ni base de datos.
 
 ## v3.2.7 — acceso moderno en la portada y panel de clientes renovado
@@ -132,7 +141,7 @@ Tras subir la versión, pulsa **Validar modelo** y **Analizar ahora** para refre
 
    No necesitas `FOOTBALL_API_KEY` en modo `own`. Las credenciales del bot y los IDs de ambos chats siguen siendo necesarios para enviar mensajes.
 3. Espera `Success` en Railway y comprueba `GET /health` → `version: 3.1.0`. El sistema creará las tablas `nforce_matches`, `nforce_import_runs`, `nforce_scans` y `nforce_backtests` sin borrar las existentes.
-4. En `admin.html` → **Análisis automático**, pulsa **Importar datos CC0** (la importación automática también comienza al arrancar). Revisa cuántos partidos y resultados se importaron; algunos ficheros pueden faltar o contener calendarios no actualizados.
+4. En `/panel` (tras iniciar sesión como dueño en la portada) → **Análisis automático**, pulsa **Importar datos CC0** (la importación automática también comienza al arrancar). Revisa cuántos partidos y resultados se importaron; algunos ficheros pueden faltar o contener calendarios no actualizados.
 5. Pulsa **Validar modelo (backtest)** y comprueba su muestra, aciertos observados y Brier. El backtest se volverá a ejecutar automáticamente como mínimo cada 7 días y antes si aún no hay muestra suficiente.
 6. Pulsa **Analizar ahora y guardar propuestas**. Si existe un partido futuro con **hora conocida**, historial suficiente y supera los filtros, aparecerá como borrador. Puedes aprobarlo manualmente para probar la publicación.
 7. **Solo tras verificar el calendario, historial, rendimiento y canales**, habilita explícitamente:
