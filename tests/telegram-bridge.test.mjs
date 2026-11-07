@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {sha256,safeTelegramId,telegramLinkStart,telegramWebhookSecretValid,telegramPublicNotice,telegramVipPost,isPublicTelegramContentSafe,sendPredictionToTelegram} from '../src/telegram-bridge.js';
+import {sha256,safeTelegramId,telegramLinkStart,telegramWebhookSecretValid,telegramPublicNotice,telegramVipPublicPreview,telegramHomeUrl,telegramVipPost,isPublicTelegramContentSafe,sendPredictionToTelegram} from '../src/telegram-bridge.js';
 
 const pick={visibility:'free',title:'El Clásico',league:'Primera División',match_date:'2026-11-10 19:00',market:'Ambos anotan',selection:'Sí',odds:2.31,analysis:'Análisis SUPER PRIVADO 1044'};
 test('public notices contain no selection, analysis or odds, including free picks',()=>{
@@ -63,4 +63,15 @@ test('VIP publishing sends full content privately; preview requires database',as
   assert.equal(result.state,'sent');assert.equal(requests.length,1);
   assert.equal(requests[0].chat_id,'-100321');assert.match(requests[0].text,/SUPER PRIVADO 1044/);
  }finally{globalThis.fetch=old;}
+});
+
+test('all public Telegram links lead to landing page, not /clientes.html',()=>{
+ const bases=['https://example.com','https://example.com/','https://example.com/clientes.html','https://example.com/site?tracking=1'];
+ for(const base of bases){
+  assert.equal(telegramHomeUrl(base),'https://example.com/');
+  for(const message of [telegramPublicNotice(pick,base),telegramVipPublicPreview({...pick,visibility:'vip'},base)]){
+   assert.match(message,/https:\/\/example\.com\//);
+   assert.equal(message.includes('/clientes.html'),false);
+  }
+ }
 });

@@ -9,9 +9,17 @@ export const safeTelegramId = value => /^\d{1,16}$/.test(String(value)) && Numbe
 export const isMemberStatus = status => ['member','administrator','creator'].includes(status);
 export const isPublicTelegramContentSafe = message => !/[\n]🎯|[\n]📊 Cuota:|[\n]Análisis:/.test(message);
 export const h = value => String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+/** Always link Telegram announcements to the public landing page, never the customer area. */
+export function telegramHomeUrl(base){
+ try{
+  const u=new URL(String(base||'https://lafijasdeelite-production.up.railway.app'));
+  if(!['https:','http:'].includes(u.protocol))throw new Error('invalid protocol');
+  return u.origin+'/';
+ }catch{return 'https://lafijasdeelite-production.up.railway.app/';}
+}
 export function telegramPublicNotice(p,base){
  const label=p.visibility==='vip'?'🔒 NUEVO VIP':'⚽ NUEVO PRONÓSTICO GRATIS';
- const location=`${base.replace(/\/$/,'')}/clientes.html`;
+ const location=telegramHomeUrl(base);
  return `${label}\n🏆 Liga: ${h(p.league)}${h(telegramMatchSchedule(p.match_date))}\n\n🔐 Consulta los detalles iniciando sesión en Fijas de Élite.\n${h(location)}\n\nLos pronósticos no garantizan resultados.`;
 }
 export function telegramFreeAutoPost(p){
@@ -70,7 +78,7 @@ export async function telegramApi(method,payload={},env=process.env){
  * NEVER include market, choice, odds, probability, score, or analysis.
  * Manual titles are untrusted and could contain the actual bet; omit them. */
 export function telegramVipPublicPreview(p,base){
- const url=String(base||'').replace(/\/$/,'')+'/clientes.html';
+ const url=telegramHomeUrl(base);
  const matchName=String(p?.title||'').trim();
  // Auto-generated titles are known to contain only home and away team names.
  const fixture=p?.auto_generated===true && /^[^\n|:]{2,70}\s+vs\.?\s+[^\n|:]{2,70}$/i.test(matchName)

@@ -112,7 +112,7 @@ async function enterCustomerPanel(){
  document.querySelector('.auth-card').hidden=true;$('customer-area').hidden=false;
  document.body.classList.add('client-logged-in');
  if(pendingPayPalReturn){$('payment-method').value='paypal';updatePaymentMethod();clientTab('payments');}
- else clientTab('overview');
+ else clientTab(/^\d+$/.test(new URLSearchParams(location.search).get('plan')||'')?'payments':'overview');
  await Promise.allSettled([loadCustomerPicks(),loadDashboard(),refreshTelegramStatus(),loadNoticePreferences()]);
  if(pendingPayPalReturn)await completePayPalReturn();
 }

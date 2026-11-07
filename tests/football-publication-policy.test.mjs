@@ -20,7 +20,7 @@ test('VIP requiere evidencia y confianza, pero las cuotas opcionales no bloquean
 test('public VIP preview shows safe fixture, competition and kickoff, hides actual bet',()=>{
  const p={id:34,auto_generated:true,visibility:'vip',title:'Local FC vs Visita FC',league:'Liga Demostración',market:'Resultado exacto',selection:'2-1',analysis:'ANALISIS SECRETISIMO 1199',odds:2.3,match_date:'2026-11-06T20:00:00Z'};
  const msg=telegramVipPublicPreview(p,'https://fijas.example');
- assert.match(msg,/Local FC vs Visita FC/); assert.match(msg,/Liga Demostración/);assert.match(msg,/clientes\.html/);
+ assert.match(msg,/Local FC vs Visita FC/); assert.match(msg,/Liga Demostración/);assert.match(msg,/https:\/\/fijas\.example\//);assert.doesNotMatch(msg,/clientes\.html/);
  for(const secret of ['ANALISIS SECRETISIMO 1199','2.30','Resultado exacto','2-1','99%'])assert.equal(msg.includes(secret),false);
 });
 test('untrusted manual title is omitted even if it contains the winning pick or HTML',()=>{

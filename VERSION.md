@@ -1,3 +1,21 @@
+# v3.2.7 — acceso en portada y rediseño premium de clientes
+
+- Inicio de sesión, registro y recuperación desde un modal accesible en la **portada** (`/`), sin navegación previa a `/clientes.html`.
+- Tras iniciar sesión, el cliente entra a su panel privado; las cuentas administrativas entran a `/admin.html`. Las sesiones siguen usando la cookie segura validada por el servidor, sin guardar contraseñas en el navegador.
+- La elección de planes VIP desde la portada conserva el `plan_id` y abre directamente el área de pagos del panel **después del inicio de sesión**, sin activar membresías ni cobrar automáticamente.
+- `/clientes.html` se conserva como panel privado, recuperación de contraseña y retorno de PayPal; se moderniza con la identidad visual de la portada, tarjetas y animaciones, navegación adaptable al móvil y opción de movimientos reducidos.
+- Se preservan los formularios, endpoints, permisos, base de datos, pagos, membresías, Telegram y motor N-FORCE de la versión anterior; no requiere migración MySQL ni nuevas variables.
+- Para desplegar: sustituir los archivos anteriores y comprobar `GET /health` → `3.2.7`; recarga la web si está en caché.
+- Pruebas del proyecto y pruebas visuales en navegador usan datos simulados para la parte de autenticación. No sustituyen probar credenciales reales y pagos en Railway.
+
+# v3.2.6.1 — enlaces de Telegram a la portada
+
+- Los anuncios del bot en los grupos públicos y los adelantos VIP ahora enlazan únicamente a la raíz de `PUBLIC_BASE_URL` (`https://tu-dominio/`).
+- Los avisos privados del bot también usan el inicio, sin añadir `/clientes.html`.
+- No se modifican los enlaces de pago PayPal, restauración de contraseña o navegación interna; dependen de las rutas de clientes.
+- No requiere cambios de MySQL, nuevas variables ni regenerar el bot. Desplegar el código y usar `PUBLIC_BASE_URL=https://tu-dominio` (sin path).
+- Los mensajes ya enviados en Telegram conservan sus enlaces antiguos.
+
 # v3.2.6 — N-FORCE multimerkado con aprobación manual
 
 - Modelo propio Poisson v1.2: menor contracción de las fuerzas relativas; no se afirma una mejora de acierto sin backtesting real.

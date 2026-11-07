@@ -1,3 +1,15 @@
+## v3.2.7 — acceso moderno en la portada y panel de clientes renovado
+
+La portada ofrece inicio de sesión, registro y recuperación en una ventana emergente accesible. No redirige a `/clientes.html` hasta que el usuario haya iniciado sesión; si elige un plan, conserva su elección y accede a la sección de pago después de autenticarse. Las sesiones y la autorización VIP siguen siendo responsabilidad exclusiva del backend.
+
+El panel privado conserva sus seis secciones: resumen, pronósticos, membresías, pagos, Telegram VIP y notificaciones. Actualizado con la estética oscura y dorada de la portada, animaciones compatibles con la preferencia de movimiento reducido y diseño adaptable a móviles. Los enlaces de recuperación de contraseña y PayPal siguen funcionando en `/clientes.html`; NO se cambiaron contratos de API ni datos MySQL.
+
+Nuevos recursos: `public/landing-auth-v327.js`, `public/landing-auth-v327.css`, `public/client-premium-v327.css`. No requiere nuevas variables ni migraciones. En `GET /health` aparecerá la versión `3.2.7`.
+
+## v3.2.6.1 — enlaces de Telegram a la portada
+
+Se corrigió el enlace incluido en anuncios públicos, avances VIP y avisos privados de Telegram: ahora siempre apunta a `PUBLIC_BASE_URL` en la ruta `/`, sin `/clientes.html`. Ejemplo: `PUBLIC_BASE_URL=https://tu-dominio.com` envía a `https://tu-dominio.com/`. Se conservan las rutas `/clientes.html` para navegación web, cobros de PayPal y recuperación de contraseña. Los mensajes enviados anteriormente no se editan. No se necesitan migraciones.
+
 ## v3.2.5 — Identidad pública N-FORCE, sin nombres de proveedores externos
 
 En la web y Telegram se emplea la marca Fijas de Élite / N-FORCE. El visitante ve diferencias entre cotejos automáticos y registros manuales, así como una explicación honesta de que los datos automáticos proceden de registros de terceros no oficiales, con posibles retrasos. No se borran derrotas ni se alteran cifras. La identificación de OpenFootball CC0 y API-Football se conserva únicamente en código, auditoría y documentación técnica, que deben permanecer accesibles para fines de licencias, mantenimiento y revisión.

@@ -1,15 +1,12 @@
 import crypto from 'node:crypto';
 import {z} from 'zod';
-import {telegramApi} from './telegram-bridge.js';
+import {telegramApi,telegramHomeUrl} from './telegram-bridge.js';
 import {effectiveVipSql} from './vip-access.js';
 
 // Explicit opt-in: every preference is false until the customer enables it.
 export const notificationSettingsSchema=z.object({vip_enabled:z.boolean(),expiry_enabled:z.boolean(),picks_enabled:z.boolean()}).strict();
 import {noticeKindColumn,formatPredictionNotice,noticeShouldSend} from './notification-policy.js';
-const baseUrl=()=>{
- try{const url=new URL(process.env.PUBLIC_BASE_URL||'https://lafijasdeelite-production.up.railway.app');return url.protocol==='https:'?url.origin+'/clientes.html':'https://lafijasdeelite-production.up.railway.app/clientes.html';}
- catch{return 'https://lafijasdeelite-production.up.railway.app/clientes.html';}
-};
+const baseUrl=()=>telegramHomeUrl(process.env.PUBLIC_BASE_URL);
 const botEnabled=()=>Boolean(process.env.TELEGRAM_BOT_TOKEN);
 
 // Queued within the same transaction as the VIP grant, so a process restart
