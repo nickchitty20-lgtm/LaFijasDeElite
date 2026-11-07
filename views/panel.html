@@ -107,9 +107,16 @@
  <h3>Mis pronósticos VIP</h3><div id="myTelegramPicks" class="my-vip-picks"></div>
 </div>
 <div class="card" id="telegramPanel" data-panel="telegram" hidden>
-  <h2>✈ Telegram · Comunidad y canal VIP</h2><p>El grupo público recibe los pronósticos GRATIS completos y un adelanto limitado por cada nueva publicación VIP. El canal privado recibe las selecciones VIP completas.</p>
+  <h2>✈ Telegram · Canal oficial y VIP</h2><p>El <strong>canal GRATIS</strong> recibe las fijas gratuitas y los adelantos VIP. El grupo es solo para conversar: <strong>el bot no publica allí</strong>. El canal VIP conserva las selecciones VIP completas.</p>
   <div class="telegram-admin-cards"><div><small>Configuración</small><strong id="telegramAdminSetup">—</strong></div><div><small>Usuarios vinculados</small><strong id="telegramAdminLinked">—</strong></div><div><small>Miembros VIP controlados</small><strong id="telegramAdminMembers">—</strong></div></div>
   <p id="telegramCoverage" class="telegram-coverage" role="status"></p><p id="telegramAdminResult" role="status"></p>
+  <div class="telegram-channel-check" style="padding:1rem;border:1px solid #7e642f;border-radius:12px;margin:1rem 0;background:#15191f">
+   <h3 style="margin-top:0">⚽ Canal GRATIS · Comprobación real</h3>
+   <p>Verifica el canal y los permisos del bot en Telegram. Después envía una publicación de prueba (no una fija).</p>
+   <button type="button" id="telegramFreeChannelCheck" class="secondary">Verificar canal y permisos</button>
+   <button type="button" id="telegramFreeChannelTest">Enviar mensaje de prueba al canal</button>
+   <p id="telegramFreeChannelResult" role="status" aria-live="polite"></p>
+  </div>
   <button type="button" id="telegramWebhookConfigure">Activar webhook Telegram</button>
   <button type="button" id="telegramSync" class="secondary">Auditar y limpiar miembros conocidos</button>
   <form id="telegramOwnerUnlinkForm" class="telegram-admin-exception">
@@ -149,4 +156,4 @@
  </div>
  <div class="card" id="auditPanel" data-panel="audit" hidden><h2>Historial de acciones</h2><p>Últimos movimientos registrados en el servidor.</p><div id="auditList"></div></div><div class="card" data-panel="overview"><h2>Portal de clientes</h2><p>Registro y solicitudes de membresía: <a href="/clientes.html" target="_blank" rel="noopener">Abrir portal de clientes</a></p><p>Pagos con PayPal: Sandbox por defecto; Live requiere aprobación comercial, webhook firmado y activación expresa del dueño.</p></div>
 <div class="card" id="paypalDiagnosticsPanel" data-panel="overview" hidden><h2>Diagnóstico de PayPal · v1.9.0</h2><p>Disponible solo para el dueño. Comprueba qué configuración falta sin revelar las credenciales.</p><p id="paypalDiagnosticsText" role="status">Comprobando configuración…</p><button id="paypalDiagnosticsRefresh" type="button" class="secondary">Revisar variables</button><button id="paypalDiagnosticsTest" type="button" class="secondary">Probar conexión con PayPal</button><p id="paypalDiagnosticsTestResult" role="status"></p></div>
-<div class="card" data-panel="overview"><h2>Notas de seguridad</h2><p>Esta versión distingue pagos PayPal Sandbox y Live, registra capturas y detecta incidencias por webhook. El 2FA y la conciliación bancaria externa aún requieren revisión operativa.</p><p class="warning">No habilites operaciones financieras reales hasta implementar 2FA, revisión de seguridad y controles de permisos.</p><p id="dashMsg" class="message" role="status"></p></div></div></section></main><script src="/match-schedule.js?v=3.2.5" defer></script><script src="/pick-report.js?v=3.2.5" defer></script><script src="/app.js?v=3.2.7.2" defer></script><script src="/ui-motion.js?v=3.2.5" defer></script><script src="/scroll-text.js?v=3.2.5" defer></script></body></html>
+<div class="card" data-panel="overview"><h2>Notas de seguridad</h2><p>Esta versión distingue pagos PayPal Sandbox y Live, registra capturas y detecta incidencias por webhook. El 2FA y la conciliación bancaria externa aún requieren revisión operativa.</p><p class="warning">No habilites operaciones financieras reales hasta implementar 2FA, revisión de seguridad y controles de permisos.</p><p id="dashMsg" class="message" role="status"></p></div></div></section></main><script src="/match-schedule.js?v=3.2.5" defer></script><script src="/pick-report.js?v=3.2.5" defer></script><script src="/app.js?v=3.2.8.1" defer></script><script src="/ui-motion.js?v=3.2.5" defer></script><script src="/scroll-text.js?v=3.2.5" defer></script></body></html>

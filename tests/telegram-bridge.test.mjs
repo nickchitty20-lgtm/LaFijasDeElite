@@ -45,12 +45,12 @@ test('cryptographic SHA256 produces 64-character hexadecimal',()=>{
  assert.match(sha256('test'),/^[a-f0-9]{64}$/);
  assert.notEqual(sha256('test'),sha256('test1'));
 });
-test('public publishing sends only full FREE predictions to community',async()=>{
+test('public publishing sends only full FREE predictions to official channel',async()=>{
  const old=globalThis.fetch;let request=null;
  try{
-  globalThis.fetch=async (url,opts)=>{request=JSON.parse(opts.body);return {ok:true,json:async()=>({ok:true,result:{message_id:123}})};};
-  const result=await sendPredictionToTelegram(pick,{TELEGRAM_BOT_TOKEN:'example-token',TELEGRAM_FREE_CHAT_ID:'-100123',PUBLIC_BASE_URL:'https://example.com'});
-  assert.equal(result.state,'sent');assert.equal(request.chat_id,'-100123');
+  globalThis.fetch=async (url,opts)=>{request=JSON.parse(opts.body);return {ok:true,json:async()=>({ok:true,result:String(url).endsWith('/getChat')?{id:-1001234567,type:'channel',title:'Official'}:{message_id:123}})};};
+  const result=await sendPredictionToTelegram(pick,{TELEGRAM_BOT_TOKEN:'example-token',TELEGRAM_FREE_CHAT_ID:'-100999',TELEGRAM_FREE_CHANNEL_CHAT_ID:'-1001234567',PUBLIC_BASE_URL:'https://example.com'});
+  assert.equal(result.state,'sent');assert.equal(request.chat_id,'-1001234567');
   assert.equal(request.text.includes('SUPER PRIVADO 1044'),true);
   assert.match(request.text,/RIESGO ALTO/);
  }finally{globalThis.fetch=old;}

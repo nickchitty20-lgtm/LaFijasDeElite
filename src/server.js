@@ -18,7 +18,8 @@ import {getVipEntitlement} from './vip-access.js';
 import {manualVipPeriod} from './manual-vip.js';
 import {evaluateMembershipArchive} from './membership-archive-policy.js';
 import {paypalReadiness,validatePaypalCapture,refundState,usdCents,captureIdFromRefund} from './paypal-rules.js';
-import {sendPredictionToTelegram,telegramApi} from './telegram-bridge.js';
+import {sendPredictionToTelegram,telegramApi,inspectFreeTelegramChannel} from './telegram-bridge.js';
+import {safeTelegramPublicUrl} from './telegram-public.js';
 import {canRemovePrediction,validPredictionId,removePredictionTelegramMessages} from './prediction-removal.js';
 import {installTelegramRoutes} from './telegram-routes.js';
 import {installNotificationCenter,enqueueVipActivation,enqueuePredictionEvent} from './notification-center.js';
@@ -29,7 +30,7 @@ import {publicAnalysisText} from './public-branding.js';
 import {publicPerformanceFilters,performanceWhere,summaryFromGroups,publicRecentResults} from './performance-stats.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
-const APP_VERSION = '3.2.7.2';
+const APP_VERSION = '3.2.8.2';
 const app = express();
 let telegramVipControl=null;
 let notificationControl=null;
@@ -113,6 +114,11 @@ const apiRateLimit=options=>rateLimit({
 });
 const authLimit=apiRateLimit({windowMs:15*60*1000,limit:10,standardHeaders:'draft-7',legacyHeaders:false});
 app.use('/api/auth',authLimit);
+// Public links only: never return bot tokens, chat IDs or webhook secrets.
+app.get('/api/public/telegram',(req,res)=>res.json({
+ free_channel_url:safeTelegramPublicUrl(process.env.TELEGRAM_FREE_CHANNEL_URL),
+ free_group_url:safeTelegramPublicUrl(process.env.TELEGRAM_FREE_GROUP_URL)
+}));
 app.get('/health',async(req,res)=>{try{await db.query('SELECT 1');res.json({status:'ok',database:'connected',version:APP_VERSION});}catch{res.status(503).json({status:'unavailable',version:APP_VERSION});}});
 
 const loginSchema=z.object({email:z.string().email().max(254),password:z.string().min(1).max(256)}).strict();
@@ -241,7 +247,26 @@ const canViewCustomers=(a)=>['owner','general_admin','payments_admin','moderator
 const canViewAudit=(a)=>['owner','general_admin'].includes(a.role);
 const rolePermissions={owner:['predictions:read','predictions:write','payments:read','payments:write','memberships:write','plans:write','customers:read','staff:write','audit:read'],general_admin:['predictions:read','predictions:write','payments:read','payments:write','memberships:write','plans:write','customers:read','audit:read'],payments_admin:['payments:read','payments:write','memberships:write','plans:write','customers:read'],analyst:['predictions:read','predictions:write'],moderator:['customers:read']};
 app.get('/api/admin/permissions',authenticate,(req,res)=>res.json({role:req.admin.role,permissions:rolePermissions[req.admin.role]||[]}));
-// Full FREE picks go to the public group; each VIP publication gets a limited, deduplicated public preview.
+
+// Owner-only live Telegram diagnosis; never exposes token or other credentials.
+const channelTestLimit=apiRateLimit({windowMs:10*60*1000,limit:4,standardHeaders:'draft-7',legacyHeaders:false});
+app.post('/api/admin/telegram/free-channel/check',authenticate,channelTestLimit,async(req,res)=>{
+ if(req.admin.role!=='owner')return res.status(403).json({error:'Solo el creador puede comprobar el canal'});
+ const result=await inspectFreeTelegramChannel(process.env,{checkPermissions:true});
+ if(!result.ready)return res.status(422).json({error:result.reason,ready:false});
+ return res.json({ready:true,title:result.title,username:result.username,chat_id:result.chat_id,message:'Canal verificado; el bot tiene permiso para publicar.'});
+});
+app.post('/api/admin/telegram/free-channel/test',authenticate,channelTestLimit,async(req,res)=>{
+ if(req.admin.role!=='owner')return res.status(403).json({error:'Solo el creador puede enviar pruebas'});
+ const result=await inspectFreeTelegramChannel(process.env,{checkPermissions:true});
+ if(!result.ready)return res.status(422).json({error:result.reason,ready:false});
+ try{
+  const sent=await telegramApi('sendMessage',{chat_id:result.chat_id,text:'✅ Prueba de publicación · Fijas de Élite\nEl canal oficial está conectado. Este mensaje no es un pronóstico.',disable_web_page_preview:true});
+  return res.json({sent:true,title:result.title,chat_id:result.chat_id,message_id:sent.message_id});
+ }catch(error){return res.status(502).json({error:'Telegram rechazó el mensaje de prueba: '+String(error.message||'Error desconocido').slice(0,175),sent:false});}
+});
+
+// FREE picks and VIP previews go ONLY to the FREE channel; never to the discussion group.
 const sendTelegram=sendPredictionToTelegram;
 app.get('/api/admin/predictions',authenticate,async(req,res)=>{
  if(!allowedToPublish(req.admin))return res.status(403).json({error:'Sin permisos'});

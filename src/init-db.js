@@ -203,6 +203,22 @@ export async function initializeDatabase() {
       reserved_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       sent_at DATETIME NULL,
       telegram_message_id BIGINT NULL,
+      chat_id BIGINT NULL,
+      FOREIGN KEY (prediction_id) REFERENCES predictions(id)
+    ) ENGINE=InnoDB`);
+
+    // v3.2.8.2: brief discussion-group announcements; never full predictions.
+    // Unique prediction ID reserves one announcement even across Railway restarts.
+    await connection.query(`CREATE TABLE IF NOT EXISTS telegram_community_announcements (
+      prediction_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+      visibility ENUM('free','vip') NOT NULL,
+      chat_id BIGINT NOT NULL,
+      state ENUM('reserved','sent','failed') NOT NULL DEFAULT 'reserved',
+      reserved_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      sent_at DATETIME NULL,
+      message_id BIGINT NULL,
+      removed_at DATETIME NULL,
+      removal_error VARCHAR(200) NULL,
       FOREIGN KEY (prediction_id) REFERENCES predictions(id)
     ) ENGINE=InnoDB`);
 
@@ -222,6 +238,7 @@ export async function initializeDatabase() {
     ) ENGINE=InnoDB`);
     const [teaserColumns]=await connection.query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='telegram_vip_public_announcements'");
     const teaserExisting=new Set(teaserColumns.map(c=>c.COLUMN_NAME));
+    if(!teaserExisting.has('chat_id'))await connection.query('ALTER TABLE telegram_vip_public_announcements ADD COLUMN chat_id BIGINT NULL');
     if(!teaserExisting.has('removed_at'))await connection.query('ALTER TABLE telegram_vip_public_announcements ADD COLUMN removed_at DATETIME NULL');
     if(!teaserExisting.has('removal_error'))await connection.query('ALTER TABLE telegram_vip_public_announcements ADD COLUMN removal_error VARCHAR(200) NULL');
 

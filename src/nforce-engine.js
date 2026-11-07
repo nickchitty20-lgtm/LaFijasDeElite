@@ -1,3 +1,4 @@
+import {freeTelegramDestination} from './telegram-public.js';
 import {allowedDatasets,fetchOpenFootball,NFORCE_PROVIDER} from './nforce-data.js';
 import {estimateMatch,modelReadiness,makeCandidate,walkForwardBacktest,fulltime,MODEL_VERSION} from './nforce-model.js';
 import {canAutoPublishCandidate} from './football-publication-policy.js';
@@ -211,7 +212,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
    for(const row of rows){
     if(!canAutoPublishCandidate(row)){blocked++;continue;}
     if(!backtestReady||Number(reportLimited(backtestRow.metrics_json)?.by_market?.[reportLimited(row.evidence_json)?.pick?.key]?.evaluated||0)<40){unvalidated++;continue;}
-    const ready=Boolean(process.env.TELEGRAM_BOT_TOKEN&&(row.visibility==='vip'?process.env.TELEGRAM_VIP_CHAT_ID:process.env.TELEGRAM_FREE_CHAT_ID));
+    const ready=Boolean(process.env.TELEGRAM_BOT_TOKEN&&(row.visibility==='vip'?process.env.TELEGRAM_VIP_CHAT_ID:freeTelegramDestination(process.env)));
     if(!ready){missingChannel++;continue;}
     try{const r=await publish(row.id,null,{automatic:true});if(r.published)published++;else if(r.reason==='Límite diario')limited++;}
     catch(e){failed++;lastError=safeError(e);}
@@ -240,7 +241,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
    const retry=importDecision(lastImport,now().getTime());
    res.json({engine:'N-FORCE Football Intelligence',model_version:MODEL_VERSION,configured:true,auto_import:process.env.FOOTBALL_AUTO_IMPORT!=='false',
     auto_scan:process.env.FOOTBALL_AUTO_SCAN==='true',auto_publish:process.env.FOOTBALL_AUTO_PUBLISH==='true'&&process.env.NFORCE_LIVE_RELEASE_ACK==='true',
-    free_public_full:true,telegram_free_ready:!!(process.env.TELEGRAM_BOT_TOKEN&&process.env.TELEGRAM_FREE_CHAT_ID),telegram_vip_ready:!!(process.env.TELEGRAM_BOT_TOKEN&&process.env.TELEGRAM_VIP_CHAT_ID),
+    free_public_full:true,telegram_free_ready:!!(process.env.TELEGRAM_BOT_TOKEN&&freeTelegramDestination(process.env)),telegram_vip_ready:!!(process.env.TELEGRAM_BOT_TOKEN&&process.env.TELEGRAM_VIP_CHAT_ID),
     drafts:Number(stats.drafts||0),published:Number(stats.published||0),won:Number(stats.won||0),lost:Number(stats.lost||0),accuracy:decided?Number((100*stats.won/decided).toFixed(1)):null,
     latest:latest||null,scanning,importing,publishing,last_error:lastError,last_import_report:lastImportReport,last_scan_report:lastScanReport,
     last_publish_report:lastPublishReport,last_scheduler_message:lastSchedulerMessage,scheduled_retry_at:latest?new Date(asUtc(latest.started_at).getTime()+SCAN_INTERVAL_MINUTES*60000).toISOString():null,

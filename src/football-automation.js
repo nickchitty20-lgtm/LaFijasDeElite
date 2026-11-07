@@ -1,3 +1,4 @@
+import {freeTelegramDestination} from './telegram-public.js';
 import {footballApi,utcDate,upcomingFixtures,createAssessment,extractMatchWinnerOdds,kickOffString,DEFAULT_MAX_HOURS,headToHeadParams} from './football-analysis.js';
 import {diagnoseFootball} from './football-diagnostic.js';
 import {pickScanFixtures,canRunManual,MANUAL_SCAN_DAILY_LIMIT} from './football-scan-policy.js';
@@ -297,7 +298,7 @@ export function installFootballAutomation(app,{db,authenticate,request=footballA
     // Free picks likewise require the actual community group.
     const canSend=row.visibility==='vip'?
       !!(process.env.TELEGRAM_BOT_TOKEN&&process.env.TELEGRAM_VIP_CHAT_ID):
-      !!(process.env.TELEGRAM_BOT_TOKEN&&process.env.TELEGRAM_FREE_CHAT_ID);
+      !!(process.env.TELEGRAM_BOT_TOKEN&&freeTelegramDestination(process.env));
     if(!canSend){missingChannel++;continue;}
     try{const r=await publish(row.id,null,{automatic:true});if(r?.published)sent++;else if(r?.reason==='Límite diario alcanzado')dailyLimit++;}
     catch(e){failed++;console.warn('football auto publish error:',safeError(e));}
@@ -327,7 +328,7 @@ export function installFootballAutomation(app,{db,authenticate,request=footballA
    const decided=Number(stats.won||0)+Number(stats.lost||0);
    res.json({configured:!!process.env.FOOTBALL_API_KEY,auto_scan:process.env.FOOTBALL_AUTO_SCAN==='true',
     auto_publish:process.env.FOOTBALL_AUTO_PUBLISH==='true',
-    free_public_full:true,telegram_free_ready:!!(process.env.TELEGRAM_BOT_TOKEN&&process.env.TELEGRAM_FREE_CHAT_ID),telegram_vip_ready:!!(process.env.TELEGRAM_BOT_TOKEN&&process.env.TELEGRAM_VIP_CHAT_ID),
+    free_public_full:true,telegram_free_ready:!!(process.env.TELEGRAM_BOT_TOKEN&&freeTelegramDestination(process.env)),telegram_vip_ready:!!(process.env.TELEGRAM_BOT_TOKEN&&process.env.TELEGRAM_VIP_CHAT_ID),
     drafts:Number(stats.drafts||0),published:Number(stats.published||0),
     won:Number(stats.won||0),lost:Number(stats.lost||0),accuracy:decided?Number((stats.won*100/decided).toFixed(1)):null,
     latest:latest||null,scanning,publishing,last_scan_report:lastScanReport,last_publish_report:lastPublishReport,last_scheduler_message:lastSchedulerMessage,last_error:lastError,last_success:lastSuccess,scheduled_retry_at:process.env.FOOTBALL_AUTO_SCAN==='true'?scanWindow.next_at:null,scheduled_retry_reason:scanWindow.reason,

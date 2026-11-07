@@ -5,8 +5,8 @@ import {installFootballAutomation} from '../src/football-automation.js';
 // End-to-end test of the REAL scan/dispatch coordinator using a simulated
 // provider and DB. No network, private tokens or real Telegram messages.
 test('API simulada → propuestas GRATIS/VIP → publicación automática incluso sin cuota',async()=>{
- const saved=Object.fromEntries(['FOOTBALL_API_KEY','FOOTBALL_AUTO_PUBLISH','TELEGRAM_BOT_TOKEN','TELEGRAM_FREE_CHAT_ID','TELEGRAM_VIP_CHAT_ID'].map(k=>[k,process.env[k]]));
- Object.assign(process.env,{FOOTBALL_API_KEY:'dummy-key',FOOTBALL_AUTO_PUBLISH:'true',TELEGRAM_BOT_TOKEN:'dummy-bot',TELEGRAM_FREE_CHAT_ID:'-100123',TELEGRAM_VIP_CHAT_ID:'-100456'});
+ const saved=Object.fromEntries(['FOOTBALL_API_KEY','FOOTBALL_AUTO_PUBLISH','TELEGRAM_BOT_TOKEN','TELEGRAM_FREE_CHAT_ID','TELEGRAM_FREE_CHANNEL_CHAT_ID','TELEGRAM_VIP_CHAT_ID'].map(k=>[k,process.env[k]]));
+ Object.assign(process.env,{FOOTBALL_API_KEY:'dummy-key',FOOTBALL_AUTO_PUBLISH:'true',TELEGRAM_BOT_TOKEN:'dummy-bot',TELEGRAM_FREE_CHAT_ID:'-100123',TELEGRAM_FREE_CHANNEL_CHAT_ID:'-1001234567',TELEGRAM_VIP_CHAT_ID:'-100456'});
  try{
   const kickoffs=[new Date(Date.now()+2*3600000).toISOString(),new Date(Date.now()+3*3600000).toISOString()];
   const fixtures=kickoffs.map((date,i)=>({fixture:{id:90001+i,date,status:{short:'NS'}},

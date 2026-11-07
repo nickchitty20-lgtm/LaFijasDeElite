@@ -52,14 +52,15 @@ test('elimina mensaje principal y adelanto público por sus IDs registrados',asy
  const db={execute:async(sql,params)=>{
   updated.push(sql);
   if(sql.includes('FROM telegram_prediction_messages'))return [[{id:1,chat_id:-10012,message_id:700}]];
-  if(sql.includes('FROM telegram_vip_public_announcements'))return [[{prediction_id:22,telegram_message_id:701}]];
+  if(sql.includes('FROM telegram_vip_public_announcements'))return [[{prediction_id:22,telegram_message_id:701,chat_id:-10034}]];
+  if(sql.includes('FROM telegram_community_announcements'))return [[{prediction_id:22,message_id:702,chat_id:-10035}]];
   return [{affectedRows:1}];
  }};
  const result=await removePredictionTelegramMessages({db,predictionId:22,telegramApi:async(method,payload)=>{requests.push({method,payload});return true;},env:{TELEGRAM_BOT_TOKEN:'test-token',TELEGRAM_FREE_CHAT_ID:'-10034'}});
- assert.equal(result.removed,2);
+ assert.equal(result.removed,3);
  assert.equal(result.failed,0);
  assert.equal(result.untracked,false);
- assert.deepEqual(requests.map(x=>x.payload.chat_id),['-10012','-10034']);
+ assert.deepEqual(requests.map(x=>x.payload.chat_id),['-10012','-10034','-10035']);
  assert.ok(updated.some(x=>x.includes('SET removed_at=UTC_TIMESTAMP()')));
 });
 
@@ -67,6 +68,7 @@ test('si Telegram falla, se mantiene la retirada web y se informa de error de Te
  const db={execute:async(sql)=>{
   if(sql.includes('FROM telegram_prediction_messages'))return [[{id:1,chat_id:-10012,message_id:700}]];
   if(sql.includes('FROM telegram_vip_public_announcements'))return [[]];
+  if(sql.includes('FROM telegram_community_announcements'))return [[]];
   return [{affectedRows:1}];
  }};
  const result=await removePredictionTelegramMessages({db,predictionId:22,telegramApi:async()=>{throw Error('message is too old');},env:{TELEGRAM_BOT_TOKEN:'test-token',TELEGRAM_FREE_CHAT_ID:'-10034'}});
@@ -79,6 +81,7 @@ test('los mensajes publicados antes de la actualización requieren borrado manua
  const db={execute:async(sql)=>{
   if(sql.includes('FROM telegram_prediction_messages'))return [[]];
   if(sql.includes('FROM telegram_vip_public_announcements'))return [[]];
+  if(sql.includes('FROM telegram_community_announcements'))return [[]];
   return [{affectedRows:1}];
  }};
  const result=await removePredictionTelegramMessages({db,predictionId:22,telegramApi:async()=>true,env:{TELEGRAM_BOT_TOKEN:'test-token',TELEGRAM_FREE_CHAT_ID:'-10034'}});
