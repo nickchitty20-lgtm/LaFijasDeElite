@@ -1,3 +1,23 @@
+# v3.3.1 — Comunidad pública en la portada
+
+- Nuevo bloque visible **Comunidad Fijas de Élite** en la página principal, junto a la tarjeta del canal oficial, con diseño responsive negro y dorado.
+- CTA «💬 Grupo de comunidad» al lado del enlace del canal en la portada; también se conserva el enlace del pie de página.
+- El grupo no se confunde con el canal: canal = fijas GRATIS completas y adelantos VIP; grupo = conversación y avisos cortos. Las selecciones VIP permanecen privadas.
+- El enlace público del grupo se toma de `TELEGRAM_FREE_GROUP_URL` mediante `/api/public/telegram`. La sección y su botón permanecen ocultos si no se configuró una URL permitida (no se crea ningún enlace falso).
+- Sin migración, sin cambios en permisos, publicaciones, pagos, N-FORCE o MySQL. En Railway, verifica `TELEGRAM_FREE_GROUP_URL=https://t.me/tu_grupo_publico`.
+
+# v3.3.0 — Sincronización de horarios y estados prudentes
+
+- Las importaciones detectan horarios que cambian y actualizan en MySQL las propuestas borrador y la fecha de fijas ya publicadas **todavía pendientes**, sin alterar mercado, selección ni resultado. Los pronósticos ya evaluados son inmutables.
+- Si un borrador cambia de hora, queda bloqueado hasta volver a ejecutar **Analizar ahora**, para evitar publicar una predicción calculada con información desactualizada.
+- Nueva herramienta privada del dueño para verificar horarios en **hora de Perú** y marcar `Programado`, `En vivo`, `Pospuesto` o `Cancelado`; toda corrección queda auditada. Se puede quitar la corrección para volver al calendario importado.
+- Los estados públicos y del panel de clientes distinguen `Programado` (sin verificación independiente), `En vivo` (solo por comprobación manual reciente), `Finalizado` (solo con marcador final) y `Estado sin confirmar`. Una confirmación en vivo caduca a los 90 minutos.
+- La conciliación automática sigue exigiendo marcador final; nunca interpreta un inicio vencido como un partido terminado. Partidos pospuestos, cancelados o marcados en vivo no se liquidan como ganados o perdidos.
+- MySQL se fija en UTC para evitar desplazamientos producidos por la zona horaria del servidor; la web muestra siempre America/Lima.
+- Migración **aditiva** de `nforce_matches` sin borrar ni reinicializar la base; se mantienen pagos, cuentas, miembros VIP, Telegram, grupos y listas publicadas. **No hay variables nuevas obligatorias.**
+- **Limitación:** los ficheros deportivos CC0 son estáticos y pueden tardar en reflejar reprogramaciones y finales. No se promete tiempo real sin una fuente autorizada adicional y verificada. Las publicaciones antiguas de Telegram conservarán la hora que mostraban originalmente; la web sí mostrará el horario actualizado.
+- Para casos como Nottingham–Manchester City, verifica externamente la nueva hora, abre su tarjeta en el administrador y confirma el inicio correcto. Reinicia y valida en Railway tras instalar.
+
 # v3.2.9 — Protección de frontend y API (defensa en profundidad)
 
 - Peticiones de escritura desde el navegador con token CSRF HMAC atado a la cookie `HttpOnly`.

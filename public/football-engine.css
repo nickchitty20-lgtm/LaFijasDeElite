@@ -57,3 +57,10 @@
 .football-approval-deadline{padding:10px 12px;border-radius:10px;background:#30221f;border:1px solid #8e5c46;color:#ffd2ac!important;font-weight:650}
 .football-action-inline{width:100%;color:#f1c88b!important;overflow-wrap:anywhere}
 .football-candidate-actions button:disabled{opacity:.58;cursor:not-allowed}
+
+/* 3.3.0 — fixture verification controls in the owner dashboard */
+.football-schedule-tools{margin:12px 0;padding:10px 12px;border:1px solid #756038;border-radius:9px;background:rgba(176,133,52,.06)}
+.football-schedule-tools summary{cursor:pointer;color:#dcb665;font-weight:700}
+.football-schedule-tools p{font-size:.83rem;color:#aaa;margin:8px 0}
+.football-schedule-tools input,.football-schedule-tools select{display:block;width:100%;box-sizing:border-box;max-width:450px;margin:8px 0;color:#eee;background:#101721;border:1px solid #786b56;border-radius:6px;padding:9px}
+.football-schedule-tools button{margin:5px 8px 5px 0}

@@ -24,7 +24,7 @@ async function loadCustomerPicks(){
    const article=document.createElement('article');article.className='customer-pick fe-research-card'+(p.locked?' is-locked':'');
    const h=document.createElement('h4');h.textContent=(p.locked?'🔒 ':'⚽ ')+p.title;article.append(h);
    const meta=document.createElement('p');meta.textContent=`${p.league||'Fútbol'} · ${p.visibility==='vip'?'VIP':'Gratis'}`;article.append(meta);
-   const schedule=window.FijasMatchSchedule?.render(p.match_date,p.locked?null:p.football_details?.match_context);if(schedule)article.append(schedule);
+   const schedule=window.FijasMatchSchedule?.render(p.match_date,p.locked?null:p.football_details?.match_context,{status:p.fixture_status,label:p.fixture_status_label,checked_at:p.fixture_checked_at});if(schedule)article.append(schedule);
    if(p.locked){const desc=document.createElement('p');desc.textContent='🔒 Selección, mercados y análisis ocultos. Necesitas una membresía VIP activa.';article.append(desc);
     const go=document.createElement('a');go.className='vip-unlock';go.href='#request';go.textContent='Desbloquear VIP';article.append(go);
    }else{

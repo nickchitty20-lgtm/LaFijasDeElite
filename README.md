@@ -1,3 +1,32 @@
+# v3.3.1 — Grupo de comunidad visible en la página principal
+
+La portada destaca ahora el **grupo público de Fijas de Élite** mediante un botón en la sección principal y una sección visual de Comunidad con enlaces separados al grupo y al canal oficial. El enlace del grupo se activa solamente si `TELEGRAM_FREE_GROUP_URL` contiene su URL pública real. No basta con `TELEGRAM_FREE_CHAT_ID`: ese ID sirve para que el bot publique avisos, no como enlace para usuarios.
+
+Railway (ejemplo; reemplaza el nombre por el usuario o enlace real de tu grupo):
+```env
+TELEGRAM_FREE_GROUP_URL=https://t.me/TU_GRUPO_PUBLICO
+```
+
+El sistema de publicaciones sigue igual: **fijas GRATIS completas al canal**, **VIP completas al canal privado**, **avisos breves al grupo de comunidad**.
+
+# Fijas de Élite v3.3.0 — Horarios y estados de partidos
+
+**Nuevo en esta versión:** sincronización aditiva de horarios importados con borradores y pronósticos pendientes; correcciones verificadas desde el panel privado; estados deportivos prudentes en las fichas de administración y clientes; ajuste de lectura MySQL a UTC. Mantiene las funciones de seguridad de la v3.2.9 y la estructura de membresías, Telegram y pagos.
+
+## Cómo usar la nueva verificación
+
+1. Despliega todo el ZIP y revisa que `GET /health` muestre `version: 3.3.0`. La inicialización agrega automáticamente las columnas necesarias a `nforce_matches`, sin borrar datos.
+2. En el panel del propietario → **Análisis automático**, pulsa **Importar datos** y después **Analizar ahora** si hay propuestas cambiadas. La importación periódica también actualiza los horarios cuando el fichero los corrige.
+3. Si un horario no coincide con el de la competición, abre **Verificar / corregir horario del partido** en la tarjeta, confirma el inicio en **hora de Perú (UTC−5)** y guarda. Para un partido reprogramado, usa `Programado`; si solo está pospuesto, utiliza `Pospuesto`. El campo `En vivo` se utiliza exclusivamente después de comprobarlo y caduca a los 90 minutos.
+4. Si una propuesta borrador cambia de hora, vuelve a **Analizar ahora** antes de publicarla. Las fijas ya publicadas y pendientes actualizan su hora en web sin cambiar su pronóstico ni su resultado. Los mensajes ya enviados por Telegram no se editan automáticamente.
+5. No marques `Ganada` o `Fallada` solo porque la hora de inicio pasó. Espera el marcador final y el cotejo correspondiente. Ante discrepancias entre calendarios o ausencia de datos, permanece `Estado sin confirmar`.
+
+**Límite técnico:** los archivos CC0 de calendario no son una fuente de estados en vivo. El sistema no puede saber de inmediato de una reprogramación que todavía no figure en ellos. Por ello incluye una corrección auditada como alternativa; no afirmará `En vivo` o `Finalizado` sin verificación. No se añadieron servicios externos con condiciones de atribución pública incompatibles con el diseño solicitado.
+
+**Configuración:** conserva `PUBLIC_BASE_URL`, MySQL, Telegram y `FOOTBALL_AUTO_IMPORT=true`. No hay cambios obligatorios de variables. Pruebas unitarias locales no sustituyen comprobar una migración real en Railway con respaldo de la base de datos.
+
+---
+
 # Fijas de Élite v3.2.9 — Seguridad de frontend + API
 
 El navegador no es una barrera de confianza. Los endpoints siguen verificando el rol y los permisos del servidor. Se añadieron un token anti-CSRF vinculado a cada cookie de sesión, validación estricta de origen y solicitudes JSON, controles de destino de API en JavaScript, límites para rutas privadas y cabeceras CSP/anti-iframe reforzadas. Webhooks firmados PayPal/Telegram conservan sus rutas y verificaciones originales.

@@ -9,17 +9,32 @@ async function loadTelegramCommunity(){
  try{
   const response=await fetch('/api/public/telegram');if(!response.ok)return;
   const links=await response.json();
+  // URLs come from the server-side Telegram allowlist. Never invent a group link.
+  const configuredUrl=value=>{
+   if(typeof value!=='string')return null;
+   try{const u=new URL(value);return u.protocol==='https:'&&u.hostname==='t.me'&&!u.username&&!u.password?value:null;}
+   catch{return null;}
+  };
+  const channel=configuredUrl(links.free_channel_url);
+  const group=configuredUrl(links.free_group_url);
   for(const [id,url] of [
-   ['telegramFreeChannelCta',links.free_channel_url],
-   ['telegramFreeChannelFooter',links.free_channel_url],
-   ['telegramFreeGroupFooter',links.free_group_url]
+   ['telegramFreeChannelCta',channel],
+   ['telegramFreeChannelFooter',channel],
+   ['telegramCommunityChannelLink',channel],
+   ['telegramFreeGroupCta',group],
+   ['telegramFreeGroupFooter',group],
+   ['telegramCommunityGroupLink',group]
   ]){
    const anchor=el(id);
-   if(anchor && typeof url==='string' && /^https:\/\/t\.me\//i.test(url)){
-    anchor.href=url;anchor.hidden=false;
-   }
+   if(anchor&&url){anchor.href=url;anchor.hidden=false;}
   }
- }catch{/* Telegram links are optional. */}
+  // Only show the featured community section when its public group URL is configured.
+  if(group){
+   const section=el('comunidad');if(section)section.hidden=false;
+   const groupCard=el('telegramCommunityGroupCard');if(groupCard)groupCard.hidden=false;
+   const channelCard=el('telegramCommunityChannelCard');if(channelCard&&channel)channelCard.hidden=false;
+  }
+ }catch{/* Optional Telegram links must never break the landing page. */}
 }
 el('year').textContent=new Date().getFullYear();loadPlans();loadPicks();loadTelegramCommunity();
 
