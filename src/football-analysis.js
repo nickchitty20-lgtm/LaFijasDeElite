@@ -96,7 +96,7 @@ export function createAssessment(fixture,predictionResponse,{h2h=[],injuries=[],
  if(!visibility)return null;
  const selection=pick.outcome==='home'?home:pick.outcome==='away'?away:'Empate';
  const lines=[
-  `Fuente: API-Football. Partido: ${home} vs ${away}; ${league}, ${kickoff.toISOString()}.`,
+  `Datos deportivos de terceros. Partido: ${home} vs ${away}; ${league}, ${kickoff.toISOString()}.`,
   `Mercado analizado: resultado final (1X2). Selección: ${selection}.`,
   `Probabilidades ESTIMADAS por el proveedor (no calibradas ni garantizadas): local ${fmt(pick.percent.home)}, empate ${fmt(pick.percent.draw)}, visitante ${fmt(pick.percent.away)}. Diferencia con la segunda opción: ${fmt(pick.margin)}.`,
  ];

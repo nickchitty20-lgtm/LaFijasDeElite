@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import {publicAnalysisText} from './public-branding.js';
 import {telegramMatchSchedule} from './match-schedule.js';
 import {recordPredictionTelegramMessage} from './prediction-removal.js';
 
@@ -17,7 +18,7 @@ export function telegramFreeAutoPost(p){
  const n=Number(p.estimated_probability);
  const verified=p.estimated_probability!=null && Number.isFinite(n)&&n>=0&&n<=100;
  const confidence=verified?`\n📈 Probabilidad estimada: ${n.toFixed(1)}% (NO es porcentaje de aciertos real).`:'';
- return `⚽ <b>FIJAS DE ÉLITE · COMUNIDAD · GRATIS</b>\n<b>${h(p.title)}</b>\n🏆 ${h(p.league)}${h(telegramMatchSchedule(p.match_date))}\n🎯 ${h(p.market)}: <b>${h(p.selection)}</b>${confidence}\n⚠️ <b>RIESGO ALTO · NO ES UNA FIJA SEGURA</b>\n\n${h(String(p.analysis||'').slice(0,1400))}\n\nEstimación estadística no calibrada, no garantía de acierto. No apuestes dinero que no puedas perder.`;
+ return `⚽ <b>FIJAS DE ÉLITE · COMUNIDAD · GRATIS</b>\n<b>${h(p.title)}</b>\n🏆 ${h(p.league)}${h(telegramMatchSchedule(p.match_date))}\n🎯 ${h(p.market)}: <b>${h(p.selection)}</b>${confidence}\n⚠️ <b>RIESGO ALTO · NO ES UNA FIJA SEGURA</b>\n\n${h(publicAnalysisText(p.analysis).slice(0,1400))}\n\nEstimación estadística no calibrada, no garantía de acierto. No apuestes dinero que no puedas perder.`;
 }
 export function telegramGoalsSummary(p){
  const f=p?.football_details;
@@ -53,7 +54,7 @@ export function telegramMatchContext(p){
  return (c.round?'\n🏆 Jornada: '+h(c.round):'')+(c.venue?'\n🏟 Estadio: '+h(c.venue):'')+(c.city?' · '+h(c.city):'');
 }
 export function telegramVipPost(p){
- return `♛ <b>FIJAS DE ÉLITE · VIP</b>\n<b>${h(p.title)}</b>\n🏆 ${h(p.league)}${h(telegramMatchSchedule(p.match_date))}\n🎯 <b>${h(p.market)}:</b> ${h(p.selection)}\n📊 Cuota: ${p.odds!=null && Number.isFinite(Number(p.odds))?Number(p.odds).toFixed(2):'No disponible (sin cuota verificada)'}${telegramMatchContext(p)}${telegramGoalsSummary(p)}${telegramAdvancedSummary(p)}\n\n<b>Análisis y riesgos:</b>\n${h(String(p.analysis||'').slice(0,2300))}\n\nInformación deportiva, no una garantía de resultado.`;
+ return `♛ <b>FIJAS DE ÉLITE · VIP</b>\n<b>${h(p.title)}</b>\n🏆 ${h(p.league)}${h(telegramMatchSchedule(p.match_date))}\n🎯 <b>${h(p.market)}:</b> ${h(p.selection)}\n📊 Cuota: ${p.odds!=null && Number.isFinite(Number(p.odds))?Number(p.odds).toFixed(2):'No disponible (sin cuota verificada)'}${telegramMatchContext(p)}${telegramGoalsSummary(p)}${telegramAdvancedSummary(p)}\n\n<b>Análisis y riesgos:</b>\n${h(publicAnalysisText(p.analysis).slice(0,2300))}\n\nInformación deportiva, no una garantía de resultado.`;
 }
 export async function telegramApi(method,payload={},env=process.env){
  if(!env.TELEGRAM_BOT_TOKEN)throw Error('Bot de Telegram no configurado');

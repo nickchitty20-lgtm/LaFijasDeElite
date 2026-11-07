@@ -36,13 +36,13 @@ function quickSplit(title,v,variant){
  return `<article class="spotlight-card ${variant}"><div class="spotlight-card-head"><span>${variant==='vip'?'♛':'⚽'} ${clean(title)}</span><small>HISTORIAL REGISTRADO</small></div>
  <strong class="spotlight-rate">${clean(perfPercent(v?.accuracy))}</strong><span class="spotlight-label">Aciertos sobre ${perfNumber(decided)} pronósticos decididos</span>
  <div class="spotlight-counts"><span>Ganadas <b>${perfNumber(v?.won)}</b></span><span>Perdidas <b>${perfNumber(v?.lost)}</b></span><span>Anuladas <b>${perfNumber(v?.void)}</b></span></div>
- <p>Resultados cotejados con fuente externa: ${perfNumber(v?.source_checked)} · Registros manuales: ${perfNumber(v?.manual_checked)}.</p></article>`;
+ <p>Cotejos automáticos: ${perfNumber(v?.source_checked)} · Registros manuales: ${perfNumber(v?.manual_checked)}.</p></article>`;
 }
 async function loadQuickPerformance(){
  const target=el('performanceQuickCards');if(!target)return;
  try{const r=await fetch('/api/public/performance?period=all&visibility=all',{headers:{Accept:'application/json'}});if(!r.ok)throw Error();
   const d=await r.json();target.innerHTML=quickSplit('VIP',d.by_visibility?.vip,'vip')+quickSplit('Gratis',d.by_visibility?.free,'free');
-  el('performanceQuickSource').textContent='Historial real de MySQL · La fuente OpenFootball es comunitaria, no oficial; los registros manuales no son independientes.';
+  el('performanceQuickSummary').textContent='Ganadas, perdidas y anuladas del historial publicado · Consulta cómo calculamos los resultados.';
  }catch{target.innerHTML='<p class="performance-empty">Todavía no fue posible cargar el historial. Consulta la sección Resultados.</p>';}
 }
 loadQuickPerformance();
@@ -74,10 +74,10 @@ async function loadPublicPerformance(){
    const [label,style]=performanceStatus[p.outcome]||['Pendiente','pending'];
    const date=p.match_date?new Date(p.match_date):null;
    const dateText=date&&Number.isFinite(date.getTime())?new Intl.DateTimeFormat('es-PE',{day:'2-digit',month:'short',year:'numeric',timeZone:'America/Lima'}).format(date):'Fecha no registrada';
-   return `<div class="performance-result"><span class="performance-result-match"><strong>${clean(p.title)}</strong><small>#${clean(p.id)} · ${clean(p.league||'Fútbol')} · ${p.visibility==='vip'?'VIP':'GRATIS'} · ${clean(dateText)}${p.withdrawn?' · Retirado':''}${p.score?' · Marcador '+clean(p.score):''} · ${p.result_source==='openfootball'?'Cotejado con OpenFootball':p.result_source==='manual'?'Registrado manualmente':'Registro anterior'}</small></span><span class="performance-tag ${style}">${label}</span></div>`;
+   return `<div class="performance-result"><span class="performance-result-match"><strong>${clean(p.title)}</strong><small>#${clean(p.id)} · ${clean(p.league||'Fútbol')} · ${p.visibility==='vip'?'VIP':'GRATIS'} · ${clean(dateText)}${p.withdrawn?' · Retirado':''}${p.score?' · Marcador '+clean(p.score):''} · ${p.result_source==='automatic'?'Cotejo automático':p.result_source==='manual'?'Registro manual':'Registro anterior'}</small></span><span class="performance-tag ${style}">${label}</span></div>`;
   }).join('');
   const withdrawn=Number(v.archived||0);
-  el('performanceNote').textContent=`Datos calculados desde los pronósticos publicados en MySQL. ${withdrawn?`Se incluyen ${withdrawn} pronóstico(s) retirado(s). `:''}Cotejados automáticamente con OpenFootball CC0: ${perfNumber(v.source_checked)}; registrados manualmente: ${perfNumber(v.manual_checked)}. OpenFootball no es una fuente oficial; los resultados anteriores pueden carecer de procedencia registrada. Tasa = ganados ÷ (ganados + perdidos); no incluye pendientes ni anulados. Los aciertos pasados no garantizan los próximos.`;
+  el('performanceNote').textContent=`Resultados registrados: ${perfNumber(v.source_checked)} cotejos automáticos y ${perfNumber(v.manual_checked)} registros manuales. ${withdrawn?`Se incluyen ${withdrawn} pronóstico(s) retirado(s). `:''}La tasa de acierto considera ganadas y perdidas, sin pendientes ni anuladas. Los resultados anteriores no garantizan futuros aciertos.`;
   el('performanceUpdated').textContent='Actualizado: '+new Intl.DateTimeFormat('es-PE',{dateStyle:'short',timeStyle:'short',timeZone:'America/Lima'}).format(new Date(data.generated_at));
  }catch(e){summary.innerHTML='<p class="performance-empty">Las estadísticas no están disponibles en este momento.</p>';breakdown.replaceChildren();history.innerHTML='<p class="performance-empty">Vuelve a intentar más tarde.</p>';el('performanceUpdated').textContent='Sin conexión';}
 }

@@ -1,4 +1,12 @@
-# Fijas de Élite v3.2.3 — Resultados automáticos + portada VIP vs. Gratis
+## v3.2.5 — Identidad pública N-FORCE, sin nombres de proveedores externos
+
+En la web y Telegram se emplea la marca Fijas de Élite / N-FORCE. El visitante ve diferencias entre cotejos automáticos y registros manuales, así como una explicación honesta de que los datos automáticos proceden de registros de terceros no oficiales, con posibles retrasos. No se borran derrotas ni se alteran cifras. La identificación de OpenFootball CC0 y API-Football se conserva únicamente en código, auditoría y documentación técnica, que deben permanecer accesibles para fines de licencias, mantenimiento y revisión.
+
+## Novedades v3.2.5 — lenguaje público más sencillo
+
+La portada mantiene la comparación VIP/Gratis, las victorias y las derrotas reales. Elimina del resumen principal los textos técnicos extensos sobre el origen de los marcadores; conserva una metodología desplegable con identificación de OpenFootball CC0 (comunitario, no oficial) y de las entradas manuales del equipo. No oculta derrotas, no altera resultados ni genera cifras de muestra en público. No requiere migraciones ni variables nuevas.
+
+# Fijas de Élite v3.2.5 — Resultados automáticos + portada VIP vs. Gratis
 
 - Portada: comparación VIP/Gratis prominente directamente después de la sección principal, con ganadas, perdidas, anuladas y tasa real, derivadas de MySQL. Los números DEMO permanecen **exclusivamente** en administración.
 - N-FORCE coteja cada 15 minutos los pronósticos pendientes vinculados por ID a `nforce_matches` con **marcador FT reportado por OpenFootball (CC0)** ya importado. La importación externa se ejecuta aprox. cada 2 horas si `FOOTBALL_AUTO_IMPORT=true`. No usa API-Football.
@@ -9,13 +17,13 @@
 - En Administración → Análisis automático, después de **Importar datos CC0**, pulsa **Verificar resultados finales** para adelantar el cotejo, o déjalo al programador.
 - Migración aditiva automática: `predictions.settlement_source`, `settlement_score`, `settled_at`. No borra cuentas, pagos, membresías ni Telegram.
 
-**Despliegue:** sube el ZIP a GitHub, espera Railway Success, comprueba `/health` en versión `3.2.3`. Conserva `FOOTBALL_ENGINE_MODE=own` y `FOOTBALL_AUTO_IMPORT=true`. El cotejo funciona incluso con `FOOTBALL_AUTO_PUBLISH=false`. Si la fuente no informa el resultado FT, el partido seguirá pendiente.
+**Despliegue:** sube el ZIP a GitHub, espera Railway Success, comprueba `/health` en versión `3.2.5`. Conserva `FOOTBALL_ENGINE_MODE=own` y `FOOTBALL_AUTO_IMPORT=true`. El cotejo funciona incluso con `FOOTBALL_AUTO_PUBLISH=false`. Si la fuente no informa el resultado FT, el partido seguirá pendiente.
 
 **Verificación:** `npm test`. Las pruebas simulan datos; el despliegue real con OpenFootball/Telegram/Railway requiere comprobarse aparte.
 
 ---
 
-# Fijas de Élite v3.2.3 — Comparación clara VIP vs Gratis
+# Fijas de Élite v3.2.5 — Comparación clara VIP vs Gratis
 
 - **En la portada (real):** sección «Pronósticos VIP vs. Gratis» con tarjetas lado a lado. Cada una muestra ganadas, perdidas, anuladas, pendientes y tasa de acierto con su denominador. Las cifras proceden del endpoint público existente, calculado desde MySQL, sin inventar estadísticas.
 - **Filtros:** «Gratis + VIP» presenta ambas tarjetas; al elegir una categoría, se ve la tarjeta correspondiente. El período elegido se aplica consistentemente.
@@ -23,11 +31,11 @@
 - **Panel del dueño, vista DEMO:** comparación **exclusivamente ficticia** de VIP 8 ganadas/1 perdida (88,9 %) frente a Gratis 4 ganadas/2 perdidas (66,7 %); totales ficticios 12/3, tal como antes. El rótulo DEMO es permanente, esos datos **no** se escriben en MySQL y no se envían a Telegram.
 - **Transparencia:** la web no presupone que VIP acierte más que Gratis. El rendimiento se calcula con los registros tal como están, incluidos los pronósticos retirados, y no constituye verificación independiente de marcadores.
 - Sin cambios de credenciales, variables de entorno, tablas, motor de pronósticos, pagos o permisos.
-- `GET /health` devuelve `3.2.3`.
+- `GET /health` devuelve `3.2.5`.
 
 ## Instalación
 
-Sube el ZIP completo a GitHub, o usa solo el ZIP de archivos modificados si tu última versión es la **v3.2.1**. Deja Railway desplegar y verifica `GET /health` → `3.2.3`. Abre la sección **Resultados** de la portada y comprueba **VIP vs. Gratis**. Ingresa como dueño para ver **Estadísticas DEMO**.
+Sube el ZIP completo a GitHub, o usa solo el ZIP de archivos modificados si tu última versión es la **v3.2.1**. Deja Railway desplegar y verifica `GET /health` → `3.2.5`. Abre la sección **Resultados** de la portada y comprueba **VIP vs. Gratis**. Ingresa como dueño para ver **Estadísticas DEMO**.
 
 ## Validación
 

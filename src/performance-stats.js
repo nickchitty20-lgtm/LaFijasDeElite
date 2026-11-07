@@ -57,7 +57,7 @@ export function publicRecentResults(rows=[]){
   id:String(r.id),title:String(r.title||'Partido'),league:String(r.league||'Fútbol'),
   visibility:r.visibility,outcome:r.outcome,match_date:r.match_date||null,
   withdrawn:Boolean(r.archived_at),
-  result_source:r.settlement_source==='nforce-openfootball'?'openfootball':r.settlement_source==='manual'?'manual':'legacy',
+  result_source:r.settlement_source==='nforce-openfootball'?'automatic':r.settlement_source==='manual'?'manual':'legacy',
   score:r.settlement_source==='nforce-openfootball'&&/^\d{1,2}-\d{1,2}$/.test(String(r.settlement_score||''))?String(r.settlement_score):null
  }));
 }

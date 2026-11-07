@@ -72,7 +72,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     [status,sources,imported,scheduled,completed,JSON.stringify(errors).slice(0,3900),id]);
    lastImportReport={ok:sources>0,status,sources,records:imported,scheduled,completed,failed_sources:errors.length,errors:errors.slice(0,5),
     warning:errors.length?'Importación parcial: verifica las fuentes que fallaron.':'Los archivos pueden contener calendarios desactualizados; verifica horarios antes de apostar.'};
-   if(!sources)lastError='Fallaron todas las fuentes OpenFootball';
+   if(!sources)lastError='Fallaron las consultas de resultados deportivos';
    return lastImportReport;
   });}finally{importing=false;}
  }
@@ -273,7 +273,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
    const eligible=future.filter(m=>estimateMatch(m,usable,Date.parse(m.kickoff)));
    res.json({ok:true,api_connected:true,fixture_total:all.length,fixtures_in_window:future.length,examined:eligible.length,
     reason:future.length?`Partidos futuros con análisis estadístico: ${eligible.length} / ${future.length}. Sin resultados suficientes, no hay pronósticos.`:
-      'Sin partidos futuros con hora conocida: importa datos y verifica si la fuente mantiene actualizado el calendario.',source:'OpenFootball JSON (CC0) · solo datos guardados en MySQL, sin API-Football'});
+      'Sin partidos futuros con hora conocida: importa datos y verifica si la fuente mantiene actualizado el calendario.',source:'Resultados históricos almacenados en MySQL; motor estadístico propio'});
   }catch(e){res.status(500).json({error:safeError(e)});}
  });
  app.post(api('scan'),authenticate,async(req,res)=>{

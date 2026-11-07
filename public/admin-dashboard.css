@@ -182,7 +182,7 @@
 @media(max-width:1150px){.fe-demo-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:560px){.fe-demo-grid{gap:8px}.fe-demo-tile{padding:13px}.fe-demo-results>div{align-items:flex-start;flex-direction:column}.fe-demo-tag{white-space:normal}}
 
-/* v3.2.3 — clearly labeled SIMULATED category comparison, owner-only */
+/* v3.2.5 — clearly labeled SIMULATED category comparison, owner-only */
 .fe-demo-comparison-intro,.fe-demo-comparison-note{font-size:12px;line-height:1.65;color:#b9c6d2;margin:0}
 .fe-demo-comparison{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}
 .fe-demo-category{min-width:0;background:#1e2935;border:1px solid #59646f;border-radius:14px;padding:19px;display:grid;gap:15px}

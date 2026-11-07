@@ -71,5 +71,10 @@ test('página principal muestra estadísticas sin valores de muestra',()=>{
  assert.match(home,/id="performancePeriod"/);
  assert.match(home,/id="performanceVisibility"/);
  assert.match(landing,/fetch\(`\/api\/public\/performance/);
- assert.match(home,/OpenFootball CC0, una fuente comunitaria no oficial/);
+ assert.match(home,/id="performanceQuickSummary"/);
+ assert.match(home,/class="performance-method"/);
+ assert.doesNotMatch(home,/Fuente indicada al consultar el historial/);
+ assert.match(landing,/Cotejos automáticos/);
+ assert.match(landing,/Registro manual/);
+ assert.match(home,/registros deportivos públicos de terceros, no oficiales/);
 });

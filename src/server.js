@@ -25,10 +25,11 @@ import {installNotificationCenter,enqueueVipActivation,enqueuePredictionEvent} f
 import {installFootballAutomation} from './football-automation.js';
 import {installNforceEngine} from './nforce-engine.js';
 import {publishedFootballDetails} from './football-report.js';
+import {publicAnalysisText} from './public-branding.js';
 import {publicPerformanceFilters,performanceWhere,summaryFromGroups,publicRecentResults} from './performance-stats.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
-const APP_VERSION = '3.2.3';
+const APP_VERSION = '3.2.5';
 const app = express();
 let telegramVipControl=null;
 let notificationControl=null;
@@ -343,7 +344,7 @@ app.get('/api/public/performance',publicPerformanceLimit,async(req,res)=>{
     AND (p.match_date IS NULL OR p.match_date<=UTC_TIMESTAMP())
    ORDER BY COALESCE(p.match_date,p.published_at) DESC,p.id DESC LIMIT 15`,where.params);
   res.set('Cache-Control','public, max-age=60').json({filters,...summaryFromGroups(groups),recent:publicRecentResults(recent),
-   methodology:{source:'Resultados registrados manualmente o cotejados automáticamente con OpenFootball CC0 (fuente comunitaria, no oficial)',
+   methodology:{source:'Resultados ingresados manualmente o cotejados con registros deportivos de terceros (no oficiales, sujetos a retrasos y errores)',
     denominator:'Aciertos / (aciertos + fallos); anulados y pendientes no se incluyen',
     includes_withdrawn:true,not_predictions:'Esta tasa histórica no predice aciertos futuros'},
    generated_at:new Date().toISOString()});
@@ -441,7 +442,7 @@ app.get('/api/customers/predictions',customerAuth,async(req,res)=>{
    // Important: NEVER return stored analysis, probabilities, or goal market info for locked VIP.
    if(p.visibility==='vip'&&!vip)return {id:p.id,title:p.title,league:p.league,match_date:p.match_date,visibility:'vip',locked:true};
    const {football_evidence,...visible}=p;
-   return {...visible,locked:false,football_details:publishedFootballDetails(football_evidence)};
+   return {...visible,analysis:publicAnalysisText(visible.analysis),locked:false,football_details:publishedFootballDetails(football_evidence)};
   })});
  }catch(e){console.error('customer predictions',e.code||e.message);res.status(500).json({error:'No se pudieron cargar los pronósticos'});}
 });

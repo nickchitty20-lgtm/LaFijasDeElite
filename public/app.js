@@ -539,9 +539,9 @@ async function loadFootballEngine(){
    const button=$(id);if(button)button.hidden=!status.engine;
   }
   const stats=[
-   ['Fuente de datos',status.engine|| (status.configured?'API-Football':'Sin API key')],
+   ['Motor de análisis',status.engine?'N-FORCE Football Intelligence':(status.configured?'Motor clásico':'Sin configurar')],
    ...(status.engine?[['Cotejo automático de resultados',status.settlement?.working?'Comprobando…':status.settlement?.last?`${status.settlement.last.settled} actualizados · ${status.settlement.last.won} ganados · ${status.settlement.last.lost} perdidos · ${status.settlement.last.void} anulados`:'Pendiente del siguiente control'],['Sin cotejar: sin FT / mercado desconocido',status.settlement?.last?`${status.settlement.last.invalid_source} / ${status.settlement.last.unsupported}`:'—']]:[]),
-   ...(status.engine?[['Partidos importados',status.total_matches||0],['Resultados históricos',status.complete_matches||0],['Última importación',status.source_import?`${status.source_import.status} · ${status.source_import.sources} fuentes · ${status.source_import.records} registros`:'Pendiente'],['Backtesting',status.backtest?`${status.backtest.evaluated} evaluados · ${status.backtest.accuracy??'—'}% precisión observada${status.backtest.validated?'':' (muestra insuficiente, antigua o de otra versión)'}`:'Aún sin validar'],
+   ...(status.engine?[['Partidos importados',status.total_matches||0],['Resultados históricos',status.complete_matches||0],['Última importación',status.source_import?`${status.source_import.status} · ${status.source_import.sources} registros de competición · ${status.source_import.records} registros`:'Pendiente'],['Backtesting',status.backtest?`${status.backtest.evaluated} evaluados · ${status.backtest.accuracy??'—'}% precisión observada${status.backtest.validated?'':' (muestra insuficiente, antigua o de otra versión)'}`:'Aún sin validar'],
    ['Resultados retrospectivos gratis / VIP',status.backtest?.segments?`Gratis: ${status.backtest.segments.free?.evaluated||0} pruebas · ${status.backtest.segments.free?.accuracy??'—'}% | VIP: ${status.backtest.segments.vip?.evaluated||0} pruebas · ${status.backtest.segments.vip?.accuracy??'—'}%`:'Pendiente de backtest v1.1']]:[]),
    ['Búsqueda automática',status.auto_scan?'Activada':'Desactivada'],
    ['Publicación automática',status.auto_publish?'Activada':'Solo revisión'],
@@ -572,8 +572,8 @@ async function loadFootballEngine(){
    `Puedes iniciar un análisis ahora. Quedan ${status.manual_scan.remaining} escaneos manuales hoy (UTC).`:
    (status.manual_scan?.reason||'Análisis en ejecución.');
   if(!status.configured)message.textContent='⚠️ Falta FOOTBALL_API_KEY en Railway.';
-  else if(status.engine && !status.total_matches)message.textContent='⬇️ Importa primero los resultados CC0 con «Importar datos».';
-  else if(!status.auto_scan||!status.auto_publish)message.textContent=status.engine?'⚠️ Para anunciar automáticamente, activa FOOTBALL_AUTO_SCAN=true, FOOTBALL_AUTO_PUBLISH=true y NFORCE_LIVE_RELEASE_ACK=true tras verificar fuentes y backtesting.':'⚠️ Para anunciar automáticamente, activa FOOTBALL_AUTO_SCAN=true y FOOTBALL_AUTO_PUBLISH=true en Railway.';
+  else if(status.engine && !status.total_matches)message.textContent='⬇️ Importa primero los resultados deportivos con «Importar datos».';
+  else if(!status.auto_scan||!status.auto_publish)message.textContent=status.engine?'⚠️ Para anunciar automáticamente, activa FOOTBALL_AUTO_SCAN=true, FOOTBALL_AUTO_PUBLISH=true y NFORCE_LIVE_RELEASE_ACK=true tras revisar el historial y el backtesting.':'⚠️ Para anunciar automáticamente, activa FOOTBALL_AUTO_SCAN=true y FOOTBALL_AUTO_PUBLISH=true en Railway.';
   else if(!status.telegram_free_ready||!status.telegram_vip_ready)message.textContent='⚠️ Revisa el token del bot y los IDs de los canales de Telegram.';
   else if(status.last_error)message.textContent='⚠️ Último error del motor: '+status.last_error;
   else if(status.latest?.status==='failed')message.textContent='⚠️ Último escaneo fallido: '+(status.latest.error_message||'Revisa los logs de Railway');
@@ -710,7 +710,7 @@ $('footballReloadButton')?.addEventListener('click',loadFootballEngine);
 // N-FORCE: controls are shown only when the local engine answers these routes.
 $('footballImportButton')?.addEventListener('click',async()=>{
  const button=$('footballImportButton'),label=$('footballImportResult');button.disabled=true;
- label.textContent='Importando resultados y calendarios CC0 desde OpenFootball…';
+ label.textContent='Importando resultados y calendarios deportivos…';
  try{const r=await api('/api/admin/football/import',{method:'POST',body:'{}'});label.textContent=r.message||'Importación iniciada. Actualiza el estado.';
   setTimeout(loadFootballEngine,15000);
  }catch(e){label.textContent=e.message;}finally{button.disabled=false;}
@@ -728,7 +728,7 @@ $('footballBacktestButton')?.addEventListener('click',async()=>{
 $('footballSettleButton')?.addEventListener('click',async()=>{
  const button=$('footballSettleButton'),label=$('footballSettleResult');button.disabled=true;label.textContent='Comparando pronósticos pendientes con marcadores finales importados…';
  try{const r=await api('/api/admin/football/settle',{method:'POST',body:'{}'});
-  label.textContent=r.busy?'Ya hay una comprobación en curso.':`Comprobados: ${r.reviewed} · Actualizados: ${r.settled} · Ganadas: ${r.won} · Perdidas: ${r.lost} · Anuladas: ${r.void} · Sin fuente fresca: ${r.invalid_source} · Mercado no reconocible: ${r.unsupported}.`;
+  label.textContent=r.busy?'Ya hay una comprobación en curso.':`Comprobados: ${r.reviewed} · Actualizados: ${r.settled} · Ganadas: ${r.won} · Perdidas: ${r.lost} · Anuladas: ${r.void} · Sin marcador reciente verificable: ${r.invalid_source} · Mercado no reconocible: ${r.unsupported}.`;
   await loadFootballEngine();await loadPredictions();
  }catch(e){label.textContent=e.message;}finally{button.disabled=false;}
 });

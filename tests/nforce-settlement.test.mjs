@@ -83,6 +83,6 @@ test('comparativa en primera pantalla y etiquetas de origen sin revelar cuotas V
  const s=summaryFromGroups([{visibility:'vip',total:1,won:1,lost:0,void:0,source_checked:1,manual_checked:0}]);
  assert.equal(s.by_visibility.vip.source_checked,1);
  const recent=publicRecentResults([{id:4,visibility:'vip',outcome:'won',title:'Arsenal vs Chelsea',settlement_source:'nforce-openfootball',settlement_score:'3-0',market:'1X2',selection:'Chelsea',analysis:'privada',odds:20}]);
- assert.equal(recent[0].score,'3-0');assert.equal(recent[0].result_source,'openfootball');
+ assert.equal(recent[0].score,'3-0');assert.equal(recent[0].result_source,'automatic');
  assert.ok(!('selection' in recent[0]));assert.ok(!('odds' in recent[0]));assert.ok(!('analysis' in recent[0]));
 });

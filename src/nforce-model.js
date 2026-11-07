@@ -133,8 +133,8 @@ export function makeCandidate(match,model){
  if(!visibility)return null;
  const label=model.selected==='home'?match.home:model.selected==='away'?match.away:'Empate';
  const fmt=n=>`${Number(n).toFixed(1)}%`;
- const analysis=[`N-FORCE Football Intelligence · Modelo ${MODEL_VERSION} (Poisson regularizado con corrección de marcadores bajos). Fuente: OpenFootball CC0.`,
- `Partido: ${match.home} vs ${match.away}; ${match.league}; ${match.kickoff} UTC. Verifica el horario oficial: la fuente puede estar desactualizada.`,
+ const analysis=[`N-FORCE Football Intelligence · Modelo ${MODEL_VERSION} (Poisson regularizado con corrección de marcadores bajos). Datos deportivos históricos de terceros.`,
+ `Partido: ${match.home} vs ${match.away}; ${match.league}; ${match.kickoff} UTC. Comprueba el horario del encuentro: los datos pueden estar desactualizados.`,
  `1X2 · Selección: ${label}. Probabilidades estimadas SIN CALIBRAR: local ${fmt(model.probabilities.home)}, empate ${fmt(model.probabilities.draw)}, visitante ${fmt(model.probabilities.away)}. Ventaja respecto al segundo escenario: ${fmt(model.margin)}.`,
  `Goles medios proyectados: ${match.home} ${model.lambda.home}, ${match.away} ${model.lambda.away}. Más de 1.5: ${fmt(model.totals.over15)}, más de 2.5: ${fmt(model.totals.over25)}, menos de 2.5: ${fmt(model.totals.under25??100-model.totals.over25)}, más de 3.5: ${fmt(model.totals.over35)}, ambos marcan: ${fmt(model.totals.btts)}.`,
  `Marcador orientativo: ${model.score} (${fmt(model.score_probability)} del modelo, no es una apuesta segura).`,

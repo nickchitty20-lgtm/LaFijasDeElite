@@ -22,7 +22,7 @@ export function publishedFootballDetails(raw){
    provider_1x2:{home:numeric(p.home,0,100),draw:numeric(p.draw,0,100),away:numeric(p.away,0,100)},
    probability_source:'Modelo N-FORCE propio (sin calibración verificada)',
    match_context:Object.fromEntries(['country','round','venue','city'].map(k=>[k,typeof data.match_context?.[k]==='string'?data.match_context[k].slice(0,130):'']).filter(x=>x[1])),
-   advanced:null,source:'OpenFootball CC0 + modelo estadístico N-FORCE',
+   advanced:null,source:'Datos históricos públicos de terceros y modelo estadístico N-FORCE',
    disclaimer:'Probabilidades Poisson NO calibradas; sin cuotas verificadas, lesiones ni alineaciones. Confirma horario y resultados con una fuente oficial.'};
  }
  const g=data.goals;
@@ -38,7 +38,7 @@ export function publishedFootballDetails(raw){
   provider_1x2:{home:numeric(data.percent?.home,0,100),draw:numeric(data.percent?.draw,0,100),away:numeric(data.percent?.away,0,100)},
   match_context:Object.fromEntries(['country','round','venue','city'].map(k=>[k,typeof data.match_context?.[k]==='string'?data.match_context[k].slice(0,130):'']).filter(x=>x[1])),
   advanced:advancedReportForPublic(data.advanced),
-  source:'API-Football; estadísticas H2H solo cuando hay datos',
+  source:'Datos deportivos de terceros; estadísticas H2H solo cuando hay datos',
   disclaimer:'Estimaciones orientativas. El historial es una muestra pequeña; no hay porcentajes garantizados ni cuota confirmada para mercados de goles.'
  };
  if(!summary.estimated_score)summary.estimated_margin=null;
