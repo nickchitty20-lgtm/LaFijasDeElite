@@ -24,11 +24,14 @@ test('goles over/under 2.5 y asiáticos enteros; no apuesta diferente de la publ
  assert.equal(pick({market:'Goles local',selection:'Más de 1.5'}),null);
  assert.equal(pick({market:'Total goles',selection:'2.5'}),null);
 });
-test('BTTS sí/no; mercados ambiguos permanecen pendientes',()=>{
+test('BTTS sí/no y doble oportunidad; mercados ambiguos quedan pendientes',()=>{
  assert.equal(pick({market:'Ambos marcan',selection:'Sí'}).outcome,'won');
  assert.equal(pick({market:'Ambos marcan',selection:'No'}).outcome,'lost');
  assert.equal(pick({market:'BTTS',selection:'No',homeGoals:3,awayGoals:0}).outcome,'won');
- assert.equal(pick({market:'Doble oportunidad',selection:'1X'}),null);
+ assert.equal(pick({market:'Doble oportunidad',selection:'1X'}).outcome,'won');
+ assert.equal(pick({market:'Doble oportunidad',selection:'X2',homeGoals:3,awayGoals:1}).outcome,'lost');
+ assert.equal(pick({market:'Doble oportunidad',selection:'12',homeGoals:1,awayGoals:1}).outcome,'lost');
+ assert.equal(pick({market:'Doble oportunidad',selection:'A1'}),null);
  assert.equal(pick({market:'Resultado exacto',selection:'3-1'}),null);
 });
 const instant=new Date('2026-11-06T21:00:00Z');
@@ -69,10 +72,10 @@ test('cotejo: transacción, auditoría, fuentes y no sobrescribir admin ni reeje
  const db={getConnection:async()=>connection};
  const worker=createNforceSettlement({db,now:()=>instant});
  const first=await worker.run();
- assert.equal(first.settled,2);assert.equal(first.won,1);assert.equal(first.lost,1);assert.equal(first.unsupported,1);
- assert.equal(effects.length,2);assert.equal(audits.length,2);assert.equal(effects[0].score,'1-0');
+ assert.equal(first.settled,3);assert.equal(first.won,2);assert.equal(first.lost,1);assert.equal(first.unsupported,0);
+ assert.equal(effects.length,3);assert.equal(audits.length,3);assert.equal(effects[0].score,'1-0');
  assert.equal(effects[0].source,'nforce-openfootball');assert.equal(rows[3].outcome,'won');
- const repeated=await worker.run();assert.equal(repeated.settled,0);assert.equal(audits.length,2);
+ const repeated=await worker.run();assert.equal(repeated.settled,0);assert.equal(audits.length,3);
 });
 test('comparativa en primera pantalla y etiquetas de origen sin revelar cuotas VIP',()=>{
  const html=readFileSync(new URL('../public/index.html',import.meta.url),'utf8');

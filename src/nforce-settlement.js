@@ -30,6 +30,10 @@ export function evaluateFinalScore({market,selection,homeTeam,awayTeam,homeGoals
   else if(s===normalize(awayTeam)&&s!==normalize(homeTeam))choice='2';
   if(!choice)return null;
   won=choice===result;rule='1x2';
+ } else if(m==='doble oportunidad'||m==='double chance'){
+  if(!['1x','x2','12'].includes(s))return null;
+  won=s==='1x'?h>=a:s==='x2'?h<=a:h!==a;
+  rule='double-chance';
  } else if(/(?:goles|goals|over|under|total)/.test(m)&&!/(?:individual|equipo|local|visita|visitante|home|away|mitad|tiempo)/.test(m)){
   const pick=s.match(/(?:\bmas de|\bover|\bmenos de|\bunder)\s*(\d{1,2}(?:[.,]\d)?)\b/);
   const line=pick||m.match(/(?:\bmas de|\bover|\bmenos de|\bunder)\s*(\d{1,2}(?:[.,]\d)?)\b/);

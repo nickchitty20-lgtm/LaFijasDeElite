@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {allowedDatasets,seasonForDate,zonedKickoff,normalizeOpenFootball,stableFixtureId,fetchOpenFootball} from '../src/nforce-data.js';
-import {estimateMatch,makeCandidate,walkForwardBacktest,scoreDistribution,MODEL_VERSION,poisson,modelReadiness,fulltime,fixtureTimestamp,lowScoreFactor} from '../src/nforce-model.js';
+import {estimateMatch,makeCandidate,walkForwardBacktest,scoreDistribution,MODEL_VERSION,poisson,modelReadiness,fulltime,fixtureTimestamp,lowScoreFactor,selectMarket,selectedMarketWon} from '../src/nforce-model.js';
 import {canAutoPublishCandidate} from '../src/football-publication-policy.js';
 import {publishedFootballDetails} from '../src/football-report.js';
 import {telegramVipPublicPreview,telegramVipPost,telegramFreeAutoPost} from '../src/telegram-bridge.js';
@@ -153,4 +153,32 @@ test('Backtesting informa calibración por banda y desempeño gratis/VIP sin con
  assert.ok(Object.keys(r.calibration).length);
  assert.ok(r.segments.free.evaluated>=0&&r.segments.vip.evaluated>=0);
  assert.equal(Object.values(r.calibration).reduce((sum,b)=>sum+b.evaluated,0),r.evaluated);
+});
+
+
+test('VIP multimerkado: sin ventaja sobre la liga no hay VIP artificial',()=>{
+ const m={id:883,scheduled_time_known:true,home:'Local',away:'Visita',league:'Demo',kickoff:at};
+ const model={model:MODEL_VERSION,quality:86,confidence:48,margin:7,selected:'home',
+   probabilities:{home:48,draw:26,away:26},totals:{over15:79,over25:63,under25:37,btts:53},
+   lambda:{home:1.7,away:1.2},score:'1-1',score_probability:11,
+   sample:{home:19,away:20,league:150},leagueBaseline:{home:44,draw:27,away:29,over15:78,over25:54,under25:46,btts:51,noBtts:49,oneX:71,xTwo:56,oneTwo:73}};
+ assert.equal(selectMarket(m,model).visibility,'free','79% sobre 78% no basta para VIP');
+ model.leagueBaseline.over15=68;
+ const recommended=selectMarket(m,model);
+ assert.equal(recommended.visibility,'vip');assert.equal(recommended.market,'Total goles');assert.equal(recommended.selection,'Más de 1.5');
+ const candidate=makeCandidate(m,model);
+ assert.equal(candidate.visibility,'vip');assert.equal(candidate.provider_probability,79);
+ assert.equal(selectedMarketWon(candidate,{...m,home_goals:2,away_goals:0}),true);
+ assert.equal(selectedMarketWon(candidate,{...m,home_goals:1,away_goals:0}),false);
+ assert.equal(canAutoPublishCandidate({...candidate,status:'draft'}),true);
+ assert.equal(canAutoPublishCandidate({...candidate,selection:'Menos de 1.5',status:'draft'}),false);
+});
+
+test('Mercados 1X/X2/12: la frecuencia de liga actúa como referencia, no como cuota',()=>{
+ const m={home:'A',away:'B'};
+ const model={model:MODEL_VERSION,quality:90,confidence:59,margin:11,selected:'home',
+  probabilities:{home:59,draw:24,away:17},totals:{over15:61,over25:51,under25:49,btts:45},
+  sample:{home:22,away:21,league:210},leagueBaseline:{home:43,draw:25,away:32,over15:70,over25:50,under25:50,btts:52,noBtts:48,oneX:68,xTwo:57,oneTwo:75}};
+ const pick=selectMarket(m,model);
+ assert.equal(pick.key,'1X');assert.equal(pick.probability,83);assert.equal(pick.visibility,'vip');
 });

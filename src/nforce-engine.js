@@ -98,39 +98,43 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     const usable=all.filter(x=>fulltime(x));
     const future=all.filter(x=>x.scheduled_time_known&&x.kickoff&&x.home_goals===null&&Date.parse(x.kickoff)>time+60*60000&&Date.parse(x.kickoff)<time+72*3600000)
      .sort((a,b)=>Date.parse(a.kickoff)-Date.parse(b.kickoff)).slice(0,120);
-    let models=0,drafts=0,underMin=0,rejected=0;const examples=[];const missingReasons={};
+    let models=0,drafts=0,underMin=0,rejected=0,alreadyPresent=0,updatedDrafts=0;const examples=[];const missingReasons={};const filteredExamples=[];
     for(const m of future){
      const model=estimateMatch(m,usable,Date.parse(m.kickoff));
      if(!model){underMin++;const why=modelReadiness(m,usable,Date.parse(m.kickoff));missingReasons[why.reason]=(missingReasons[why.reason]||0)+1;if(examples.length<4)examples.push(`${m.home} vs ${m.away}: ${why.reason} (liga ${why.sample?.league||0}, local ${why.sample?.home||0}, visita ${why.sample?.away||0})`);continue;}
      models++;
      const candidate=makeCandidate(m,model);
-     if(!candidate){rejected++;continue;}
+     if(!candidate){rejected++;if(filteredExamples.length<5)filteredExamples.push(`${m.home} vs ${m.away}: 1X2 ${model.confidence}% · >1.5 ${model.totals.over15}% · BTTS ${model.totals.btts}% · calidad ${model.quality}/100`);continue;}
      const [r]=await conn.execute(`INSERT IGNORE INTO football_candidates
       (provider,fixture_id,visibility,home_team,away_team,league,kickoff,market,selection,provider_probability,odds,analysis,evidence_json,status)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'draft')`,[
       candidate.provider,candidate.fixture_id,candidate.visibility,candidate.home_team,candidate.away_team,candidate.league,
       candidate.kickoff,candidate.market,candidate.selection,candidate.provider_probability,null,candidate.analysis,candidate.evidence_json]);
      if(!Number(r.affectedRows||0)){
+      alreadyPresent++;
       // A v3.0 draft or rescheduled fixture must be refreshed before publishing.
       // Never revive discarded proposals or mutate already-published picks.
-      await conn.execute(`UPDATE football_candidates SET visibility=?,home_team=?,away_team=?,league=?,kickoff=?,
+      const [updated]=await conn.execute(`UPDATE football_candidates SET visibility=?,home_team=?,away_team=?,league=?,kickoff=?,
        market=?,selection=?,provider_probability=?,odds=NULL,analysis=?,evidence_json=?
        WHERE provider=? AND fixture_id=? AND status='draft'`,[
        candidate.visibility,candidate.home_team,candidate.away_team,candidate.league,candidate.kickoff,
        candidate.market,candidate.selection,candidate.provider_probability,candidate.analysis,candidate.evidence_json,
        candidate.provider,candidate.fixture_id]);
+      updatedDrafts+=Number(updated.affectedRows||0);
      }
      drafts+=Number(r.affectedRows||0);
     }
     await conn.execute('UPDATE nforce_scans SET status=?,finished_at=UTC_TIMESTAMP(),upcoming=?,modeled=?,drafts=?,insufficient=?,filtered=? WHERE id=?',
      ['completed',future.length,models,drafts,underMin,rejected,id]);
     lastError='';lastScanReport={ok:true,mode:manual?'manual':'scheduled',fixtures_in_window:future.length,examined:future.length,
-     modeled:models,drafts_created:drafts,insufficient_history:underMin,insufficient_reasons:missingReasons,below_filters:rejected,rejection_examples:examples,
+     modeled:models,drafts_created:drafts,already_present:alreadyPresent,updated_existing_drafts:updatedDrafts,eligible:drafts+alreadyPresent,
+     insufficient_history:underMin,insufficient_reasons:missingReasons,below_filters:rejected,rejection_examples:examples,filter_examples:filteredExamples,
      fixtures_without_time:all.filter(x=>x.home_goals===null&&!x.scheduled_time_known&&x.date>=now().toISOString().slice(0,10)).length,
      note_on_quality:'El indicador de calidad de muestra NO representa el porcentaje real de aciertos.',
-     note:drafts?`${drafts} propuestas guardadas; la publicación depende de las reglas y de Telegram.`:future.length===0?
-      'No hay partidos con horario válido en las próximas 72 horas. La fuente puede estar desactualizada o los partidos carecer de hora.':
-      'Sin propuestas nuevas: faltan datos suficientes o ningún pronóstico superó los filtros. No se inventaron fijas.'};
+     note:drafts?`${drafts} propuestas nuevas guardadas; las propuestas se publican tras aprobarlas.`:future.length===0?
+      'No hay partidos con horario válido en las próximas 72 horas. Los calendarios pueden estar desactualizados.':
+      alreadyPresent?`${alreadyPresent} propuestas elegibles ya existentes (${updatedDrafts} borradores revisados); 0 nuevas. Revisa las tarjetas y sus estados.`:
+      'Sin propuestas nuevas: historial insuficiente o ningún mercado superó los filtros.'};
     return lastScanReport;
    }catch(e){lastError=safeError(e);await conn.execute('UPDATE nforce_scans SET status=?,finished_at=UTC_TIMESTAMP(),error_message=? WHERE id=?',['failed',lastError,id]);throw e;}
   });}finally{scanning=false;}
@@ -168,8 +172,10 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
 
    if(automatic){
     if(!canAutoPublishCandidate(row))throw Error('Evidencias insuficientes para autopublicación');
-    const [[validated]]=await conn.query('SELECT evaluated,model_version,created_at FROM nforce_backtests ORDER BY id DESC LIMIT 1');
-    if(!validated||validated.model_version!==MODEL_VERSION||Number(validated.evaluated)<40||!validated.created_at||now().getTime()-asUtc(validated.created_at).getTime()>8*DAY){await conn.rollback();return {published:false,reason:'Se necesita backtesting de al menos 40 partidos históricos'};}
+    const [[validated]]=await conn.query('SELECT evaluated,model_version,created_at,metrics_json FROM nforce_backtests ORDER BY id DESC LIMIT 1');
+    if(!validated||validated.model_version!==MODEL_VERSION||Number(validated.evaluated)<40||!validated.created_at||now().getTime()-asUtc(validated.created_at).getTime()>8*DAY){await conn.rollback();return {published:false,reason:'Se necesita backtesting vigente'};}
+    const pick=reportLimited(row.evidence_json)?.pick;
+    if(Number(reportLimited(validated.metrics_json)?.by_market?.[pick?.key]?.evaluated||0)<40){await conn.rollback();return {published:false,reason:'El mercado no dispone de 40 selecciones retrospectivas evaluadas'};}
     const [[count]]=await conn.execute("SELECT COUNT(*) AS total FROM football_candidates WHERE provider=? AND visibility=? AND status='published' AND DATE(published_at)=UTC_DATE()",[NFORCE_PROVIDER,row.visibility]);
     if(Number(count.total)>=(row.visibility==='vip'?2:1)){await conn.rollback();return {published:false,reason:'Límite diario'};}
    }
@@ -199,12 +205,12 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
   try{return await withLock('fijas_nforce_publish',async()=>{
    const [rows]=await db.query("SELECT * FROM football_candidates WHERE provider=? AND status='draft' AND kickoff>DATE_ADD(UTC_TIMESTAMP(),INTERVAL 30 MINUTE) AND kickoff<DATE_ADD(UTC_TIMESTAMP(),INTERVAL 73 HOUR) ORDER BY kickoff LIMIT 40",[NFORCE_PROVIDER]);
    let published=0,failed=0,missingChannel=0,blocked=0,unvalidated=0,limited=0;
-   const [[backtestRow]]=await db.query('SELECT evaluated,model_version,created_at FROM nforce_backtests ORDER BY id DESC LIMIT 1');
+   const [[backtestRow]]=await db.query('SELECT evaluated,model_version,created_at,metrics_json FROM nforce_backtests ORDER BY id DESC LIMIT 1');
    const backtestReady=backtestRow?.model_version===MODEL_VERSION&&Number(backtestRow?.evaluated)>=40&&
     backtestRow?.created_at&&now().getTime()-asUtc(backtestRow.created_at).getTime()<=8*DAY;
    for(const row of rows){
     if(!canAutoPublishCandidate(row)){blocked++;continue;}
-    if(!backtestReady){unvalidated++;continue;}
+    if(!backtestReady||Number(reportLimited(backtestRow.metrics_json)?.by_market?.[reportLimited(row.evidence_json)?.pick?.key]?.evaluated||0)<40){unvalidated++;continue;}
     const ready=Boolean(process.env.TELEGRAM_BOT_TOKEN&&(row.visibility==='vip'?process.env.TELEGRAM_VIP_CHAT_ID:process.env.TELEGRAM_FREE_CHAT_ID));
     if(!ready){missingChannel++;continue;}
     try{const r=await publish(row.id,null,{automatic:true});if(r.published)published++;else if(r.reason==='Límite diario')limited++;}
@@ -212,7 +218,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     if(published>=3)break;
    }
    lastPublishReport={at:now().toISOString(),reviewed:rows.length,published,failed,missing_channel:missingChannel,blocked_by_filters:blocked,
-    without_validation:unvalidated,daily_limit:limited,reason:published?null:unvalidated?'Falta backtesting vigente de este modelo (mínimo 40 partidos); ejecuta «Validar modelo».':missingChannel?'Faltan token o chats de Telegram.':
+    without_validation:unvalidated,daily_limit:limited,reason:published?null:unvalidated?'Falta backtesting vigente con al menos 40 selecciones del mercado; ejecuta «Validar modelo».':missingChannel?'Faltan token o chats de Telegram.':
      limited?'Límite diario alcanzado.':rows.length?'Borradores no aptos para publicación automática.':'No hay propuestas locales aptas.'};
    return lastPublishReport;
   });}finally{publishing=false;}
@@ -242,7 +248,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     total_matches:Number(stats.total_matches||0),complete_matches:Number(stats.complete_matches||0),source_import:lastImport||null,next_import_at:retry.next,
     settlement:settlement.getStatus(),
     backtest:lastBacktest?{evaluated:lastBacktest.evaluated,accuracy:lastBacktest.accuracy,brier:lastBacktest.brier,validated:Number(lastBacktest.evaluated)>=40&&validation.model===MODEL_VERSION&&now().getTime()-asUtc(lastBacktest.created_at).getTime()<=8*DAY,
-    model_version:validation.model,segments:validation.segments||null,calibration:validation.calibration||null}:null});
+    model_version:validation.model,segments:validation.segments||null,by_market:validation.by_market||null,calibration:validation.calibration||null}:null});
   }catch(e){res.status(500).json({error:'No se pudo consultar N-FORCE: '+safeError(e)});}
  });
  app.get(api('candidates'),authenticate,async(req,res)=>{
@@ -257,7 +263,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
   if(!owner(req))return res.status(403).json({error:'Solo creador'});
   if(importing)return res.status(409).json({error:'Importación en curso'});
   importData({force:true}).catch(e=>{lastError=safeError(e);console.warn('nforce manual import:',lastError);});
-  res.status(202).json({accepted:true,message:'Importación de fuentes CC0 iniciada; consulta el estado para ver el resultado.'});
+  res.status(202).json({accepted:true,message:'Importación de datos deportivos iniciada; consulta el estado para ver el resultado.'});
  });
  app.post(api('settle'),authenticate,async(req,res)=>{
   if(!owner(req))return res.status(403).json({error:'Solo creador'});
@@ -282,7 +288,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
   scan({manual:true}).catch(e=>{lastScanReport={ok:false,error:safeError(e)};});
   res.status(202).json({accepted:true,message:'Análisis local iniciado. Actualiza el panel para revisar las propuestas.'});
  });
- app.post(api('candidates/:id/refresh-advanced'),authenticate,(req,res)=>{if(!owner(req))return res.status(403).json({error:'Solo creador'});return res.status(409).json({error:'El motor propio usa resultados históricos CC0; esta fuente no ofrece lesiones ni alineaciones. No se inventan.'});});
+ app.post(api('candidates/:id/refresh-advanced'),authenticate,(req,res)=>{if(!owner(req))return res.status(403).json({error:'Solo creador'});return res.status(409).json({error:'El motor actual usa resultados históricos; no hay lesiones ni alineaciones verificadas disponibles. No se inventan.'});});
  app.post(api('candidates/:id/publish'),authenticate,async(req,res)=>{
   if(!owner(req))return res.status(403).json({error:'Solo creador'});
   try{res.json(await publish(req.params.id,req.admin));}catch(e){res.status(400).json({error:safeError(e)});}

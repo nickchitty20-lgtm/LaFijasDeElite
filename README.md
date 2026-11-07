@@ -860,3 +860,10 @@ El campo `match_date` se almacena en UTC. En la web se muestra el horario de Per
 - Publicación automática: `FOOTBALL_AUTO_SCAN=true`, `FOOTBALL_AUTO_PUBLISH=true`; para pruebas mantener `FOOTBALL_AUTO_PUBLISH=false`.
 - La variable `FOOTBALL_PUBLIC_FREE_PICKS` ya no hace falta: las selecciones gratuitas publicadas van completas al grupo.
 - Las tasas de acierto SOLO se obtienen de resultados finalizados registrados, y la confianza estimada no garantiza una ganancia.
+
+
+## Cambios v3.2.6 — mercados N-FORCE
+
+El motor Poisson v1.2 calcula probabilidades de 1X2, goles, ambos marcan y doble oportunidad usando exclusivamente partidos terminados anteriores a la fecha del encuentro. Elige **una propuesta** por encuentro; si un mercado alcanza el umbral VIP y demuestra diferencia frente a la frecuencia histórica de la liga puede pasar a borrador VIP. **Una probabilidad del modelo no es tasa real de aciertos ni rentabilidad:** las estimaciones actuales no están calibradas.
+
+Las lesiones y alineaciones NO se importan; si no existen datos, se indica su ausencia. La publicación continúa siendo manual salvo activación expresa. No elimina propuestas antiguas: las que estén publicadas o descartadas permanecen intactas. Tras desplegar el ZIP, importa datos, ejecuta backtesting y vuelve a analizar para recalcular borradores. El informe de escaneo incluye `already_present`, `eligible`, `updated_existing_drafts` y `filter_examples` para explicar los ceros. Los límites y detalles de licencias y procedencia siguen documentados internamente.

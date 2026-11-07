@@ -1,3 +1,4 @@
+import {selectMarket,MODEL_VERSION} from './nforce-model.js';
 /** A selected outcome is an estimated 1X2 probability, NOT real hit rate. */
 export const FREE_MIN_PROBABILITY=40;
 export const FREE_MAX_PROBABILITY=50;
@@ -9,15 +10,15 @@ function evidenceData(value){
  try{return typeof value==='string'?JSON.parse(value):value||{};}catch{return {};}
 }
 export function canAutoPublishCandidate(row){
- if(!row||row.status!=='draft'||row.market!=='Resultado final 1X2')return false;
+ if(!row||row.status!=='draft'||(row.provider!=='nforce-openfootball'&&row.market!=='Resultado final 1X2'))return false;
  const probability=Number(row.provider_probability);
  if(row.provider==='nforce-openfootball'){
-  const d=evidenceData(row.evidence_json);
-  if(d.model?.model!=='nforce-poisson-1.1'||!Number.isFinite(probability)||!d.model?.sample)return false;
-  if(Number(d.model.sample.home)<7||Number(d.model.sample.away)<7||Number(d.model.sample.league)<36)return false;
-  if(!Number.isFinite(Number(d.model.quality))||Number(d.model.quality)<45)return false;
-  if(row.visibility==='vip')return probability>=62&&Number(d.model.margin)>=12&&Number(d.model.sample.home)>=10&&Number(d.model.sample.away)>=10&&Number(d.model.quality)>=58;
-  return row.visibility==='free'&&probability>=40&&probability<=50&&Number(d.model.margin)>=6;
+  const d=evidenceData(row.evidence_json),m=d.model;
+  if(m?.model!==MODEL_VERSION||!m.sample||!Number.isFinite(probability))return false;
+  const expected=selectMarket({home:row.home_team,away:row.away_team},m);
+  return Boolean(expected&&expected.visibility===row.visibility&&expected.market===row.market&&
+   expected.selection===row.selection&&Math.abs(expected.probability-probability)<0.11&&
+   d.pick?.key===expected.key);
  }
 
  const data=evidenceData(row.evidence_json);
