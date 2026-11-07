@@ -1,3 +1,14 @@
+# v3.2.9 — Protección de frontend y API (defensa en profundidad)
+
+- Peticiones de escritura desde el navegador con token CSRF HMAC atado a la cookie `HttpOnly`.
+- Verificación exacta de origen y encabezados Fetch Metadata contra peticiones entre sitios; escritura exclusivamente JSON, excepto webhooks firmados de PayPal y Telegram.
+- Guard de API en frontend: rechaza rutas a dominios externos, usa cookies `same-origin` y añade token por sesión; no expone JWT ni credenciales en JavaScript.
+- Límites de peticiones adicionales para rutas de administrador y cliente, además de los controles existentes de login, pagos y Telegram.
+- CSP reforzada, protección contra iframes y desactivación de permisos innecesarios de navegador. Errores JSON consistentes para solicitudes mal formadas.
+- Sin cambios en el modelo de fijas, membresías, pagos, URLs de Telegram o migraciones MySQL.
+- Si existe una pestaña vieja abierta, recarga la página para obtener los nuevos scripts.
+- No sustituye una auditoría profesional, pruebas de penetración, MFA para administradores ni protección WAF externa.
+
 # v3.2.8.3 — Mensajes persistentes y cierre visible de aprobación
 
 - Muestra claramente el cierre de la aprobación para N-FORCE (20 min antes del partido) y el motor clásico (10 min).

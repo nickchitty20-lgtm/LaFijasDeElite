@@ -1,3 +1,13 @@
+# Fijas de Élite v3.2.9 — Seguridad de frontend + API
+
+El navegador no es una barrera de confianza. Los endpoints siguen verificando el rol y los permisos del servidor. Se añadieron un token anti-CSRF vinculado a cada cookie de sesión, validación estricta de origen y solicitudes JSON, controles de destino de API en JavaScript, límites para rutas privadas y cabeceras CSP/anti-iframe reforzadas. Webhooks firmados PayPal/Telegram conservan sus rutas y verificaciones originales.
+
+**Despliegue:** sustituye la versión anterior y reinicia Railway. Mantén el dominio HTTPS exacto en `PUBLIC_BASE_URL`; la interfaz y la API deben servirse desde el mismo origen. No hay nuevas variables obligatorias ni migraciones de base de datos. Recarga las pestañas antiguas para actualizar `request-guard.js` y los scripts. Verifica con una cuenta de prueba el acceso, aprobación de pronósticos, Telegram, recuperación y pagos Sandbox antes de producción. Los límites están en memoria del proceso; despliegues con más de una réplica necesitan un almacén compartido.
+
+**Advertencia:** ninguna capa de frontend puede impedir por completo llamadas directas a endpoints. La seguridad depende de controles de servidor, configuración correcta, actualizaciones y auditorías continuas; falta MFA para operaciones administrativas de alto riesgo.
+
+---
+
 # Fijas de Élite v3.2.8.3 — Aprobación con mensajes de estado visibles
 
 **Corrección del panel (sin cambiar la lógica de publicación):**

@@ -28,9 +28,10 @@ import {installNforceEngine} from './nforce-engine.js';
 import {publishedFootballDetails} from './football-report.js';
 import {publicAnalysisText} from './public-branding.js';
 import {publicPerformanceFilters,performanceWhere,summaryFromGroups,publicRecentResults} from './performance-stats.js';
+import {readCookie,csrfForCookie,evaluateApiRequest} from './request-security.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
-const APP_VERSION = '3.2.8.3';
+const APP_VERSION = '3.2.9';
 const app = express();
 let telegramVipControl=null;
 let notificationControl=null;
@@ -38,11 +39,18 @@ let footballControl=null;
 // Railway terminates HTTPS behind one reverse proxy; trust only that hop.
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
-app.use(helmet({contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'"],styleSrc:["'self'"],connectSrc:["'self'"],imgSrc:["'self'","data:"],objectSrc:["'none'"]}}}));
+app.use(helmet({contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'"],styleSrc:["'self'"],connectSrc:["'self'"],imgSrc:["'self'","data:"],objectSrc:["'none'"],baseUri:["'self'"],formAction:["'self'"],frameAncestors:["'none'"]}}}));
+app.use((req,res,next)=>{res.setHeader('Permissions-Policy','camera=(), microphone=(), geolocation=()');next();});
 app.use(cors({origin:process.env.CORS_ORIGIN?.split(',') || false}));
 // Preserve PayPal's exact signed bytes before the JSON parser runs.
 app.use('/api/payments/paypal/webhook',express.raw({type:'application/json',limit:'128kb'}));
 app.use(express.json({limit:'16kb'}));
+// Return JSON, not HTML/stack traces, on malformed JSON and oversized bodies.
+app.use((error,req,res,next)=>{
+ if(error?.type==='entity.parse.failed')return res.status(400).json({error:'JSON inválido',code:'INVALID_JSON'});
+ if(error?.type==='entity.too.large')return res.status(413).json({error:'Solicitud demasiado grande',code:'BODY_TOO_LARGE'});
+ next(error);
+});
 
 // Persistent same-site sessions, no JWT exposed to browser JavaScript.
 // Customers stay connected for 14 days; administrative sessions expire after 12 hours.
@@ -82,25 +90,26 @@ function sessionStillValid(payload,hash){
  // HttpOnly-cookie sessions are invalidated whenever the password changes.
  return !payload.sv || payload.sv===sessionFingerprint(hash);
 }
-// Cookie-based authentication needs a CSRF defense on state-changing requests.
-// Accept requests only from this origin; PayPal returns via a top-level GET (SameSite=Lax).
+// Stronger defense-in-depth: exact origin, Fetch Metadata, JSON-only writes,
+// and session-bound CSRF tokens. Signed webhooks are validated separately.
 app.use('/api',(req,res,next)=>{
  res.set('Cache-Control','no-store');
- if(['/payments/paypal/webhook','/telegram/webhook'].includes(req.path) && req.method==='POST')return next(); // Webhook uses PayPal cryptographic signature.
- if(['GET','HEAD','OPTIONS'].includes(req.method))return next();
- const origin=req.get('Origin');
- const requestOrigin=`${req.protocol}://${req.get('host')}`;
- let configuredOrigin=requestOrigin;
- try{if(process.env.PUBLIC_BASE_URL)configuredOrigin=new URL(process.env.PUBLIC_BASE_URL).origin;}catch{}
- if(origin && origin!==requestOrigin && origin!==configuredOrigin)
-  return res.status(403).json({error:'Origen de solicitud no autorizado'});
- if(!origin && req.headers.cookie && !req.headers.authorization){
-  let refererOrigin='';
-  try{if(req.get('Referer'))refererOrigin=new URL(req.get('Referer')).origin;}catch{}
-  if(![requestOrigin,configuredOrigin].includes(refererOrigin) && req.get('Sec-Fetch-Site')!=='same-origin')
-   return res.status(403).json({error:'Solicitud no autorizada desde otro sitio'});
- }
+ if(req.originalUrl.length>2048)return res.status(414).json({error:'URL demasiado larga'});
+ if((req.get('Cookie')||'').length>8192)return res.status(431).json({error:'Cabeceras de sesión demasiado grandes'});
+ if(req.method==='POST' && ['/payments/paypal/webhook','/telegram/webhook'].includes(req.path))return next();
+ const host=req.get('host');
+ if(!host||/[\r\n\s]/.test(host))return res.status(400).json({error:'Host inválido'});
+ const requestOrigin=`${req.protocol}://${host}`;
+ const sessionCookie=readCookie(req.get('Cookie'));
+ const result=evaluateApiRequest({method:req.method,requestOrigin,headers:{
+  'content-type':req.get('Content-Type'),origin:req.get('Origin'),referer:req.get('Referer'),
+  'sec-fetch-site':req.get('Sec-Fetch-Site'),'x-csrf-token':req.get('X-CSRF-Token')
+ },sessionCookie,secret:process.env.JWT_SECRET,path:req.path});
+ if(!result.ok)return res.status(result.status).json({error:result.error,code:result.code});
  next();
+});
+app.get('/api/security/csrf',(req,res)=>{
+ res.json({csrfToken:csrfForCookie(readCookie(req.get('Cookie')),process.env.JWT_SECRET)});
 });
 
 // All /api rate limits return JSON, so clients never parse HTML/text 429 pages as JSON.
@@ -112,6 +121,14 @@ const apiRateLimit=options=>rateLimit({
   code:'RATE_LIMITED'
  })
 });
+// A burst limit protects expensive private APIs in addition to individual login/payment limits.
+// In multi-replica deployments replace this in-memory store with a shared Redis store.
+const privilegedReadLimit=apiRateLimit({windowMs:5*60*1000,limit:240,standardHeaders:'draft-7',legacyHeaders:false});
+const privilegedWriteLimit=apiRateLimit({windowMs:5*60*1000,limit:75,standardHeaders:'draft-7',legacyHeaders:false});
+for(const prefix of ['/api/admin','/api/customers']){
+ app.use(prefix,privilegedReadLimit);
+ app.use(prefix,(req,res,next)=>['GET','HEAD','OPTIONS'].includes(req.method)?next():privilegedWriteLimit(req,res,next));
+}
 const authLimit=apiRateLimit({windowMs:15*60*1000,limit:10,standardHeaders:'draft-7',legacyHeaders:false});
 app.use('/api/auth',authLimit);
 // Public links only: never return bot tokens, chat IDs or webhook secrets.
