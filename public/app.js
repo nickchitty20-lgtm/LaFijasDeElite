@@ -398,12 +398,25 @@ $('financeRefresh')?.addEventListener('click',loadFinance);
 async function loadTelegramAdmin(){
  try{
   const s=await api('/api/admin/telegram');
-  $('telegramAdminSetup').textContent=[s.bot_configured?'Bot ✓':'Falta bot',s.vip_channel_configured?'VIP ✓':'Falta canal',s.free_group_configured?'Grupo ✓':'Falta grupo',s.webhook_secret_configured?'Secreto ✓':'Falta secreto'].join(' · ');
+  $('telegramAdminSetup').textContent=[s.bot_configured?'Bot ✓':'Falta bot',s.vip_channel_configured?'VIP ✓':'Falta VIP',s.free_channel_configured?'Canal GRATIS ✓':'Falta canal GRATIS',s.free_group_configured?'Grupo extra ✓':'Grupo extra sin configurar',s.webhook_secret_configured?'Secreto ✓':'Falta secreto'].join(' · ');
   $('telegramAdminLinked').textContent=String(s.linked);
   $('telegramAdminMembers').textContent=String(s.vip_members);
   $('telegramCoverage').textContent=`Telegram informa ${s.telegram_member_count??'—'} miembros; IDs de miembros conocidos: ${s.tracked_members}. Desvinculados pendientes de salida: ${s.detached_pending}. Telegram anteriores conservados por el creador: ${s.creator_preserved??0}. El bot no puede descargar la lista total: revisa manualmente usuarios antiguos no registrados.`;
  }catch(error){$('telegramAdminResult').textContent=error.message;}
 }
+$('telegramFreeChannelCheck')?.addEventListener('click',async()=>{
+ const msg=$('telegramFreeChannelResult');msg.textContent='Verificando el canal oficial…';
+ try{const r=await api('/api/admin/telegram/free-channel/check',{method:'POST',body:'{}'});
+  msg.textContent=`✓ ${r.title} · ID ${r.chat_id} · Bot autorizado para publicar.`;
+ }catch(error){msg.textContent='⚠ '+error.message;}
+});
+$('telegramFreeChannelTest')?.addEventListener('click',async()=>{
+ if(!confirm('¿Enviar un mensaje de PRUEBA visible para todos en el canal GRATIS?'))return;
+ const msg=$('telegramFreeChannelResult');msg.textContent='Enviando prueba al canal…';
+ try{const r=await api('/api/admin/telegram/free-channel/test',{method:'POST',body:'{}'});
+  msg.textContent=`✓ Mensaje #${r.message_id} enviado a ${r.title} (ID ${r.chat_id}).`;
+ }catch(error){msg.textContent='⚠ '+error.message;}
+});
 $('telegramOwnerUnlinkForm')?.addEventListener('submit',async event=>{
  event.preventDefault();if(currentAdminRole!=='owner')return;
  const form=event.currentTarget,msg=$('telegramOwnerUnlinkResult');
@@ -532,7 +545,7 @@ async function loadFootballEngine(){
    ['Evaluación por mercado',status.backtest?.by_market?Object.entries(status.backtest.by_market).map(([market,v])=>`${market}: ${v.evaluated} pruebas · ${v.accuracy}%`).join(' | ')||'Sin selecciones históricas validadas':'Pendiente']]:[]),
    ['Búsqueda automática',status.auto_scan?'Activada':'Desactivada'],
    ['Publicación automática',status.auto_publish?'Activada':'Solo revisión'],
-   ['Telegram comunidad',status.telegram_free_ready?'Configurado':'Falta token o chat ID'],
+   ['Telegram canal GRATIS',status.telegram_free_ready?'Configurado':'Falta token o chat ID'],
    ['Telegram VIP',status.telegram_vip_ready?'Configurado':'Falta token o chat ID'],
    ['Estado del motor',status.scanning?'Analizando partidos…':status.publishing?'Publicando pronósticos…':'En espera'],
    ['Propuestas pendientes',status.drafts],

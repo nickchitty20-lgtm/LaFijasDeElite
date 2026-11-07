@@ -1,3 +1,65 @@
+# Fijas de Élite v3.2.8.2 — Avisos breves en comunidad
+
+**Publicaciones principales sin cambios:** la fija GRATIS completa va solamente al canal oficial `@FijasDeEliteOficial`; la fija VIP completa va solamente al canal VIP. El canal GRATIS mantiene sus adelantos VIP actuales. **El grupo de comunidad ahora recibe únicamente avisos cortos con enlaces, nunca la selección o el análisis.**
+
+- **GRATIS en el grupo:** «⚽ ¡Se publicó una nueva fija GRATIS! 📢 Revísala en nuestro canal oficial: https://t.me/FijasDeEliteOficial».
+- **VIP en el grupo:** «👑 ¡Se publicó una nueva fija VIP! 🔒 Accede desde nuestra web: https://tu-dominio/».
+- Ambos incluyen una nota breve sobre riesgos, sin odds, mercados ni pronósticos exclusivos.
+- **Solo después del envío principal exitoso:** si Telegram no publica en el canal correspondiente, no se anuncia en el grupo. Si falla el aviso al grupo, la publicación principal no se marca como fallida.
+- `TELEGRAM_FREE_CHAT_ID` identifica el **grupo** y es distinto de `TELEGRAM_FREE_CHANNEL_CHAT_ID` (canal). El bot necesita permiso para **enviar mensajes en el grupo**. Mantén `TELEGRAM_FREE_CHANNEL_URL` y `PUBLIC_BASE_URL` con tus URLs reales.
+- Se agrega la tabla MySQL `telegram_community_announcements` automáticamente al iniciar, para evitar duplicados y permitir borrar los avisos al retirar una predicción. No se eliminan datos anteriores. No reenvía publicaciones históricas.
+- Comprueba en Railway `GET /health` → `version: 3.2.8.2`. Las pruebas locales no sustituyen una prueba real de Telegram.
+
+> Los apartados siguientes conservan el historial de versiones anteriores. Para desplegar y configurar el sistema utiliza las indicaciones de **v3.2.8.2** arriba.
+
+# Fijas de Élite v3.2.8.1 — Telegram SOLO canal oficial
+
+**Corrección importante de v3.2.8:** Se eliminó el envío alternativo de fijas GRATIS y adelantos VIP al grupo de discusión. Los mensajes públicos automáticos van **exclusivamente al canal GRATIS**, o no se envían. El VIP completo permanece únicamente en el canal privado VIP.
+
+Configura en **Railway → Variables** (el usuario público es válido como `chat_id`):
+
+```env
+TELEGRAM_BOT_TOKEN=TOKEN_EXISTENTE_DEL_BOT
+TELEGRAM_FREE_CHANNEL_CHAT_ID=@FijasDeEliteOficial
+TELEGRAM_FREE_CHANNEL_URL=https://t.me/FijasDeEliteOficial
+# El grupo es opcional y solo se enlaza desde la web; el bot NO publica ahí:
+TELEGRAM_FREE_CHAT_ID=
+TELEGRAM_FREE_GROUP_URL=
+```
+
+- La URL pública del canal tiene prioridad al resolver el destinatario. Evita errores por IDs numéricos mal copiados. Si el canal es privado, configura su ID numérico `-100...` (y usa una URL de invitación para el botón de la web si aplica).
+- El bot debe ser administrador del **canal oficial** con permiso **Publicar mensajes**. No sirve ser administrador únicamente del grupo.
+- Tras desplegar, entra a **Panel → Telegram → Verificar canal y permisos**. La comprobación consulta a Telegram si es un canal real y si el bot puede publicar. Después usa **Enviar mensaje de prueba al canal**. Solo entonces aprueba una fija nueva.
+- Si Telegram devuelve «chat not found», revisa el nombre público exacto y que el bot esté en el canal; «Forbidden» normalmente indica falta de permisos. En el panel se mostrará el error, sin divulgar el token.
+- **Las fijas ya publicadas no se reenvían automáticamente**. Esto evita anuncios repetidos o resultados antiguos presentados como nuevos. Los mensajes históricos enviados al grupo se mantienen allí hasta que los borres manualmente.
+- No requiere cambios en MySQL ni nuevos servicios. `GET /health` muestra `3.2.8.1`. Pruebas automatizadas sin credenciales reales; la entrega efectiva se comprueba con el botón de prueba.
+
+---
+
+# Fijas de Élite v3.2.8 — Canal GRATIS principal + Grupo GRATIS extra
+
+El canal GRATIS de Telegram recibe las fijas completas y los adelantos públicos de VIP. El grupo GRATIS original sigue disponible como comunidad secundaria para conversar y compartir el enlace al canal; **no se duplican** las selecciones por defecto. El canal VIP privado conserva su flujo actual de suscripción.
+
+Variables de Railway:
+
+```env
+TELEGRAM_FREE_CHANNEL_CHAT_ID=-100ID_REAL_DEL_NUEVO_CANAL
+TELEGRAM_FREE_CHANNEL_URL=https://t.me/TU_CANAL_GRATIS
+TELEGRAM_FREE_CHAT_ID=-100ID_DEL_GRUPO_GRATIS_EXISTENTE
+TELEGRAM_FREE_GROUP_URL=https://t.me/TU_GRUPO_GRATIS
+TELEGRAM_VIP_CHAT_ID=-100ID_DEL_CANAL_VIP_ACTUAL
+```
+
+1. Crea el canal GRATIS en Telegram, con un nombre como «Fijas de Élite | GRATIS», y pon el bot como administrador con permiso **Publicar mensajes**.
+2. Obtén el ID numérico real del canal (normalmente empieza con `-100`). No inventes ese ID ni coloques el username en `CHAT_ID`.
+3. Configura `TELEGRAM_FREE_CHANNEL_CHAT_ID` y `TELEGRAM_FREE_CHANNEL_URL` en Railway. Mantén las dos variables del grupo GRATUITO, sin cambiarlas.
+4. Despliega y comprueba el panel «Telegram» y la portada. Publica una propuesta de prueba aprobada. El mensaje completo GRATIS debe llegar al **canal**, no al grupo; la web muestra enlaces a ambos.
+5. Las publicaciones antiguas no se mueven automáticamente al nuevo canal. Si el canal no está configurado, se mantiene la compatibilidad con `TELEGRAM_FREE_CHAT_ID` y las publicaciones seguirán llegando al grupo.
+
+La versión añade una columna `chat_id` opcional al registro de adelantos VIP para poder retirar correctamente los mensajes del nuevo canal. Las publicaciones anteriores conservan el grupo original como destino de respaldo. La migración es aditiva y la aplica `initializeDatabase()`; no borra datos.
+
+---
+
 ## v3.2.7.2 — Acceso unificado y panel privado
 
 - El botón «Administración» se elimina del pie de página de la portada.

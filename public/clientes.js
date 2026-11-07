@@ -269,9 +269,14 @@ async function refreshTelegramStatus(){
    !r.linked?r.change_cooldown_minutes>0?'El Telegram anterior ya salió. Espera el plazo de seguridad de 30 días, salvo excepción autorizada por el dueño.':'Primero vincula tu Telegram para verificar tu identidad.':
    `${r.telegram_username?'@'+r.telegram_username:'Cuenta Telegram vinculada'} · ${r.is_member?'Ya perteneces al canal VIP':r.has_vip?'VIP activo: puedes solicitar acceso':'VIP no activo: renueva tu membresía para ingresar'}`;
   const group=$('telegramPublicLink');group.replaceChildren();
-  if(r.public_group_url && /^https:\/\/t\.me\//i.test(r.public_group_url)){
-   const a=document.createElement('a');a.href=r.public_group_url;a.target='_blank';a.rel='noopener noreferrer';a.className='telegram-action';a.textContent='Abrir comunidad pública ↗';group.append(a);
-  }else group.textContent='El dueño compartirá el enlace del grupo público.';
+  const addPublicLink=(url,label)=>{
+   if(!url||!/^https:\/\/t\.me\//i.test(url))return;
+   const a=document.createElement('a');a.href=url;a.target='_blank';a.rel='noopener noreferrer';
+   a.className='telegram-action';a.textContent=label;group.append(a);
+  };
+  addPublicLink(r.public_channel_url,'📢 Canal GRATIS · Pronósticos ↗');
+  addPublicLink(r.public_group_url,'💬 Grupo GRATIS · Comunidad extra ↗');
+  if(!group.childElementCount)group.textContent='Los enlaces públicos aparecerán cuando el dueño los configure.';
  }catch(error){status.textContent=error.message;}
 }
 $('telegramLinkButton').addEventListener('click',async()=>{

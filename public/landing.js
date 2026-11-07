@@ -5,7 +5,23 @@ const price=n=>Number(n).toLocaleString('es-PE',{minimumFractionDigits:0,maximum
 const days=n=>Number(n)===1?'1 día':`${Number(n)} días`;
 async function loadPlans(){try{const r=await fetch('/api/plans');if(!r.ok)throw Error();const j=await r.json();if(!Array.isArray(j.plans)||!j.plans.length){el('planGrid').innerHTML='<div class="loading">Pronto anunciaremos nuestros planes VIP.</div>';return;}el('planGrid').innerHTML=j.plans.map((p,i)=>`<article class="plan ${i===1?'featured':''}">${i===1?'<span class="tag">MÁS ELEGIDO</span>':''}<h3>${clean(p.name)}</h3><div class="price"><small>S/</small>${price(p.price_pen)}</div><span class="duration">Acceso durante ${days(p.duration_days)}</span><hr><ul><li>Pronósticos exclusivos VIP</li><li>Análisis y selecciones</li><li>Historial de publicaciones</li></ul><a class="button ${i===1?'gold':'ghost'}" href="/clientes.html?plan=${encodeURIComponent(p.id)}" data-plan-auth="${encodeURIComponent(p.id)}" data-plan-name="${clean(p.name)}">Elegir este plan ↗</a></article>`).join('');}catch{el('planGrid').innerHTML='<div class="loading">No pudimos cargar los planes. Intenta nuevamente más tarde.</div>';}}
 async function loadPicks(){try{const r=await fetch('/api/predictions/teasers');if(!r.ok)throw Error();const j=await r.json();const items=Array.isArray(j.predictions)?j.predictions:[];if(!items.length){el('picks').innerHTML='<div class="loading">Próximamente publicaremos pronósticos.</div>';return;}el('picks').innerHTML=items.slice(0,6).map(p=>`<article class="pick locked-pick"><span class="league">${clean(p.league||'Fútbol')} · ${p.visibility==='vip'?'VIP':'GRATIS'}</span><h3>${clean(p.title)}</h3><div class="lock-symbol" aria-hidden="true">🔒</div><p>${p.visibility==='vip'?'Selección exclusiva para miembros VIP.':'Regístrate o inicia sesión para consultar este pronóstico.'}</p><a class="button ghost" href="/clientes.html" data-auth-open="login">${p.visibility==='vip'?'Ver planes VIP':'Iniciar sesión'} ↗</a></article>`).join('');}catch{el('picks').innerHTML='<div class="loading">Pronósticos no disponibles.</div>';}}
-el('year').textContent=new Date().getFullYear();loadPlans();loadPicks();
+async function loadTelegramCommunity(){
+ try{
+  const response=await fetch('/api/public/telegram');if(!response.ok)return;
+  const links=await response.json();
+  for(const [id,url] of [
+   ['telegramFreeChannelCta',links.free_channel_url],
+   ['telegramFreeChannelFooter',links.free_channel_url],
+   ['telegramFreeGroupFooter',links.free_group_url]
+  ]){
+   const anchor=el(id);
+   if(anchor && typeof url==='string' && /^https:\/\/t\.me\//i.test(url)){
+    anchor.href=url;anchor.hidden=false;
+   }
+  }
+ }catch{/* Telegram links are optional. */}
+}
+el('year').textContent=new Date().getFullYear();loadPlans();loadPicks();loadTelegramCommunity();
 
 // Public performance: never synthesize percentages, and do not expose VIP selections.
 const perfNumber=v=>Number(v||0).toLocaleString('es-PE');

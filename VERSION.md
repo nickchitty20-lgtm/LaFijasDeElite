@@ -1,3 +1,29 @@
+# v3.2.8.2 — Avisos comunitarios de novedades
+
+- Las fijas GRATIS se publican completas en el canal oficial y generan un aviso breve en el grupo con el enlace del canal.
+- Las fijas VIP siguen completas solo en el canal privado y generan un aviso breve en el grupo con enlace a la portada de la web; el canal GRATIS conserva su adelanto VIP.
+- El bot comprueba que `TELEGRAM_FREE_CHAT_ID` sea realmente un grupo y nunca lo usa como fallback para pronósticos completos.
+- Los anuncios de grupo se registran una vez por predicción; fallos de Telegram en el grupo no afectan al estado de publicación principal ni se reintentan a ciegas.
+- Migración aditiva automática de la tabla `telegram_community_announcements`, con soporte de retirada de avisos. Sin nuevas variables de entorno.
+
+# v3.2.8.1 — Publicación pública solo en el canal
+
+- Eliminado el fallback automático a `TELEGRAM_FREE_CHAT_ID`. El grupo es únicamente un enlace comunitario.
+- Se admite `@FijasDeEliteOficial` como destino del canal, y se prioriza `TELEGRAM_FREE_CHANNEL_URL` cuando corresponde a un canal público.
+- `getChat` confirma el tipo real `channel` y contrasta su nombre; no se envía una fija a un grupo ni a un destino diferente sin detectarlo.
+- El panel privado del dueño incorpora pruebas de permisos (`getChatMember`) y un mensaje de prueba expreso. Los errores son visibles en el panel, sin mostrar el token.
+- Se preservan los envíos VIP privados y los adelantos VIP al canal oficial. El historial no se reenvía automáticamente para evitar duplicados.
+- Corrección de caché del panel. Sin migración de base de datos.
+
+# v3.2.8 — Telegram canal GRATIS principal + grupo extra
+
+- Nueva configuración `TELEGRAM_FREE_CHANNEL_CHAT_ID` y `TELEGRAM_FREE_CHANNEL_URL`: el canal recibe las fijas GRATIS y los adelantos públicos VIP; el grupo se conserva como comunidad secundaria.
+- Se mantiene el grupo actual como respaldo hasta configurar un ID de canal real. Evita duplicar cada pronóstico entre canal y grupo para concentrar las visualizaciones en el canal.
+- Portada y panel del cliente enlazan al canal GRATIS y al grupo de comunidad, usando URLs de Telegram validadas en el servidor.
+- El administrador ve por separado el estado del canal GRATIS, grupo extra y canal VIP.
+- Se registra `chat_id` para nuevos adelantos VIP, evitando intentar borrar un mensaje del canal equivocado. Migración aditiva automática de MySQL sin eliminar publicaciones anteriores.
+- El canal VIP privado, login único, N-FORCE, pagos y permisos permanecen intactos.
+
 # v3.2.7.2 — inicio de sesión único (sin /admin.html)
 
 - El pie de página público ya no tiene botón de Administración.
