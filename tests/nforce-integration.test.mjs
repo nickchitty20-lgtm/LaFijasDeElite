@@ -33,6 +33,7 @@ test('N-FORCE local: datos CC0 simulados → MySQL → pronóstico VIP → Teleg
    throw Error('No se esperaba conn.query: '+sql.slice(0,130));
   },
   async execute(sql,args=[]){
+   if(sql.includes('UPDATE football_candidates c JOIN nforce_matches') || sql.includes('UPDATE football_candidates c\n'))return [{affectedRows:0}];
    if(sql.includes('INSERT INTO nforce_import_runs'))return [{insertId:++importId}];
    if(sql.includes('INSERT INTO nforce_matches')){
     for(let i=0;i<args.length;i+=14){const [id,source_key,competition,league,season,round_name,home_team,away_team,match_date,kickoff,scheduled_time_known,home_goals,away_goals,source_path]=args.slice(i,i+14);
@@ -51,7 +52,7 @@ test('N-FORCE local: datos CC0 simulados → MySQL → pronóstico VIP → Teleg
    }
    if(sql.includes('UPDATE nforce_scans'))return [{affectedRows:1}];
    if(sql.includes('SELECT * FROM football_candidates WHERE id='))return [candidates.filter(x=>x.id===args[0])];
-   if(sql.includes('SELECT kickoff,home_goals,away_goals'))return [[table.find(x=>x.id===args[0])]];
+   if(sql.includes('COALESCE(override_kickoff,kickoff) AS kickoff'))return [[table.find(x=>x.id===args[0])]];
    if(sql.includes('SELECT p.id FROM predictions'))return [[]];
    if(sql.includes('INSERT INTO predictions')){published.push({id:++createdId,values:args});return [{insertId:createdId}];}
    if(sql.includes("UPDATE football_candidates SET status='published'")){const c=candidates.find(x=>x.id===args[1]);c.status='published';return [{affectedRows:1}];}

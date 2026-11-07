@@ -25,13 +25,14 @@ import {installTelegramRoutes} from './telegram-routes.js';
 import {installNotificationCenter,enqueueVipActivation,enqueuePredictionEvent} from './notification-center.js';
 import {installFootballAutomation} from './football-automation.js';
 import {installNforceEngine} from './nforce-engine.js';
+import {fixturePhase} from './nforce-fixture-sync.js';
 import {publishedFootballDetails} from './football-report.js';
 import {publicAnalysisText} from './public-branding.js';
 import {publicPerformanceFilters,performanceWhere,summaryFromGroups,publicRecentResults} from './performance-stats.js';
 import {readCookie,csrfForCookie,evaluateApiRequest} from './request-security.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
-const APP_VERSION = '3.2.9';
+const APP_VERSION = '3.3.1';
 const app = express();
 let telegramVipControl=null;
 let notificationControl=null;
@@ -476,15 +477,21 @@ app.get('/api/customers/predictions',customerAuth,async(req,res)=>{
   const entitlement=await getVipEntitlement(db,req.customer.id);
   const vip=entitlement.hasVip;
   const [rows]=await db.query(`SELECT p.id,p.title,p.league,p.match_date,p.visibility,p.analysis,p.market,p.selection,p.odds,p.outcome,
-   f.evidence_json AS football_evidence FROM predictions p
+   f.evidence_json AS football_evidence,f.provider AS fixture_provider,
+   COALESCE(nm.override_kickoff,nm.kickoff) AS effective_kickoff,
+   nm.override_status,nm.override_checked_at,nm.home_goals,nm.away_goals
+   FROM predictions p
    LEFT JOIN football_candidates f ON f.prediction_id=p.id
+   LEFT JOIN nforce_matches nm ON nm.id=f.fixture_id AND f.provider='nforce-openfootball'
    WHERE p.published_at IS NOT NULL AND p.archived_at IS NULL ORDER BY p.id DESC LIMIT 50`);
   res.set('Cache-Control','private, no-store');
   res.json({has_vip:vip,staff_vip:entitlement.staff,predictions:rows.map(p=>{
+   const matchPhase=p.fixture_provider==='nforce-openfootball'?fixturePhase({...p,kickoff:p.effective_kickoff},new Date()):null;
+   const fixtureInfo=matchPhase?{fixture_status:matchPhase.status,fixture_status_label:matchPhase.label,fixture_checked_at:p.override_checked_at}:{};
    // Important: NEVER return stored analysis, probabilities, or goal market info for locked VIP.
-   if(p.visibility==='vip'&&!vip)return {id:p.id,title:p.title,league:p.league,match_date:p.match_date,visibility:'vip',locked:true};
-   const {football_evidence,...visible}=p;
-   return {...visible,analysis:publicAnalysisText(visible.analysis),locked:false,football_details:publishedFootballDetails(football_evidence)};
+   if(p.visibility==='vip'&&!vip)return {id:p.id,title:p.title,league:p.league,match_date:p.match_date,visibility:'vip',locked:true,...fixtureInfo};
+   const {football_evidence,fixture_provider,effective_kickoff,override_status,override_checked_at,home_goals,away_goals,...visible}=p;
+   return {...visible,...fixtureInfo,analysis:publicAnalysisText(visible.analysis),locked:false,football_details:publishedFootballDetails(football_evidence)};
   })});
  }catch(e){console.error('customer predictions',e.code||e.message);res.status(500).json({error:'No se pudieron cargar los pronósticos'});}
 });

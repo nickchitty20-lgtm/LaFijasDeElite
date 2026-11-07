@@ -5,6 +5,7 @@ import {canAutoPublishCandidate} from './football-publication-policy.js';
 import {sendPredictionToTelegram} from './telegram-bridge.js';
 import {publishedFootballDetails} from './football-report.js';
 import {createNforceSettlement} from './nforce-settlement.js';
+import {fixturePhase,validateManualFixtureUpdate,reconcileLinkedFixtureTimes} from './nforce-fixture-sync.js';
 
 const DAY=86400000;
 const asUtc=x=>x instanceof Date?x:new Date(String(x||'').replace(' ','T')+(String(x||'').match(/Z|[+-]\d\d:\d\d$/)?'':'Z'));
@@ -47,7 +48,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
    // Manual refresh allowed only every 30 minutes and cannot bypass SSRF allowlist.
    if(force&&last&&now().getTime()-asUtc(last.started_at).getTime()<30*60000)return {cooldown:true,message:'Actualización máxima una vez cada 30 minutos'};
    const [created]=await conn.execute("INSERT INTO nforce_import_runs (status,started_at) VALUES ('running',UTC_TIMESTAMP())");
-   const id=created.insertId,errors=[];let imported=0,sources=0,scheduled=0,completed=0;
+   const id=created.insertId,errors=[];let imported=0,sources=0,scheduled=0,completed=0;let calendarChanges={published_updated:0,drafts_updated:0};
    for(const dataset of allowedDatasets(now())){
     try{
      const records=await fetchDataset(dataset);
@@ -60,18 +61,22 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
       const vals=part.flatMap(m=>[m.id,m.source_key,m.competition,m.league,m.season,m.round,m.home,m.away,m.date,m.kickoff?sqlUtc(m.kickoff):null,Number(m.scheduled_time_known),m.home_goals,m.away_goals,m.source_path]);
       const qs=part.map(()=>`(${cols.map(()=>'?').join(',')})`).join(',');
       await conn.execute(`INSERT INTO nforce_matches (${cols.join(',')}) VALUES ${qs} ON DUPLICATE KEY UPDATE
+       schedule_changed_at=IF(NOT(kickoff <=> VALUES(kickoff)),UTC_TIMESTAMP(),schedule_changed_at),
        round_name=VALUES(round_name),league=VALUES(league),match_date=VALUES(match_date),kickoff=VALUES(kickoff),
-       scheduled_time_known=VALUES(scheduled_time_known),home_goals=COALESCE(VALUES(home_goals),home_goals),
+       scheduled_time_known=VALUES(scheduled_time_known),
+       override_status=IF(VALUES(home_goals) IS NOT NULL AND VALUES(away_goals) IS NOT NULL AND override_status='live',NULL,override_status),
+       home_goals=COALESCE(VALUES(home_goals),home_goals),
        away_goals=COALESCE(VALUES(away_goals),away_goals),source_checked_at=UTC_TIMESTAMP()`,vals);
      }
      imported+=records.length;scheduled+=records.filter(x=>x.kickoff&&x.home_goals===null).length;
      completed+=records.filter(x=>x.home_goals!==null).length;
     }catch(e){errors.push(`${dataset.path}: ${safeError(e)}`);}
    }
+   if(sources)calendarChanges=await reconcileLinkedFixtureTimes(conn,NFORCE_PROVIDER);
    const status=sources?'completed':'failed';
    await conn.execute('UPDATE nforce_import_runs SET status=?,finished_at=UTC_TIMESTAMP(),sources=?,records=?,scheduled=?,completed_results=?,errors_json=? WHERE id=?',
     [status,sources,imported,scheduled,completed,JSON.stringify(errors).slice(0,3900),id]);
-   lastImportReport={ok:sources>0,status,sources,records:imported,scheduled,completed,failed_sources:errors.length,errors:errors.slice(0,5),
+   lastImportReport={ok:sources>0,status,sources,records:imported,scheduled,completed,calendar_changes:calendarChanges,failed_sources:errors.length,errors:errors.slice(0,5),
     warning:errors.length?'Importación parcial: verifica las fuentes que fallaron.':'Los archivos pueden contener calendarios desactualizados; verifica horarios antes de apostar.'};
    if(!sources)lastError='Fallaron las consultas de resultados deportivos';
    return lastImportReport;
@@ -79,7 +84,10 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
  }
  async function loadMatches(){
   // bounded season set; no API requests per match.
-  const [rows]=await db.query('SELECT id,source_key,competition,league,season,round_name AS `round`,home_team AS home,away_team AS away,match_date AS date_label,kickoff,scheduled_time_known,home_goals,away_goals,source_path,source_checked_at FROM nforce_matches WHERE match_date>=DATE_SUB(UTC_DATE(),INTERVAL 560 DAY) ORDER BY match_date ASC LIMIT 6500');
+  const [rows]=await db.query(`SELECT id,source_key,competition,league,season,round_name AS \`round\`,home_team AS home,away_team AS away,
+   match_date AS date_label,COALESCE(override_kickoff,kickoff) AS kickoff,
+   IF(override_kickoff IS NOT NULL,1,scheduled_time_known) AS scheduled_time_known,home_goals,away_goals,source_path,source_checked_at,
+   override_status,override_checked_at FROM nforce_matches WHERE match_date>=DATE_SUB(UTC_DATE(),INTERVAL 560 DAY) ORDER BY match_date ASC LIMIT 6500`);
   return rows.map(r=>({...r,date:r.date_label instanceof Date?r.date_label.toISOString().slice(0,10):String(r.date_label).slice(0,10),
    kickoff:r.kickoff?asUtc(r.kickoff).toISOString():null,scheduled_time_known:Boolean(r.scheduled_time_known),
    home_goals:r.home_goals==null?null:Number(r.home_goals),away_goals:r.away_goals==null?null:Number(r.away_goals)}));
@@ -97,7 +105,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
    try{
     const all=await loadMatches(),time=now().getTime();
     const usable=all.filter(x=>fulltime(x));
-    const future=all.filter(x=>x.scheduled_time_known&&x.kickoff&&x.home_goals===null&&Date.parse(x.kickoff)>time+60*60000&&Date.parse(x.kickoff)<time+72*3600000)
+    const future=all.filter(x=>!['cancelled','postponed','live'].includes(fixturePhase(x,now()).status)&&x.scheduled_time_known&&x.kickoff&&x.home_goals===null&&Date.parse(x.kickoff)>time+60*60000&&Date.parse(x.kickoff)<time+72*3600000)
      .sort((a,b)=>Date.parse(a.kickoff)-Date.parse(b.kickoff)).slice(0,120);
     let models=0,drafts=0,underMin=0,rejected=0,alreadyPresent=0,updatedDrafts=0;const examples=[];const missingReasons={};const filteredExamples=[];
     for(const m of future){
@@ -156,12 +164,13 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
    const [rows]=await conn.execute('SELECT * FROM football_candidates WHERE id=? FOR UPDATE',[id]);row=rows[0];
    if(!row||row.provider!==NFORCE_PROVIDER||row.status!=='draft'){await conn.rollback();return {published:false,reason:'Ya procesado o ajeno al motor local'};}
    if(reportLimited(row.evidence_json)?.model?.model!==MODEL_VERSION)throw Error('La propuesta pertenece a una versión anterior del modelo. Analiza de nuevo antes de publicarla.');
+   if(reportLimited(row.evidence_json)?.schedule_changed)throw Error('Cambió el horario del encuentro. Ejecuta «Analizar ahora» antes de aprobar para recalcular el pronóstico.');
    const kickoff=asUtc(row.kickoff);
    if(!Number.isFinite(kickoff.getTime())||kickoff.getTime()<now().getTime()+20*60000)throw Error('El partido comenzó o empieza demasiado pronto');
    // Source may have rescheduled or completed this fixture after the candidate
    // was created. Never publish stale proposals as if the calendar were live.
-   const [[liveSource]]=await conn.execute('SELECT kickoff,home_goals,away_goals,source_checked_at FROM nforce_matches WHERE id=? LIMIT 1',[row.fixture_id]);
-   if(!liveSource||liveSource.home_goals!==null||liveSource.away_goals!==null||!liveSource.kickoff||
+   const [[liveSource]]=await conn.execute('SELECT COALESCE(override_kickoff,kickoff) AS kickoff,override_status,override_checked_at,home_goals,away_goals,source_checked_at FROM nforce_matches WHERE id=? LIMIT 1',[row.fixture_id]);
+   if(!liveSource||['live','postponed','cancelled'].includes(liveSource.override_status)||liveSource.home_goals!==null||liveSource.away_goals!==null||!liveSource.kickoff||
       Math.abs(asUtc(liveSource.kickoff).getTime()-kickoff.getTime())>60000||
       now().getTime()-asUtc(liveSource.source_checked_at).getTime()>36*3600000){
     throw Error('Calendario o resultado desactualizado; importa datos y genera una nueva propuesta antes de publicar');
@@ -255,10 +264,40 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
  app.get(api('candidates'),authenticate,async(req,res)=>{
   if(!owner(req))return res.status(403).json({error:'Solo creador'});
   try{
-   const [rows]=await db.query(`SELECT id,fixture_id,visibility,home_team,away_team,league,kickoff,market,selection,provider_probability,odds,analysis,evidence_json,status,prediction_id,created_at FROM football_candidates WHERE provider=? ORDER BY id DESC LIMIT 40`,[NFORCE_PROVIDER]);
+   const [rows]=await db.query(`SELECT c.id,c.fixture_id,c.visibility,c.home_team,c.away_team,c.league,c.kickoff,c.market,c.selection,c.provider_probability,
+    c.odds,c.analysis,c.evidence_json,c.status,c.prediction_id,c.created_at,
+    COALESCE(m.override_kickoff,m.kickoff) AS effective_kickoff,m.override_kickoff,m.override_status,m.override_checked_at,
+    m.scheduled_time_known,m.home_goals,m.away_goals,m.source_checked_at,m.schedule_changed_at
+    FROM football_candidates c LEFT JOIN nforce_matches m ON m.id=c.fixture_id
+    WHERE c.provider=? ORDER BY c.id DESC LIMIT 40`,[NFORCE_PROVIDER]);
    res.json({candidates:rows.map(row=>{const ev=reportLimited(row.evidence_json);const {evidence_json,...r}=row;
-    return {...r,goal_projection:ev.goals||null,match_context:ev.match_context||null,own_model:ev.model||null,advanced:null};})});
+    const state=fixturePhase({...row,kickoff:row.effective_kickoff},now());
+    return {...r,needs_reanalysis:Boolean(ev.schedule_changed),match_status:state.status,match_status_label:state.label,match_status_verified:state.verified,
+     goal_projection:ev.goals||null,match_context:ev.match_context||null,own_model:ev.model||null,advanced:null};})});
   }catch(e){res.status(500).json({error:safeError(e)});}
+ });
+ // A schedule correction is an owner-only, auditable fallback when the public
+ // fixture feed has not yet reflected a verified postponement or new kickoff.
+ app.post(api('fixtures/:id/schedule'),authenticate,async(req,res)=>{
+  if(!owner(req))return res.status(403).json({error:'Solo creador'});
+  if(!validId(req.params.id))return res.status(400).json({error:'Partido inválido'});
+  let update;
+  try{update=validateManualFixtureUpdate(req.body,now());}catch(e){return res.status(400).json({error:safeError(e)});}
+  let conn;
+  try{
+   conn=await db.getConnection();await conn.beginTransaction();
+   const [[current]]=await conn.execute('SELECT id,kickoff,override_kickoff,override_status,home_goals,away_goals FROM nforce_matches WHERE id=? FOR UPDATE',[req.params.id]);
+   if(!current){await conn.rollback();return res.status(404).json({error:'Partido no encontrado'});}
+   if(update.action!=='clear'&&(current.home_goals!==null||current.away_goals!==null)){await conn.rollback();return res.status(409).json({error:'El encuentro ya tiene marcador final; el horario no puede alterarse sin revisar el resultado'});}
+   await conn.execute('UPDATE nforce_matches SET override_kickoff=?,override_status=?,override_checked_at=IF(? IS NULL,NULL,UTC_TIMESTAMP()),schedule_changed_at=UTC_TIMESTAMP() WHERE id=?',
+    [update.kickoff,update.status,update.status,req.params.id]);
+   const changed=await reconcileLinkedFixtureTimes(conn,NFORCE_PROVIDER);
+   await conn.execute("INSERT INTO audit_logs(actor_admin_id,action,entity_type,entity_id,details) VALUES (?,'fixture_schedule_verified','fixture',?,?)",
+    [req.admin.id,String(req.params.id),JSON.stringify({action:update.action,status:update.status,kickoff:update.kickoff,previous_status:current.override_status,linked:changed})]);
+   await conn.commit();
+   res.json({ok:true,message:update.action==='clear'?'Corrección retirada; se usa el último horario importado.':'Horario o estado actualizado; las fijas pendientes quedaron sincronizadas.',...changed});
+  }catch(e){await conn?.rollback().catch(()=>{});res.status(500).json({error:'No se pudo actualizar el horario: '+safeError(e)});}
+  finally{conn?.release();}
  });
  app.post(api('import'),authenticate,async(req,res)=>{
   if(!owner(req))return res.status(403).json({error:'Solo creador'});

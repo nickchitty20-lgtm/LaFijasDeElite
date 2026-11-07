@@ -134,6 +134,17 @@ export async function initializeDatabase() {
       INDEX idx_nforce_kickoff (kickoff),
       INDEX idx_nforce_club (competition,home_team,match_date)
     ) ENGINE=InnoDB`);
+    // v3.3.0: additive corrections; preserve all imported history and results.
+    const [fixtureCols]=await connection.query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='nforce_matches'");
+    const existingFixtureCols=new Set(fixtureCols.map(c=>c.COLUMN_NAME));
+    for(const [column,definition] of Object.entries({
+      override_kickoff:'DATETIME NULL',
+      override_status:"ENUM('scheduled','live','postponed','cancelled') NULL",
+      override_checked_at:'DATETIME NULL',
+      schedule_changed_at:'DATETIME NULL'
+    })){
+      if(!existingFixtureCols.has(column))await connection.query(`ALTER TABLE nforce_matches ADD COLUMN ${column} ${definition}`);
+    }
     await connection.query(`CREATE TABLE IF NOT EXISTS nforce_import_runs (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
       status ENUM('running','completed','failed') NOT NULL DEFAULT 'running',
