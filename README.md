@@ -1,3 +1,16 @@
+# Fijas de Élite v3.2.8.3 — Aprobación con mensajes de estado visibles
+
+**Corrección del panel (sin cambiar la lógica de publicación):**
+- Las propuestas de N-FORCE cierran la aprobación manual cuando faltan menos de 20 minutos para el inicio, y las del motor clásico cuando faltan 10 minutos o menos; son protecciones que ya existían, ahora se explican en la tarjeta antes de pulsar.
+- El botón muestra «Publicando y contactando Telegram…» mientras trabaja. Los errores del servidor quedan visibles tanto al lado de la propuesta como en un mensaje de estado separado que no se borra al actualizar la lista.
+- «Publicado en web» y el estado de Telegram se muestran por separado. Un fallo de Telegram no deshace la publicación ya confirmada en MySQL.
+- En respuestas sin publicación, se muestra la razón real del servidor (por ejemplo, propuesta ya procesada), en lugar de «sin cambios».
+- No modifica las fijas, los mercados, los filtros ni los avisos breves al grupo. No necesita nuevas variables ni migraciones.
+
+Comprueba `GET /health` → `version: 3.2.8.3` y prueba la aprobación con un partido que comience en más de 20 minutos. Revisa si Telegram está configurado y el bot tiene permisos. Pruebas automatizadas locales no validan tu entorno Railway.
+
+---
+
 # Fijas de Élite v3.2.8.2 — Avisos breves en comunidad
 
 **Publicaciones principales sin cambios:** la fija GRATIS completa va solamente al canal oficial `@FijasDeEliteOficial`; la fija VIP completa va solamente al canal VIP. El canal GRATIS mantiene sus adelantos VIP actuales. **El grupo de comunidad ahora recibe únicamente avisos cortos con enlaces, nunca la selección o el análisis.**

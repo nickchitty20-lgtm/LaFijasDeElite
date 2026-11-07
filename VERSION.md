@@ -1,3 +1,10 @@
+# v3.2.8.3 — Mensajes persistentes y cierre visible de aprobación
+
+- Muestra claramente el cierre de la aprobación para N-FORCE (20 min antes del partido) y el motor clásico (10 min).
+- Indica progreso de publicación web/Telegram y conserva el estado visible tras recargar las propuestas.
+- Muestra razón de error del servidor o estado separado de Telegram cuando la publicación web ya terminó.
+- Mantiene intactos los destinos: gratis completo solo al canal, VIP completo solo al canal VIP, anuncios cortos al grupo; sin migraciones.
+
 # v3.2.8.2 — Avisos comunitarios de novedades
 
 - Las fijas GRATIS se publican completas en el canal oficial y generan un aviso breve en el grupo con el enlace del canal.

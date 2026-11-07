@@ -527,6 +527,21 @@ $('myTelegramChangeForm')?.addEventListener('submit',async event=>{
 });
 
 
+// Reportes de aprobación independientes de los indicadores del motor.
+// Un refresco automático de propuestas no borra el resultado de la acción.
+function showFootballActionResult(text,isError=false){
+ const node=$('footballActionResult')||$('footballEngineMsg');
+ if(!node)return;
+ node.textContent=text;
+ node.dataset.state=isError?'error':'info';
+}
+function footballApprovalDeadline(candidate,isOwnEngine){
+ const kickoff=window.FijasMatchSchedule?.parse?.(candidate.kickoff);
+ const minutes=isOwnEngine?20:10;
+ if(!kickoff||!Number.isFinite(kickoff.getTime()))return {closed:false,minutes};
+ return {closed:kickoff.getTime()<=Date.now()+minutes*60000,minutes};
+}
+// v3.2.8.3 — estado visible de publicación y aviso de plazo antes del partido.
 // v2.1.3 — Manual scan and detailed reasons, owner-only.
 async function loadFootballEngine(){
  const summary=$('footballEngineSummary'),list=$('footballCandidateList'),message=$('footballEngineMsg');
@@ -620,22 +635,52 @@ async function loadFootballEngine(){
    const detail=document.createElement('details');const heading=document.createElement('summary');heading.textContent='Leer análisis, datos y riesgos';const paragraph=document.createElement('p');paragraph.textContent=c.analysis;paragraph.className='football-analysis';detail.append(heading,paragraph);
    if(schedule)item.append(schedule);item.append(pick,detail);
    if(c.status==='draft'){
+    const deadline=footballApprovalDeadline(c,Boolean(status.engine));
+    if(deadline.closed){
+     const warning=document.createElement('p');warning.className='football-approval-deadline';
+     warning.textContent=`⚠️ Plazo cerrado: debes aprobar antes de los últimos ${deadline.minutes} minutos previos al inicio. Esta propuesta ya no se puede publicar.`;
+     item.append(warning);
+    }
     const actions=document.createElement('div');actions.className='football-candidate-actions';
+    const itemResult=document.createElement('p');itemResult.className='football-action-inline';
+    itemResult.setAttribute('role','status');itemResult.setAttribute('aria-live','polite');
     const refresh=document.createElement('button');refresh.type='button';refresh.className='secondary';refresh.textContent='🔄 Actualizar lesiones y alineaciones';refresh.hidden=Boolean(status.engine);
     refresh.addEventListener('click',async()=>{refresh.disabled=true;try{
       const r=await api(`/api/admin/football/candidates/${c.id}/refresh-advanced`,{method:'POST',body:'{}'});
-      message.textContent=r.message||'Datos actualizados';await loadFootballEngine();
-    }catch(error){message.textContent=error.message;refresh.disabled=false;}});actions.append(refresh);
+      showFootballActionResult(r.message||'Datos actualizados');await loadFootballEngine();
+    }catch(error){showFootballActionResult(error.message,true);refresh.disabled=false;}});actions.append(refresh);
     for(const [action,label] of [['publish','Aprobar y publicar'],['discard','Descartar']]){
-     const button=document.createElement('button');button.className=action==='discard'?'secondary':'';button.textContent=label;
+     const button=document.createElement('button');button.type='button';button.className=action==='discard'?'secondary':'';button.textContent=label;
+     if(action==='publish'&&deadline.closed){button.disabled=true;button.title=`El plazo de aprobación terminó ${deadline.minutes} minutos antes del inicio`;}
      button.addEventListener('click',async()=>{
+      if(action==='publish'&&footballApprovalDeadline(c,Boolean(status.engine)).closed){
+       const text=`⚠️ No se publicó «${c.home_team} vs ${c.away_team}»: faltan menos de ${deadline.minutes} minutos para el inicio o ya comenzó.`;
+       itemResult.textContent=text;showFootballActionResult(text,true);button.disabled=true;return;
+      }
       if(!confirm(action==='publish'?`¿Publicar esta selección ${c.visibility.toUpperCase()} en web y Telegram?`:'¿Descartar propuesta?'))return;
-      button.disabled=true;
-      try{const response=await api(`/api/admin/football/candidates/${c.id}/${action}`,{method:'POST',body:'{}'});message.textContent=action==='publish'?`Resultado: ${response.published?'publicado':'sin cambios'}. Telegram: ${response.telegram||'—'}`:'Propuesta descartada';await loadFootballEngine();if(action==='publish')await loadPredictions();}
-      catch(error){message.textContent=error.message;button.disabled=false;}
+      button.disabled=true;button.textContent=action==='publish'?'Publicando y contactando Telegram…':'Descartando…';
+      itemResult.textContent=action==='publish'?'⏳ Guardando en la web y enviando a Telegram…':'⏳ Descartando propuesta…';
+      showFootballActionResult(itemResult.textContent);
+      try{
+       const response=await api(`/api/admin/football/candidates/${c.id}/${action}`,{method:'POST',body:'{}'});
+       if(action==='publish'&&!response.published){
+        const text=`⚠️ No se publicó «${c.home_team} vs ${c.away_team}»: ${response.reason||'el servidor no realizó cambios'}.`;
+        itemResult.textContent=text;showFootballActionResult(text,true);button.disabled=false;button.textContent=label;return;
+       }
+       await loadFootballEngine();
+       if(action==='publish'){
+        const telegram=response.telegram||'sin confirmación';
+        const result=`✅ Publicado en la web (#${response.prediction_id||'—'}). Telegram: ${telegram}.`;
+        showFootballActionResult(result,telegram==='failed');
+        await loadPredictions();
+       }else showFootballActionResult('✅ Propuesta descartada.');
+      }catch(error){
+       const text=`❌ No se pudo ${action==='publish'?'publicar':'descartar'} «${c.home_team} vs ${c.away_team}»: ${error.message}`;
+       itemResult.textContent=text;showFootballActionResult(text,true);button.disabled=false;button.textContent=label;
+      }
      });actions.append(button);
     }
-    item.append(actions);
+    item.append(actions,itemResult);
    }
    list.append(item);
   }
