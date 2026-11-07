@@ -34,8 +34,8 @@ test('Registro, inicio y recuperación reutilizan endpoints del servidor',()=>{
 });
 test('El panel cliente conserva secciones y PayPal/reset; el CSS se versiona',()=>{
  for(const section of ['overview','predictions','membership','payments','telegram','notices'])assert.match(client,new RegExp(`data-client-panel="${section}"`));
- assert.match(client,/client-premium-v327\.css\?v=3\.2\.7/);
- assert.match(index,/landing-auth-v327\.css\?v=3\.2\.7/);
+ assert.match(client,/client-premium-v327\.css\?v=3\.2\.7\.1/);
+ assert.match(index,/landing-auth-v327\.css\?v=3\.2\.7\.1/);
  assert.match(index,/landing-auth-v327\.js\?v=3\.2\.7/);
  assert.match(clientJs,/pendingPayPalReturn/);
  assert.match(clientJs,/reset_token/);

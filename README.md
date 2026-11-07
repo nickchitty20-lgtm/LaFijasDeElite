@@ -1,3 +1,5 @@
+> Actualización **v3.2.7.1**: acceso y registro móviles sin espacio superior excesivo. Modales alineados arriba; formulario directo en `/clientes.html`; sin cambios de backend ni base de datos.
+
 ## v3.2.7 — acceso moderno en la portada y panel de clientes renovado
 
 La portada ofrece inicio de sesión, registro y recuperación en una ventana emergente accesible. No redirige a `/clientes.html` hasta que el usuario haya iniciado sesión; si elige un plan, conserva su elección y accede a la sección de pago después de autenticarse. Las sesiones y la autorización VIP siguen siendo responsabilidad exclusiva del backend.

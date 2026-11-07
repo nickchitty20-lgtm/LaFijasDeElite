@@ -1,3 +1,11 @@
+# v3.2.7.1 — corrección de espacio superior en móvil
+
+- La ventana de inicio de sesión y registro ahora se sitúa cerca del borde superior en pantallas pequeñas en lugar de centrarse con un hueco vacío.
+- En móviles de poca altura se evita que el bloque decorativo crezca a 480 px por una regla conflictiva.
+- Al entrar directamente en `/clientes.html`, el formulario se muestra después de la cabecera, sin el hero promocional delante. En escritorio se conserva el diseño.
+- Solo cambia la presentación móvil. Sesiones, pagos, recuperación, suscripciones, Telegram y motor N-FORCE no se modifican. No requiere migración de base de datos.
+- Versiones de CSS actualizadas para evitar cachés antiguas.
+
 # v3.2.7 — acceso en portada y rediseño premium de clientes
 
 - Inicio de sesión, registro y recuperación desde un modal accesible en la **portada** (`/`), sin navegación previa a `/clientes.html`.
