@@ -9,7 +9,7 @@ const home=readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
 
 test('sin registros no se inventa un porcentaje de acierto',()=>{
  const stats=summaryFromGroups([]);
- assert.deepEqual(stats.overall,{total:0,won:0,lost:0,void:0,pending:0,decided:0,archived:0,accuracy:null});
+ assert.deepEqual(stats.overall,{total:0,won:0,lost:0,void:0,pending:0,decided:0,archived:0,source_checked:0,manual_checked:0,accuracy:null});
  assert.equal(stats.by_visibility.vip.accuracy,null);
 });
 test('el acierto excluye anulados y pendientes',()=>{
@@ -41,7 +41,7 @@ test('filtros validados protegen contra SQL injection',()=>{
 });
 test('el historial público no expone selecciones, cuotas ni análisis VIP',()=>{
  const recent=publicRecentResults([{id:15,title:'Equipo A vs B',league:'Liga',visibility:'vip',outcome:'lost',match_date:'2026-11-04T18:00:00Z',archived_at:'2026-11-05',selection:'Victoria B',odds:'6.5',analysis:'Secreto',market:'Over 2.5',telegram_id:123}]);
- assert.deepEqual(Object.keys(recent[0]).sort(),['id','title','league','visibility','outcome','match_date','withdrawn'].sort());
+ assert.deepEqual(Object.keys(recent[0]).sort(),['id','title','league','visibility','outcome','match_date','withdrawn','result_source','score'].sort());
  assert.equal(recent[0].withdrawn,true);
  assert.equal(recent[0].outcome,'lost');
 });
@@ -71,5 +71,5 @@ test('página principal muestra estadísticas sin valores de muestra',()=>{
  assert.match(home,/id="performancePeriod"/);
  assert.match(home,/id="performanceVisibility"/);
  assert.match(landing,/fetch\(`\/api\/public\/performance/);
- assert.match(home,/no cuentan con verificación automática independiente/);
+ assert.match(home,/OpenFootball CC0, una fuente comunitaria no oficial/);
 });

@@ -1,7 +1,8 @@
 /**
  * Public, database-derived performance. No made-up statistics and no disclosure
  * of premium predictions, odds, or privileged analyses.
- * Source outcomes are entered by the administrative team; not independently verified.
+ * Source outcomes can be human-entered or compared with OpenFootball CC0 FT scores.
+ * The feed is not an official match-result authority.
  */
 const PERIOD_DAYS = Object.freeze({all:null,'30d':30,'90d':90});
 const VISIBILITIES = new Set(['all','free','vip']);
@@ -30,20 +31,20 @@ export function performanceWhere({period='all',visibility='all'}={}) {
  return {sql:conditions.join(' AND '),params};
 }
 
-const zero=()=>({total:0,won:0,lost:0,void:0,pending:0,decided:0,archived:0,accuracy:null});
+const zero=()=>({total:0,won:0,lost:0,void:0,pending:0,decided:0,archived:0,source_checked:0,manual_checked:0,accuracy:null});
 export function summaryFromGroups(rows=[]){
  const by={free:zero(),vip:zero()};
  for(const row of rows){
   if(!Object.hasOwn(by,row.visibility))continue;
   const group=by[row.visibility];
-  for(const key of ['total','won','lost','void','archived'])group[key]+=safeNum(row[key]);
+  for(const key of ['total','won','lost','void','archived','source_checked','manual_checked'])group[key]+=safeNum(row[key]);
  }
  const overall=zero();
  for(const group of Object.values(by)){
   group.decided=group.won+group.lost;
   group.pending=Math.max(0,group.total-group.decided-group.void);
   group.accuracy=group.decided?Math.round(group.won/group.decided*1000)/10:null;
-  for(const key of ['total','won','lost','void','archived'])overall[key]+=group[key];
+  for(const key of ['total','won','lost','void','archived','source_checked','manual_checked'])overall[key]+=group[key];
  }
  overall.decided=overall.won+overall.lost;
  overall.pending=Math.max(0,overall.total-overall.decided-overall.void);
@@ -55,6 +56,8 @@ export function publicRecentResults(rows=[]){
  return rows.filter(r=>OUTCOMES.has(r.outcome)&&['free','vip'].includes(r.visibility)).slice(0,15).map(r=>({
   id:String(r.id),title:String(r.title||'Partido'),league:String(r.league||'Fútbol'),
   visibility:r.visibility,outcome:r.outcome,match_date:r.match_date||null,
-  withdrawn:Boolean(r.archived_at)
+  withdrawn:Boolean(r.archived_at),
+  result_source:r.settlement_source==='nforce-openfootball'?'openfootball':r.settlement_source==='manual'?'manual':'legacy',
+  score:r.settlement_source==='nforce-openfootball'&&/^\d{1,2}-\d{1,2}$/.test(String(r.settlement_score||''))?String(r.settlement_score):null
  }));
 }

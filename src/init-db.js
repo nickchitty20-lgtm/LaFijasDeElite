@@ -15,7 +15,8 @@ export async function initializeDatabase() {
       league:'VARCHAR(120) NULL', match_date:'DATETIME NULL', market:'VARCHAR(120) NULL',
       selection:'VARCHAR(160) NULL', odds:'DECIMAL(8,2) NULL',
       telegram_status:"ENUM('pending','sent','failed','not_configured') NOT NULL DEFAULT 'pending'",
-      archived_at:'DATETIME NULL', archived_by:'BIGINT UNSIGNED NULL', archive_reason:'VARCHAR(350) NULL'
+      archived_at:'DATETIME NULL', archived_by:'BIGINT UNSIGNED NULL', archive_reason:'VARCHAR(350) NULL',
+      settlement_source:'VARCHAR(60) NULL',settlement_score:'VARCHAR(9) NULL',settled_at:'DATETIME NULL'
     };
     for (const [name,definition] of Object.entries(additions)) {
       if (!existing.has(name)) await connection.query(`ALTER TABLE predictions ADD COLUMN ${name} ${definition}`);

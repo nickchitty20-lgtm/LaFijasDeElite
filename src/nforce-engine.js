@@ -3,6 +3,7 @@ import {estimateMatch,modelReadiness,makeCandidate,walkForwardBacktest,fulltime,
 import {canAutoPublishCandidate} from './football-publication-policy.js';
 import {sendPredictionToTelegram} from './telegram-bridge.js';
 import {publishedFootballDetails} from './football-report.js';
+import {createNforceSettlement} from './nforce-settlement.js';
 
 const DAY=86400000;
 const asUtc=x=>x instanceof Date?x:new Date(String(x||'').replace(' ','T')+(String(x||'').match(/Z|[+-]\d\d:\d\d$/)?'':'Z'));
@@ -11,7 +12,7 @@ const validId=x=>/^\d{1,18}$/.test(String(x));
 const safeError=e=>String(e?.message||e).replace(/(sk_live_|sk_test_|pk_live_|pk_test_)[^\s]+/g,'[redacted]').slice(0,180);
 const reportLimited=e=>{try{return typeof e==='string'?JSON.parse(e):e||{};}catch{return {};}};
 const owner=req=>req.admin?.role==='owner';
-export const IMPORT_INTERVAL_HOURS=12;
+export const IMPORT_INTERVAL_HOURS=2;
 export const SCAN_INTERVAL_MINUTES=60;
 
 export function importDecision(last,now=Date.now(),hours=IMPORT_INTERVAL_HOURS){
@@ -21,6 +22,7 @@ export function importDecision(last,now=Date.now(),hours=IMPORT_INTERVAL_HOURS){
  return {due:!Number.isFinite(next)||now>=next,next:Number.isFinite(next)?new Date(next).toISOString():null};
 }
 export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenFootball,sendTelegram=sendPredictionToTelegram,enqueueEvent=null,now=()=>new Date()}={}){
+ const settlement=createNforceSettlement({db,now});
  let importing=false,scanning=false,publishing=false,interval=null;
  let lastScanReport=null,lastImportReport=null,lastPublishReport=null,lastSchedulerMessage='',lastError='';
  const api=path=>`/api/admin/football/${path}`;
@@ -238,6 +240,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     last_publish_report:lastPublishReport,last_scheduler_message:lastSchedulerMessage,scheduled_retry_at:latest?new Date(asUtc(latest.started_at).getTime()+SCAN_INTERVAL_MINUTES*60000).toISOString():null,
     scheduled_retry_reason:'Control local cada hora',manual_scan:{available:!scanning,remaining:'Ilimitados con pausa de 5 min',daily_limit:'—'},
     total_matches:Number(stats.total_matches||0),complete_matches:Number(stats.complete_matches||0),source_import:lastImport||null,next_import_at:retry.next,
+    settlement:settlement.getStatus(),
     backtest:lastBacktest?{evaluated:lastBacktest.evaluated,accuracy:lastBacktest.accuracy,brier:lastBacktest.brier,validated:Number(lastBacktest.evaluated)>=40&&validation.model===MODEL_VERSION&&now().getTime()-asUtc(lastBacktest.created_at).getTime()<=8*DAY,
     model_version:validation.model,segments:validation.segments||null,calibration:validation.calibration||null}:null});
   }catch(e){res.status(500).json({error:'No se pudo consultar N-FORCE: '+safeError(e)});}
@@ -255,6 +258,10 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
   if(importing)return res.status(409).json({error:'Importación en curso'});
   importData({force:true}).catch(e=>{lastError=safeError(e);console.warn('nforce manual import:',lastError);});
   res.status(202).json({accepted:true,message:'Importación de fuentes CC0 iniciada; consulta el estado para ver el resultado.'});
+ });
+ app.post(api('settle'),authenticate,async(req,res)=>{
+  if(!owner(req))return res.status(403).json({error:'Solo creador'});
+  try{res.json(await settlement.run());}catch(e){res.status(503).json({error:'No se pudieron cotejar resultados: '+safeError(e)});}
  });
  app.post(api('backtest'),authenticate,async(req,res)=>{
   if(!owner(req))return res.status(403).json({error:'Solo creador'});
@@ -290,7 +297,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
   }catch(e){res.status(500).json({error:safeError(e)});}
  });
  async function tick(){
-  // Refresh source every 12h, not every 15m. A GitHub file is not a live-score API.
+  // Refresh source every ~2h; OpenFootball is a delayed community feed, NOT live scores.
   if(process.env.FOOTBALL_AUTO_IMPORT!=='false')await importData().catch(e=>{lastError=safeError(e);console.warn('nforce import:',lastError);});
   // Refresh independent walk-forward metrics weekly, also at first start.
   // When history is absent/insufficient, publication stays blocked.
@@ -301,6 +308,9 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     await backtest().catch(e=>{lastError='Backtesting: '+safeError(e);});
    }
   }
+  // Refresh outcomes from imported FT scores even when automatic publishing is off.
+  // Only N-FORCE fixture-linked predictions can be matched safely.
+  await settlement.run().catch(e=>{lastError='Resultados: '+safeError(e);});
   if(process.env.FOOTBALL_AUTO_SCAN==='true'){
    const r=await scan().catch(e=>{lastError=safeError(e);return {ok:false,error:lastError};});
    if(r&&!r.cooldown)lastSchedulerMessage=r.ok?`Escaneo local: ${r.drafts_created} propuestas / ${r.examined} partidos.`:safeError(r.error||r.message);
@@ -308,7 +318,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
   if(process.env.FOOTBALL_AUTO_PUBLISH==='true')await publishPending().catch(e=>{lastError=safeError(e);});
  }
  function start(){if(interval)return;
-  interval=setInterval(tick,30*60000);interval.unref?.();setImmediate(()=>tick().catch(e=>console.error('nforce scheduler:',safeError(e))));
+  interval=setInterval(tick,15*60000);interval.unref?.();setImmediate(()=>tick().catch(e=>console.error('nforce scheduler:',safeError(e))));
  }
- return {importData,scan,backtest,publish,publishPending,tick,start,stop:()=>{if(interval)clearInterval(interval);interval=null;}};
+ return {importData,scan,backtest,publish,publishPending,settle:settlement.run,tick,start,stop:()=>{if(interval)clearInterval(interval);interval=null;}};
 }

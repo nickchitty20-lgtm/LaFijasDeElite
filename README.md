@@ -1,3 +1,50 @@
+# Fijas de Élite v3.2.3 — Resultados automáticos + portada VIP vs. Gratis
+
+- Portada: comparación VIP/Gratis prominente directamente después de la sección principal, con ganadas, perdidas, anuladas y tasa real, derivadas de MySQL. Los números DEMO permanecen **exclusivamente** en administración.
+- N-FORCE coteja cada 15 minutos los pronósticos pendientes vinculados por ID a `nforce_matches` con **marcador FT reportado por OpenFootball (CC0)** ya importado. La importación externa se ejecuta aprox. cada 2 horas si `FOOTBALL_AUTO_IMPORT=true`. No usa API-Football.
+- Aplica resultado 1X2, mercados de totales de goles y ambos marcan **cuando la selección sea inequívoca**. Mercado ambiguo, partido reprogramado, marcador no disponible o fuente desactualizada → pendiente, sin inventar resultado.
+- Cada cambio automático queda auditado con marcador, regla y fuente; solo se actualiza si sigue pendiente. No se sobrescriben cierres manuales o revisiones administrativas; el dueño puede corregir con motivo. Pronósticos retirados permanecen en el historial.
+- El marcador fuente es comunitario **no oficial**. Se muestra si un resultado es automático (OpenFootball), manual o heredado, sin atribuirle certificación oficial.
+- Solo se cotejan automáticamente los pronósticos de N-FORCE con fixture ID seguro; pronósticos antiguos de API-Football o creados a mano requieren revisión por administración.
+- En Administración → Análisis automático, después de **Importar datos CC0**, pulsa **Verificar resultados finales** para adelantar el cotejo, o déjalo al programador.
+- Migración aditiva automática: `predictions.settlement_source`, `settlement_score`, `settled_at`. No borra cuentas, pagos, membresías ni Telegram.
+
+**Despliegue:** sube el ZIP a GitHub, espera Railway Success, comprueba `/health` en versión `3.2.3`. Conserva `FOOTBALL_ENGINE_MODE=own` y `FOOTBALL_AUTO_IMPORT=true`. El cotejo funciona incluso con `FOOTBALL_AUTO_PUBLISH=false`. Si la fuente no informa el resultado FT, el partido seguirá pendiente.
+
+**Verificación:** `npm test`. Las pruebas simulan datos; el despliegue real con OpenFootball/Telegram/Railway requiere comprobarse aparte.
+
+---
+
+# Fijas de Élite v3.2.3 — Comparación clara VIP vs Gratis
+
+- **En la portada (real):** sección «Pronósticos VIP vs. Gratis» con tarjetas lado a lado. Cada una muestra ganadas, perdidas, anuladas, pendientes y tasa de acierto con su denominador. Las cifras proceden del endpoint público existente, calculado desde MySQL, sin inventar estadísticas.
+- **Filtros:** «Gratis + VIP» presenta ambas tarjetas; al elegir una categoría, se ve la tarjeta correspondiente. El período elegido se aplica consistentemente.
+- **Sin historial:** aparece «—» en la tasa; nunca se muestra 0 % como si hubiera habido pronósticos perdidos.
+- **Panel del dueño, vista DEMO:** comparación **exclusivamente ficticia** de VIP 8 ganadas/1 perdida (88,9 %) frente a Gratis 4 ganadas/2 perdidas (66,7 %); totales ficticios 12/3, tal como antes. El rótulo DEMO es permanente, esos datos **no** se escriben en MySQL y no se envían a Telegram.
+- **Transparencia:** la web no presupone que VIP acierte más que Gratis. El rendimiento se calcula con los registros tal como están, incluidos los pronósticos retirados, y no constituye verificación independiente de marcadores.
+- Sin cambios de credenciales, variables de entorno, tablas, motor de pronósticos, pagos o permisos.
+- `GET /health` devuelve `3.2.3`.
+
+## Instalación
+
+Sube el ZIP completo a GitHub, o usa solo el ZIP de archivos modificados si tu última versión es la **v3.2.1**. Deja Railway desplegar y verifica `GET /health` → `3.2.3`. Abre la sección **Resultados** de la portada y comprueba **VIP vs. Gratis**. Ingresa como dueño para ver **Estadísticas DEMO**.
+
+## Validación
+
+`npm test` y `node --check` de los scripts. Las pruebas son locales: no se ha validado contra la base de datos de producción en Railway.
+
+---
+
+# Fijas de Élite v3.2.1 — Vista DEMO en administración
+
+- **Nuevo menú de dueño:** `Estadísticas DEMO`, con ejemplo visual ficticio de 12 ganadas, 3 perdidas y 80 % de aciertos **SIMULADOS**. Incluye resultados de equipos ficticios y marca permanente de DEMO.
+- **Nunca se publican cifras falsas:** la portada sigue consumiendo solo `/api/public/performance`, desde pronósticos reales de MySQL, incluidos los retirados.
+- **Solo el dueño:** el nuevo menú es visible únicamente al cargo `owner`; no existe un endpoint que permita escribir los ejemplos ni modificar estadísticas reales.
+- **Sin nuevas variables ni migraciones**: basta reemplazar los archivos y desplegar. `/health` devuelve la versión `3.2.1`.
+- El panel no incluye opción de exportar ni de enviar las cifras DEMO a Telegram. Es una previsualización interna del diseño.
+
+---
+
 # Fijas de Élite v3.2.0 — Estadísticas públicas del historial
 
 **Proyecto completo**, compatible con la v3.1.0. Mantiene web, Telegram, PayPal, MySQL, membresías, rangos y motor N-FORCE.
@@ -79,7 +126,7 @@ Tras subir la versión, pulsa **Validar modelo** y **Analizar ahora** para refre
 
 - **Fuente abierta:** ficheros JSON CC0 del repositorio [OpenFootball/football.json](https://github.com/openfootball/football.json) alojados en GitHub. Fuentes preaprobadas para Premier League, LaLiga, Bundesliga, Serie A y Ligue 1 de temporada vigente y anterior (hasta 10 ficheros). Sin clave API ni scrapers de webs ajenas.
 - **Licencia y atribución:** [CC0 1.0](https://github.com/openfootball/football.json/blob/master/LICENSE.md). La fuente está en dominio público. Esto no certifica exactitud o actualización del calendario, ni derechos de logos deportivos.
-- **Actualización:** cada 12 horas aproximadamente y reintento después de fallos; importación idempotente en MySQL. Una programación movida actualiza el encuentro existente. Se omiten partidos con hora ausente o ilegible para autopublicación.
+- **Actualización:** cada 2 horas aproximadamente y reintento después de fallos; importación idempotente en MySQL. Una programación movida actualiza el encuentro existente. Se omiten partidos con hora ausente o ilegible para autopublicación.
 - **Estadística:** modelo Poisson regularizado, corrección fija para marcadores 0-0/1-0/0-1/1-1, ajuste a medias de liga y promedios local/visitante, ponderación exponencial por recencia y muestra mínima de 7 partidos por club más 36 de liga. Produce 1X2, probabilidades de más de 1.5/2.5/3.5 goles, ambos marcan y un marcador orientativo. Las probabilidades **no están calibradas** y no proceden de cuotas.
 - **Calidad:** no publica partidos ya empezados, con resultados registrados, sin fecha/hora válida, con calendario local desactualizado (más de 36h desde la última consulta), duplicados o sin respaldo estadístico.
 - **Backtesting:** simulación cronológica *walk-forward* donde las predicciones pasadas solo ven datos anteriores a cada partido; Brier, log-loss, porcentajes observados y curvas de calibración por bandas de confianza y categoría gratis/VIP. Historial de backtests en MySQL. El backtest retrospectivo no representa resultados en producción.

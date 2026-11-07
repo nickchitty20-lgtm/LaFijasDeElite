@@ -120,10 +120,10 @@ test('Backtesting walk-forward: métricas sin rentabilidad inventada',()=>{
  assert.equal(r.method.includes('cronológico'),true);
  assert.ok(!('roi' in r));
 });
-test('Cooldown de importación: 12 horas, fallos reintentan antes',()=>{
+test('Cooldown de importación: 2 horas, fallos reintentan después',()=>{
  const t=Date.parse('2026-11-06T22:00:00Z');
  assert.equal(importDecision(null,t).due,true);
- assert.equal(importDecision({status:'completed',started_at:'2026-11-06 20:00:00'},t).due,false);
+ assert.equal(importDecision({status:'completed',started_at:'2026-11-06 21:00:00'},t).due,false);
  assert.equal(importDecision({status:'failed',started_at:'2026-11-06 19:00:00'},t).due,true);
 });
 

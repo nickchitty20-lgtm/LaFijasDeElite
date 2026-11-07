@@ -66,6 +66,9 @@ CREATE TABLE IF NOT EXISTS predictions (
  analysis TEXT NOT NULL,
  visibility ENUM('free','vip') NOT NULL DEFAULT 'free',
  outcome ENUM('pending','won','lost','void') NOT NULL DEFAULT 'pending',
+ settlement_source VARCHAR(60) NULL,
+ settlement_score VARCHAR(9) NULL,
+ settled_at DATETIME NULL,
  published_at DATETIME NULL,
  author_id BIGINT UNSIGNED NOT NULL,
  FOREIGN KEY (author_id) REFERENCES admins(id)

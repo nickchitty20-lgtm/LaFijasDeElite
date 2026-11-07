@@ -5,7 +5,7 @@ const css=readFileSync(new URL('../public/mobile-viewport.css',import.meta.url),
 for(const file of ['index.html','clientes.html','admin.html']){
  test(`la pagina ${file} carga estilos para viewport movil`,()=>{
   const html=readFileSync(new URL(`../public/${file}`,import.meta.url),'utf8');
-  assert.match(html, /mobile-viewport\.css\?v=3\.2\.0/);
+  assert.match(html, /mobile-viewport\.css\?v=3\.2\.3/);
  });
 }
 test('la pagina no se desplaza lateralmente y los menus si',()=>{

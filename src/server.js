@@ -28,7 +28,7 @@ import {publishedFootballDetails} from './football-report.js';
 import {publicPerformanceFilters,performanceWhere,summaryFromGroups,publicRecentResults} from './performance-stats.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
-const APP_VERSION = '3.2.0';
+const APP_VERSION = '3.2.3';
 const app = express();
 let telegramVipControl=null;
 let notificationControl=null;
@@ -280,7 +280,7 @@ app.patch('/api/admin/predictions/:id/outcome',authenticate,async(req,res)=>{
   if(correction && (req.admin.role!=='owner'||!parsed.data.reason)){
    await conn.rollback();return res.status(403).json({error:'Para corregir un resultado ya cerrado se requiere permiso de dueño y motivo de al menos 8 caracteres'});
   }
-  await conn.execute('UPDATE predictions SET outcome=? WHERE id=?',[nextOutcome,req.params.id]);
+  await conn.execute("UPDATE predictions SET outcome=?,settlement_source=?,settlement_score=NULL,settled_at=CASE WHEN ?='pending' THEN NULL ELSE UTC_TIMESTAMP() END WHERE id=?",[nextOutcome,nextOutcome==='pending'?null:'manual',nextOutcome,req.params.id]);
   await conn.execute(`INSERT INTO audit_logs(actor_admin_id,action,entity_type,entity_id,details)
    VALUES (?,?, 'prediction',?,JSON_OBJECT('previous',?,'outcome',?,'reason',?))`,[
     req.admin.id,correction?'prediction_outcome_corrected':'prediction_outcome_updated',
@@ -333,15 +333,17 @@ app.get('/api/public/performance',publicPerformanceLimit,async(req,res)=>{
    SUM(CASE WHEN (p.match_date IS NULL OR p.match_date<=UTC_TIMESTAMP()) AND p.outcome='won' THEN 1 ELSE 0 END) AS won,
    SUM(CASE WHEN (p.match_date IS NULL OR p.match_date<=UTC_TIMESTAMP()) AND p.outcome='lost' THEN 1 ELSE 0 END) AS lost,
    SUM(CASE WHEN (p.match_date IS NULL OR p.match_date<=UTC_TIMESTAMP()) AND p.outcome='void' THEN 1 ELSE 0 END) AS void,
-   SUM(CASE WHEN p.archived_at IS NOT NULL THEN 1 ELSE 0 END) AS archived
+   SUM(CASE WHEN p.archived_at IS NOT NULL THEN 1 ELSE 0 END) AS archived,
+   SUM(CASE WHEN p.settlement_source='nforce-openfootball' AND p.outcome IN ('won','lost','void') THEN 1 ELSE 0 END) AS source_checked,
+   SUM(CASE WHEN p.settlement_source='manual' AND p.outcome IN ('won','lost','void') THEN 1 ELSE 0 END) AS manual_checked
    FROM predictions p WHERE ${where.sql} GROUP BY p.visibility`,where.params);
-  const [recent]=await db.execute(`SELECT p.id,p.title,p.league,p.visibility,p.outcome,p.match_date,p.archived_at
+  const [recent]=await db.execute(`SELECT p.id,p.title,p.league,p.visibility,p.outcome,p.match_date,p.archived_at,p.settlement_source,p.settlement_score
    FROM predictions p WHERE ${where.sql}
     AND p.outcome IN ('won','lost','void')
     AND (p.match_date IS NULL OR p.match_date<=UTC_TIMESTAMP())
    ORDER BY COALESCE(p.match_date,p.published_at) DESC,p.id DESC LIMIT 15`,where.params);
   res.set('Cache-Control','public, max-age=60').json({filters,...summaryFromGroups(groups),recent:publicRecentResults(recent),
-   methodology:{source:'Resultados marcados por la administración; sin verificación independiente automatizada',
+   methodology:{source:'Resultados registrados manualmente o cotejados automáticamente con OpenFootball CC0 (fuente comunitaria, no oficial)',
     denominator:'Aciertos / (aciertos + fallos); anulados y pendientes no se incluyen',
     includes_withdrawn:true,not_predictions:'Esta tasa histórica no predice aciertos futuros'},
    generated_at:new Date().toISOString()});

@@ -14,11 +14,39 @@ const performanceStatus={won:['Ganado','won'],lost:['Perdido','lost'],void:['Anu
 function performanceCard(title,value,hint='',accent=''){
  return `<div class="performance-card ${accent}"><span>${clean(title)}</span><strong>${clean(value)}</strong><small>${clean(hint)}</small></div>`;
 }
-function performanceSplit(title,stats){
- const w=Number(stats?.won||0),l=Number(stats?.lost||0),total=w+l;
- const rate=stats?.accuracy==null?'Aún sin resultados':perfPercent(stats.accuracy);
- return `<article class="performance-split"><div class="performance-split-top"><strong>${clean(title)}</strong><span>${clean(rate)} de acierto registrado</span></div>${total?`<progress class="performance-progress" max="${total}" value="${w}" aria-label="${w} ganados de ${total} decididos"></progress>`:`<div class="performance-progress-empty" aria-label="Sin resultados todavía"></div>`}<small>${perfNumber(w)} ganados · ${perfNumber(l)} perdidos · ${perfNumber(stats?.void)} anulados</small></article>`;
+function performanceSplit(title,stats,category){
+ const w=Math.max(0,Number(stats?.won)||0);
+ const l=Math.max(0,Number(stats?.lost)||0);
+ const v=Math.max(0,Number(stats?.void)||0);
+ const p=Math.max(0,Number(stats?.pending)||0);
+ const decided=w+l;
+ const accuracy=decided?perfPercent(Math.round(w/decided*1000)/10):'—';
+ const share=decided?`${perfNumber(w)} ganadas de ${perfNumber(decided)} decididas`:'Sin resultados decididos';
+ return `<article class="performance-split ${category==='vip'?'is-vip':'is-free'}" aria-label="Resultados de ${clean(title)}">
+  <div class="performance-split-top"><span class="performance-group-name">${category==='vip'?'♛':'⚽'} ${clean(title)}</span><span class="performance-group-label">DATOS REGISTRADOS</span></div>
+  <div class="performance-compare-primary"><div><small>Ganadas</small><strong class="performance-compare-won">${perfNumber(w)}</strong></div><div><small>Tasa de acierto</small><strong class="performance-compare-rate">${clean(accuracy)}</strong></div></div>
+  <div class="performance-compare-counts"><span>Perdidas <b>${perfNumber(l)}</b></span><span>Anuladas <b>${perfNumber(v)}</b></span><span>Pendientes <b>${perfNumber(p)}</b></span></div>
+  ${decided?`<progress class="performance-progress" max="${decided}" value="${w}" aria-label="${share}"></progress>`:`<div class="performance-progress-empty" aria-label="Sin resultados decididos"></div>`}
+  <p class="performance-compare-foot">${share}. Solo ganadas y perdidas cuentan para el porcentaje.</p>
+ </article>`;
 }
+
+function quickSplit(title,v,variant){
+ const decided=Number(v?.won||0)+Number(v?.lost||0);
+ return `<article class="spotlight-card ${variant}"><div class="spotlight-card-head"><span>${variant==='vip'?'♛':'⚽'} ${clean(title)}</span><small>HISTORIAL REGISTRADO</small></div>
+ <strong class="spotlight-rate">${clean(perfPercent(v?.accuracy))}</strong><span class="spotlight-label">Aciertos sobre ${perfNumber(decided)} pronósticos decididos</span>
+ <div class="spotlight-counts"><span>Ganadas <b>${perfNumber(v?.won)}</b></span><span>Perdidas <b>${perfNumber(v?.lost)}</b></span><span>Anuladas <b>${perfNumber(v?.void)}</b></span></div>
+ <p>Resultados cotejados con fuente externa: ${perfNumber(v?.source_checked)} · Registros manuales: ${perfNumber(v?.manual_checked)}.</p></article>`;
+}
+async function loadQuickPerformance(){
+ const target=el('performanceQuickCards');if(!target)return;
+ try{const r=await fetch('/api/public/performance?period=all&visibility=all',{headers:{Accept:'application/json'}});if(!r.ok)throw Error();
+  const d=await r.json();target.innerHTML=quickSplit('VIP',d.by_visibility?.vip,'vip')+quickSplit('Gratis',d.by_visibility?.free,'free');
+  el('performanceQuickSource').textContent='Historial real de MySQL · La fuente OpenFootball es comunitaria, no oficial; los registros manuales no son independientes.';
+ }catch{target.innerHTML='<p class="performance-empty">Todavía no fue posible cargar el historial. Consulta la sección Resultados.</p>';}
+}
+loadQuickPerformance();
+
 async function loadPublicPerformance(){
  const summary=el('performanceStats'),breakdown=el('performanceBreakdown'),history=el('performanceRecent');
  if(!summary||!breakdown||!history)return;
@@ -38,17 +66,18 @@ async function loadPublicPerformance(){
    performanceCard('Pendientes',perfNumber(v.pending),'Aún sin resultado'),
    performanceCard('Tasa de acierto',perfPercent(v.accuracy),`${perfNumber(v.decided)} pronósticos decididos`,'highlight')
   ].join('');
-  breakdown.innerHTML=visibility==='all'?performanceSplit('Pronósticos gratuitos',data.by_visibility?.free)+performanceSplit('Pronósticos VIP',data.by_visibility?.vip):performanceSplit(visibility==='free'?'Pronósticos gratuitos':'Pronósticos VIP',v);
+  breakdown.innerHTML=visibility==='all'?performanceSplit('Pronósticos VIP',data.by_visibility?.vip,'vip')+performanceSplit('Pronósticos gratuitos',data.by_visibility?.free,'free'):performanceSplit(visibility==='free'?'Pronósticos gratuitos':'Pronósticos VIP',v,visibility);
+  el('performanceComparisonHint').textContent=visibility==='all'?'Ambas categorías en el mismo período. Las tasas se calculan por separado y pueden tener muestras de distinto tamaño.':'Selecciona «Gratis + VIP» en Categoría para comparar ambas columnas directamente.';
   const recent=Array.isArray(data.recent)?data.recent:[];
   if(!recent.length)history.innerHTML='<div class="performance-empty">Todavía no hay resultados registrados para este filtro. Los primeros aparecerán aquí cuando se marque un resultado real.</div>';
   else history.innerHTML=recent.map(p=>{
    const [label,style]=performanceStatus[p.outcome]||['Pendiente','pending'];
    const date=p.match_date?new Date(p.match_date):null;
    const dateText=date&&Number.isFinite(date.getTime())?new Intl.DateTimeFormat('es-PE',{day:'2-digit',month:'short',year:'numeric',timeZone:'America/Lima'}).format(date):'Fecha no registrada';
-   return `<div class="performance-result"><span class="performance-result-match"><strong>${clean(p.title)}</strong><small>#${clean(p.id)} · ${clean(p.league||'Fútbol')} · ${p.visibility==='vip'?'VIP':'GRATIS'} · ${clean(dateText)}${p.withdrawn?' · Retirado':''}</small></span><span class="performance-tag ${style}">${label}</span></div>`;
+   return `<div class="performance-result"><span class="performance-result-match"><strong>${clean(p.title)}</strong><small>#${clean(p.id)} · ${clean(p.league||'Fútbol')} · ${p.visibility==='vip'?'VIP':'GRATIS'} · ${clean(dateText)}${p.withdrawn?' · Retirado':''}${p.score?' · Marcador '+clean(p.score):''} · ${p.result_source==='openfootball'?'Cotejado con OpenFootball':p.result_source==='manual'?'Registrado manualmente':'Registro anterior'}</small></span><span class="performance-tag ${style}">${label}</span></div>`;
   }).join('');
   const withdrawn=Number(v.archived||0);
-  el('performanceNote').textContent=`Datos calculados desde los pronósticos publicados en MySQL. ${withdrawn?`Se incluyen ${withdrawn} pronóstico(s) retirado(s). `:''}Los resultados son introducidos por la administración y aún no están verificados automáticamente contra marcadores oficiales. Tasa = ganados ÷ (ganados + perdidos); no incluye pendientes ni anulados. Los aciertos pasados no garantizan los próximos.`;
+  el('performanceNote').textContent=`Datos calculados desde los pronósticos publicados en MySQL. ${withdrawn?`Se incluyen ${withdrawn} pronóstico(s) retirado(s). `:''}Cotejados automáticamente con OpenFootball CC0: ${perfNumber(v.source_checked)}; registrados manualmente: ${perfNumber(v.manual_checked)}. OpenFootball no es una fuente oficial; los resultados anteriores pueden carecer de procedencia registrada. Tasa = ganados ÷ (ganados + perdidos); no incluye pendientes ni anulados. Los aciertos pasados no garantizan los próximos.`;
   el('performanceUpdated').textContent='Actualizado: '+new Intl.DateTimeFormat('es-PE',{dateStyle:'short',timeStyle:'short',timeZone:'America/Lima'}).format(new Date(data.generated_at));
  }catch(e){summary.innerHTML='<p class="performance-empty">Las estadísticas no están disponibles en este momento.</p>';breakdown.replaceChildren();history.innerHTML='<p class="performance-empty">Vuelve a intentar más tarde.</p>';el('performanceUpdated').textContent='Sin conexión';}
 }
