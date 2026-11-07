@@ -1,7 +1,7 @@
 const $=id=>document.getElementById(id);
 let currentAdminRole='';
 async function api(url,options={}){
- const r=await fetch(url,{...options,credentials:'same-origin',headers:{'Content-Type':'application/json'}});
+ const r=await window.FijasSecurity.apiFetch(url,{...options,headers:{'Content-Type':'application/json'}});
  const data=await r.json().catch(()=>({error:'Respuesta inesperada'}));
  if(!r.ok)throw new Error(data.error||'Error de conexión');return data;
 }

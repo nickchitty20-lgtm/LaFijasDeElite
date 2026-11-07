@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);let signedIn=false;
 async function call(url,body,auth=false){
- const r=await fetch(url,{method:body?'POST':'GET',credentials:'same-origin',headers:{'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});
+ const r=await window.FijasSecurity.apiFetch(url,{method:body?'POST':'GET',headers:{'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});
  const data=await r.json().catch(()=>null);
  if(!r.ok){
   const message=(data&&typeof data.error==='string'&&data.error)||

@@ -49,7 +49,7 @@
   lastFocus?.focus?.({preventScroll:true});
  }
  async function api(path, data) {
-  const res = await fetch(path, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  const res = await window.FijasSecurity.apiFetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw Error(typeof body.error === 'string' ? body.error : (res.status === 429 ? 'Demasiados intentos. Inténtalo de nuevo en unos minutos.' : 'No se pudo completar la solicitud.'));
   return body;
