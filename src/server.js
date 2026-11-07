@@ -29,7 +29,7 @@ import {publicAnalysisText} from './public-branding.js';
 import {publicPerformanceFilters,performanceWhere,summaryFromGroups,publicRecentResults} from './performance-stats.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
-const APP_VERSION = '3.2.7.1';
+const APP_VERSION = '3.2.7.2';
 const app = express();
 let telegramVipControl=null;
 let notificationControl=null;
@@ -1035,6 +1035,11 @@ footballControl=process.env.FOOTBALL_ENGINE_MODE==='api'
    const {enqueuePredictionEvent}=await import('./notification-center.js');
    return enqueuePredictionEvent(database,id,visibility);
   }});
+// No /admin.html publico: area privada solo para sesiones con rol administrativo.
+app.get('/panel',authenticate,(req,res)=>{
+ res.setHeader('Cache-Control','no-store');
+ res.sendFile(path.resolve(root,'../views/panel.html'));
+});
 app.use(express.static(root,{index:'index.html',dotfiles:'ignore',setHeaders(res,servedPath){
  if(/\.(?:html|js|css)$/i.test(servedPath))res.setHeader('Cache-Control','no-store');
 }}));

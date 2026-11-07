@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 
-const admin=readFileSync(new URL('../public/admin.html',import.meta.url),'utf8');
+const admin=readFileSync(new URL('../views/panel.html',import.meta.url),'utf8');
 const publicHome=readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
 const landing=readFileSync(new URL('../public/landing.js',import.meta.url),'utf8');
 const adminJS=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');

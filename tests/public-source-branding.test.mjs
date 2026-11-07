@@ -8,7 +8,7 @@ import {publicRecentResults} from '../src/performance-stats.js';
 const raw=p=>readFileSync(new URL(p,import.meta.url),'utf8');
 const names=/OpenFootball|API[- ]?Football|API[- ]?Sports|football-data\.org/i;
 test('portada, metodología y dashboard visible no muestran nombres de proveedores',()=>{
- for(const path of ['../public/index.html','../public/admin.html','../public/app.js'])
+ for(const path of ['../public/index.html','../views/panel.html','../public/app.js'])
   assert.doesNotMatch(raw(path),names, path);
  assert.match(raw('../public/index.html'),/terceros, no oficiales/);
  assert.match(raw('../public/index.html'),/registros manuales los introduce nuestro equipo/);

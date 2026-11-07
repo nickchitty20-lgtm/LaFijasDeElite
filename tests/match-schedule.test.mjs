@@ -28,7 +28,7 @@ test('Telegram snapshots show Peru schedule and time left when published',()=>{
 });
 test('browser clock is included before pick consumers and refreshed automatically',()=>{
  const client=readFileSync(new URL('../public/clientes.html',import.meta.url),'utf8');
- const admin=readFileSync(new URL('../public/admin.html',import.meta.url),'utf8');
+ const admin=readFileSync(new URL('../views/panel.html',import.meta.url),'utf8');
  for(const html of [client,admin])assert.ok(html.indexOf('/match-schedule.js')<html.indexOf('/pick-report.js'));
  const browser=readFileSync(new URL('../public/match-schedule.js',import.meta.url),'utf8');
  const context={window:{setInterval(fn,ms){assert.equal(ms,30000);}},document:{}};vm.createContext(context);vm.runInContext(browser,context);

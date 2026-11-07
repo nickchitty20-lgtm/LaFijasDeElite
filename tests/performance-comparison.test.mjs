@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import {summaryFromGroups} from '../src/performance-stats.js';
 
 const html=readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
-const admin=readFileSync(new URL('../public/admin.html',import.meta.url),'utf8');
+const admin=readFileSync(new URL('../views/panel.html',import.meta.url),'utf8');
 const js=readFileSync(new URL('../public/landing.js',import.meta.url),'utf8');
 const style=readFileSync(new URL('../public/performance.css',import.meta.url),'utf8');
 

@@ -7,7 +7,7 @@ const server=readFileSync(new URL('../src/server.js',import.meta.url),'utf8');
 const admin=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
 const dbInit=readFileSync(new URL('../src/init-db.js',import.meta.url),'utf8');
 const notifications=readFileSync(new URL('../src/notification-center.js',import.meta.url),'utf8');
-const html=readFileSync(new URL('../public/admin.html',import.meta.url),'utf8');
+const html=readFileSync(new URL('../views/panel.html',import.meta.url),'utf8');
 
 test('solo el dueño puede retirar pronósticos',()=>{
  assert.equal(canRemovePrediction('owner'),true);
