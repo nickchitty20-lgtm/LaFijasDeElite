@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {ownerForceCanProceed,shouldPreserveOwnerMember} from '../src/telegram-detach-policy.js';
 import {readFileSync} from 'node:fs';
 const routes=readFileSync(new URL('../src/telegram-routes.js',import.meta.url),'utf8');
-const admin=readFileSync(new URL('../public/admin.html',import.meta.url),'utf8');
+const admin=readFileSync(new URL('../views/panel.html',import.meta.url),'utf8');
 const client=readFileSync(new URL('../public/clientes.html',import.meta.url),'utf8');
 
 test('only active accounts with a Telegram and no earlier preserved member can force unlink',()=>{

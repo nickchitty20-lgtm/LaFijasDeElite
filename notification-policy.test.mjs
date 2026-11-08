@@ -17,13 +17,13 @@ test('notificaciones: predicción VIP requiere derecho VIP actual',()=>{
  assert.equal(noticeShouldSend({active:true,linked:true,pendingChange:false,optedIn:true,eligible:true}),true);
 });
 test('mensajes gratuitos nunca revelan selección ni cuotas',()=>{
- const text=formatPredictionNotice('free','https://example.com/clientes.html');
+ const text=formatPredictionNotice('free','https://example.com/');
  assert.match(text,/gratuito/i);assert.ok(!text.includes('Cuota'));
  assert.ok(!text.includes('Selección'));
  assert.match(text,/https:\/\/example.com/);
 });
 test('mensaje VIP es genérico, no incluye pick completo',()=>{
- const text=formatPredictionNotice('vip','https://example.com/clientes.html');
+ const text=formatPredictionNotice('vip','https://example.com/');
  assert.match(text,/VIP/);assert.ok(!text.includes('análisis'));
  assert.ok(!text.includes('mercado'));
 });

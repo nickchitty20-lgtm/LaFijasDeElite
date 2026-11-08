@@ -22,20 +22,20 @@ test('prueba API sin publicar; demuestra conexión y partido apto',async()=>{
  assert.equal(r.sample.prediction_available,true);
  assert.equal(r.sample.passes_filters,true);
  assert.equal(r.sample.visibility,'vip');
- assert.deepEqual(called.map(c=>c[0]),['status','fixtures','predictions']);
+ assert.deepEqual(called.map(c=>c[0]),['status','fixtures','fixtures','predictions']);
 });
 
-test('no partidos entre 1 y 6 horas: muestra el motivo sin consultar predicciones',async()=>{
+test('no partidos entre 1 y 24 horas: muestra el motivo sin consultar predicciones',async()=>{
  const calls=[];
  const request=async(endpoint,params)=>{
   calls.push(endpoint);
-  return endpoint==='status'?{requests:{current:2,limit:100}}:[fixture('2026-11-06T23:00:00Z')];
+  return endpoint==='status'?{requests:{current:2,limit:100}}:[fixture('2026-11-07T20:00:00Z')];
  };
  const r=await diagnoseFootball({now,request});
  assert.equal(r.ok,true);assert.equal(r.fixtures_in_window,0);
  assert.match(r.reason,/no hay partidos válidos/);
  assert.equal(r.sample,null);
- assert.deepEqual(calls,['status','fixtures']);
+ assert.deepEqual(calls,['status','fixtures','fixtures']);
 });
 
 test('predicciones sin evidencia suficiente se informan sin fabricar propuestas',async()=>{

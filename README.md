@@ -1,3 +1,28 @@
+## v3.3.2 — Horarios deportivos contrastados y sincronizados (opcional)
+
+La web, el panel administrativo y el área de clientes comparten horarios en **hora de Perú (America/Lima)**. Se consulta el endpoint `/api/schedules/live` periódicamente; éste consulta exclusivamente datos ya verificables en MySQL (NO hace una petición externa por cada visitante). Los partidos que todavía no han sido verificados muestran **Horario sin confirmación reciente** y no presentan una cuenta regresiva engañosa. Las horas manuales se introducen en Perú y se guardan en UTC.
+
+Para activar la comprobación de horarios sin cambiar de motor estadístico, agrega en Railway:
+
+```env
+FOOTBALL_ENGINE_MODE=own
+FOOTBALL_SCHEDULE_LIVE=true
+FOOTBALL_API_KEY=TU_CLAVE_EXISTENTE
+FOOTBALL_SCHEDULE_MAX_CALLS=70
+```
+
+El servidor consulta un feed deportivo ya compatible con el proyecto y comprueba coincidencias unívocas de equipos y liga. No se inventan eventos para compensar diferencias de nombres; ante datos ambiguos o ausentes, se indica no verificado. La consulta al proveedor se limita por presupuesto diario y una planificación de 30 minutos para hoy, más espaciada en días futuros (no es minuto a minuto). Verifica **Panel → Análisis automático → Estado del calendario** para el estado y la fecha de última comprobación. Sin clave, los pronósticos y la web siguen funcionando, pero **no existe sincronización real de horarios**. Las publicaciones antiguas en Telegram no se editan retroactivamente.
+
+---
+
+## Versión 3.3.0 — N-FORCE con ajustes por rival (modelo 1.4)
+
+El pronóstico ahora incluye un componente regularizado de fuerza ofensiva/defensiva **ajustada por los rivales** y por la antigüedad de los resultados, conservando el anclaje Poisson anterior. La probabilidad no se incrementa de forma artificial. El rango de publicación GRATIS pasa a 40%–menos de 68% (con margen/calidad mínimos), sin modificar el estándar VIP. El backtest permite comparar el Brier del motor anterior y nuevo con las mismas fechas y resultados; una comparación favorable necesita validarse con muestras históricas suficientes y datos no utilizados al entrenar.
+
+Se corrigió el tratamiento conservador de los resultados cuya hora se desconoce para prevenir filtración temporal. No se importan lesiones, alineaciones o cuotas inexistentes. Mantiene 72 horas, Telegram, panel, pagos, sesiones y MySQL. Una propuesta antigua necesita reanalizarse tras actualizar el modelo a 1.4. Despliega, comprueba `/health` (v3.3.0), luego **Importar datos → Validar modelo → Analizar ahora**. Si tienes propuestas pendientes antiguas usa **Reanalizar esta propuesta**. El cambio está probado localmente, no constituye validación de precisión con tus partidos reales.
+
+---
+
 ## Versión 3.2.9.4 — Propuestas dentro de las próximas 72 horas
 
 Se volvió a limitar el análisis de N-FORCE a **3 días (72 horas)**, para priorizar partidos cercanos. El sistema examina únicamente partidos con hora conocida que comiencen entre **1 y 72 horas** desde cada escaneo. Se conserva la capacidad de hasta 240 partidos dentro de esa ventana y el diagnóstico de duplicados/rechazos de la versión previa.
@@ -1013,3 +1038,7 @@ El campo `match_date` se almacena en UTC. En la web se muestra el horario de Per
 El motor Poisson v1.2 calcula probabilidades de 1X2, goles, ambos marcan y doble oportunidad usando exclusivamente partidos terminados anteriores a la fecha del encuentro. Elige **una propuesta** por encuentro; si un mercado alcanza el umbral VIP y demuestra diferencia frente a la frecuencia histórica de la liga puede pasar a borrador VIP. **Una probabilidad del modelo no es tasa real de aciertos ni rentabilidad:** las estimaciones actuales no están calibradas.
 
 Las lesiones y alineaciones NO se importan; si no existen datos, se indica su ausencia. La publicación continúa siendo manual salvo activación expresa. No elimina propuestas antiguas: las que estén publicadas o descartadas permanecen intactas. Tras desplegar el ZIP, importa datos, ejecuta backtesting y vuelve a analizar para recalcular borradores. El informe de escaneo incluye `already_present`, `eligible`, `updated_existing_drafts` y `filter_examples` para explicar los ceros. Los límites y detalles de licencias y procedencia siguen documentados internamente.
+
+## Cambios v3.3.1 — Hora de inicio de los pronósticos
+
+En Panel → Pronósticos → Últimos pronósticos, cada ficha publicada muestra fecha, hora de inicio del encuentro (hora de Perú), y un aviso si la hora prevista ya pasó. Este aviso no afirma que el partido haya terminado ni actualiza automáticamente un resultado. La portada también muestra el horario del encuentro en los adelantos, sin exponer la selección de los VIP bloqueados. No requiere cambios de MySQL ni variables de entorno.

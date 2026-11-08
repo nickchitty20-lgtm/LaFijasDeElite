@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-const html=readFileSync(new URL('../public/admin.html',import.meta.url),'utf8');
+const html=readFileSync(new URL('../views/panel.html',import.meta.url),'utf8');
 const client=readFileSync(new URL('../public/clientes.html',import.meta.url),'utf8');
 const adminJS=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
 const customerJS=readFileSync(new URL('../public/clientes.js',import.meta.url),'utf8');
@@ -28,10 +28,10 @@ test('errores secundarios no cierran la sesión administrativa',()=>{
  assert.match(customerJS,/Promise\.allSettled\(\[loadCustomerPicks\(\)/);
 });
 test('la version y recursos del dashboard evitan caches cruzadas',()=>{
- assert.match(server,/APP_VERSION = '2\.1\.6'/);
+ assert.match(server,/APP_VERSION = '3\.3\.2'/);
  assert.match(server,/Cache-Control/);
- assert.match(html,/app\.js\?v=2\.1\.6/);
- assert.match(client,/clientes\.js\?v=2\.1\.6/);
+ assert.match(html,/app\.js\?v=3\.3\.2/);
+ assert.match(client,/clientes\.js\?v=3\.3\.2/);
 });
 test('sigue presente la desvinculacion sin expulsion',()=>{
  assert.match(client,/telegramUnlinkButton/);

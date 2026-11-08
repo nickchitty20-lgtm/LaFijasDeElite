@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {sha256,safeTelegramId,telegramLinkStart,telegramWebhookSecretValid,telegramPublicNotice,telegramVipPost,isPublicTelegramContentSafe,sendPredictionToTelegram} from '../src/telegram-bridge.js';
+import {sha256,safeTelegramId,telegramLinkStart,telegramWebhookSecretValid,telegramPublicNotice,telegramVipPublicPreview,telegramHomeUrl,telegramVipPost,isPublicTelegramContentSafe,sendPredictionToTelegram} from '../src/telegram-bridge.js';
 
 const pick={visibility:'free',title:'El Clásico',league:'Primera División',match_date:'2026-11-10 19:00',market:'Ambos anotan',selection:'Sí',odds:2.31,analysis:'Análisis SUPER PRIVADO 1044'};
 test('public notices contain no selection, analysis or odds, including free picks',()=>{
@@ -45,22 +45,33 @@ test('cryptographic SHA256 produces 64-character hexadecimal',()=>{
  assert.match(sha256('test'),/^[a-f0-9]{64}$/);
  assert.notEqual(sha256('test'),sha256('test1'));
 });
-test('public publishing does not send full predictions to group',async()=>{
+test('public publishing sends only full FREE predictions to official channel',async()=>{
  const old=globalThis.fetch;let request=null;
  try{
-  globalThis.fetch=async (url,opts)=>{request=JSON.parse(opts.body);return {ok:true,json:async()=>({ok:true,result:{message_id:123}})};};
-  const result=await sendPredictionToTelegram(pick,{TELEGRAM_BOT_TOKEN:'example-token',TELEGRAM_FREE_CHAT_ID:'-100123',PUBLIC_BASE_URL:'https://example.com'});
-  assert.equal(result.state,'sent');assert.equal(request.chat_id,'-100123');
-  assert.equal(request.text.includes('SUPER PRIVADO 1044'),false);
+  globalThis.fetch=async (url,opts)=>{request=JSON.parse(opts.body);return {ok:true,json:async()=>({ok:true,result:String(url).endsWith('/getChat')?{id:-1001234567,type:'channel',title:'Official'}:{message_id:123}})};};
+  const result=await sendPredictionToTelegram(pick,{TELEGRAM_BOT_TOKEN:'example-token',TELEGRAM_FREE_CHAT_ID:'-100999',TELEGRAM_FREE_CHANNEL_CHAT_ID:'-1001234567',PUBLIC_BASE_URL:'https://example.com'});
+  assert.equal(result.state,'sent');assert.equal(request.chat_id,'-1001234567');
+  assert.equal(request.text.includes('SUPER PRIVADO 1044'),true);
+  assert.match(request.text,/RIESGO ALTO/);
  }finally{globalThis.fetch=old;}
 });
-test('VIP publishing sends full content only to private channel',async()=>{
+test('VIP publishing sends full content privately; preview requires database',async()=>{
  const old=globalThis.fetch;const requests=[];
  try{
   globalThis.fetch=async (url,opts)=>{requests.push(JSON.parse(opts.body));return {ok:true,json:async()=>({ok:true,result:{message_id:123}})};};
   const result=await sendPredictionToTelegram({...pick,visibility:'vip'},{TELEGRAM_BOT_TOKEN:'example-token',TELEGRAM_FREE_CHAT_ID:'-100123',TELEGRAM_VIP_CHAT_ID:'-100321',TELEGRAM_WEBHOOK_SECRET:'a'.repeat(32),PUBLIC_BASE_URL:'https://example.com'});
-  assert.equal(result.state,'sent');assert.equal(requests.length,2);
+  assert.equal(result.state,'sent');assert.equal(requests.length,1);
   assert.equal(requests[0].chat_id,'-100321');assert.match(requests[0].text,/SUPER PRIVADO 1044/);
-  assert.equal(requests[1].chat_id,'-100123');assert.equal(requests[1].text.includes('SUPER PRIVADO 1044'),false);
  }finally{globalThis.fetch=old;}
+});
+
+test('all public Telegram links lead to landing page, not /clientes.html',()=>{
+ const bases=['https://example.com','https://example.com/','https://example.com/clientes.html','https://example.com/site?tracking=1'];
+ for(const base of bases){
+  assert.equal(telegramHomeUrl(base),'https://example.com/');
+  for(const message of [telegramPublicNotice(pick,base),telegramVipPublicPreview({...pick,visibility:'vip'},base)]){
+   assert.match(message,/https:\/\/example\.com\//);
+   assert.equal(message.includes('/clientes.html'),false);
+  }
+ }
 });
