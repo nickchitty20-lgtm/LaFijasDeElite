@@ -6,7 +6,7 @@ import {fitOpponentRatings,opponentAdjustedGoals} from './nforce-strength.js';
 const DAY=86400000;
 const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
 const round=(x,n=1)=>Number(x.toFixed(n));
-export const MODEL_VERSION='nforce-poisson-1.4';
+export const MODEL_VERSION='nforce-poisson-1.5';
 export const MODEL_SETTINGS=Object.freeze({lookbackDays:540,teamGames:30,leagueGames:250,minTeam:7,minLeague:36,freshDays:90,rho:-0.07});
 
 export function fulltime(row){
@@ -151,30 +151,84 @@ export function estimateMatch(target,completed,asOf=fixtureTimestamp(target)){
  * (provider, fixture_id) constraint and preventing conflicting predictions.
  * Estimated probabilities are not calibrated; no invented lineups or odds.
  */
+/** A sensitivity check, NOT a statistical lower confidence bound.
+ * Vary both teams' expected goals by +-12%, and compare with the earlier
+ * regularized forecast. Conservative VIPs must survive these scenarios.
+ * All test scenarios derive from the historical goal model, not market odds.
+ */
+export const VIP_RISK_POLICY=Object.freeze({minTeam:20,minLeague:150,minVenue:6,minEffective:11,
+ maxFormAgeDays:28,minQuality:86,maxModelDisagreement:9,maxStressDrop:13,minStressed:76,
+ minNominal:{'1x2':74,over15:82,over25:79,under25:79,bttsYes:79,bttsNo:79,'1X':86,'X2':86,'12':88},
+ minBaselineEdge:8});
+const marketScore=(key,grid,selected)=>{
+ let score=0;
+ for(const c of grid){const h=c.home,a=c.away;
+  const good=key==='1x2'?(selected==='home'?h>a:selected==='draw'?h===a:selected==='away'?h<a:false):
+   key==='over15'?h+a>=2:key==='over25'?h+a>=3:key==='under25'?h+a<=2:
+   key==='bttsYes'?h>0&&a>0:key==='bttsNo'?h===0||a===0:
+   key==='1X'?h>=a:key==='X2'?h<=a:key==='12'?h!==a:false;
+  if(good)score+=c.p;
+ }
+ return 100*score;
+};
+export function vipRiskAssessment(option,model){
+ const fail=(code)=>({approved:false,code});
+ const sample=model?.sample||{},risk=VIP_RISK_POLICY;
+ if(!model||!option||!Object.hasOwn(risk.minNominal,option.key))return fail('invalid_market');
+ if(!Number.isFinite(Number(model.quality))||Number(model.quality)<risk.minQuality||
+  Number(sample.home)<risk.minTeam||Number(sample.away)<risk.minTeam||Number(sample.league)<risk.minLeague||
+  Number(sample.home_venue)<risk.minVenue||Number(sample.away_venue)<risk.minVenue||
+  Number(sample.home_effective)<risk.minEffective||Number(sample.away_effective)<risk.minEffective||
+  !Number.isFinite(Number(sample.age_home_days))||!Number.isFinite(Number(sample.age_away_days))||
+  Number(sample.age_home_days)>risk.maxFormAgeDays||Number(sample.age_away_days)>risk.maxFormAgeDays||
+  model.opponent_model?.active!==true)return fail('insufficient_recent_evidence');
+ const lh=Number(model.lambda?.home),la=Number(model.lambda?.away);
+ const oldH=Number(model.previous_lambda?.home),oldA=Number(model.previous_lambda?.away);
+ if(![lh,la,oldH,oldA].every(v=>Number.isFinite(v)&&v>=0.3&&v<=3.6))return fail('missing_goal_sensitivity');
+ const selected=option.key==='1x2'?model.selected:null;
+ const evaluate=(h,a)=>marketScore(option.key,scoreDistribution(h,a),selected);
+ const nominal=evaluate(lh,la),old=evaluate(oldH,oldA);
+ const alternate=[evaluate(lh*0.88,la*1.12),evaluate(lh*1.12,la*0.88),
+  evaluate(lh*0.88,la*0.88),evaluate(lh*1.12,la*1.12)];
+ const minScenario=Math.min(nominal,old,...alternate);
+ const modelGap=Math.abs(nominal-old);
+ const estimated=Number(option.probability),baseline=Number(option.baseline);
+ const detail={nominal:round(nominal),worst_scenario:round(minScenario),previous_model:round(old),
+  model_gap:round(modelGap),stress_drop:round(nominal-minScenario)};
+ if(!Number.isFinite(estimated)||!Number.isFinite(baseline)||Math.abs(nominal-estimated)>2.2)
+  return {...fail('inconsistent_probability'),...detail};
+ if(estimated<risk.minNominal[option.key]||estimated-baseline<risk.minBaselineEdge)
+  return {...fail('weak_nominal_edge'),...detail};
+ if(minScenario<risk.minStressed||modelGap>risk.maxModelDisagreement||
+  nominal-minScenario>risk.maxStressDrop||minScenario-baseline<3)
+  return {...fail('fragile_prediction'),...detail};
+ return {approved:true,code:'robust',...detail};
+}
+/** Select VIP only after complete recent history and probability sensitivity.
+ * A model may issue no VIP at all. No outcome is guaranteed.
+ */
 export function selectMarket(match,model){
  if(!model||!model.probabilities||!model.totals||!model.sample)return null;
  const p=model.probabilities,t=model.totals,b=model.leagueBaseline||{};
- const sample=model.sample,quality=Number(model.quality);
- const home=String(match.home),away=String(match.away);
+ const quality=Number(model.quality),home=String(match.home),away=String(match.away);
  const options=[
-  {key:'1x2',market:'Resultado final 1X2',selection:model.selected==='home'?home:model.selected==='away'?away:'Empate',probability:Number(model.confidence),
-   baseline:Number(b[model.selected]),threshold:68,edge:8,margin:Number(model.margin),minGames:16,minQuality:78,minLeague:110},
-  {key:'over15',market:'Total goles',selection:'Más de 1.5',probability:Number(t.over15),baseline:Number(b.over15),threshold:78,edge:6,minGames:16,minQuality:78,minLeague:110},
-  {key:'over25',market:'Total goles',selection:'Más de 2.5',probability:Number(t.over25),baseline:Number(b.over25),threshold:74,edge:7,minGames:16,minQuality:78,minLeague:110},
-  {key:'under25',market:'Total goles',selection:'Menos de 2.5',probability:Number(t.under25),baseline:Number(b.under25),threshold:74,edge:7,minGames:16,minQuality:78,minLeague:110},
-  {key:'bttsYes',market:'Ambos marcan',selection:'Sí',probability:Number(t.btts),baseline:Number(b.btts),threshold:74,edge:7,minGames:16,minQuality:78,minLeague:110},
-  {key:'bttsNo',market:'Ambos marcan',selection:'No',probability:round(100-Number(t.btts)),baseline:Number(b.noBtts),threshold:75,edge:7,minGames:16,minQuality:78,minLeague:110},
-  {key:'1X',market:'Doble oportunidad',selection:'1X',probability:round(Number(p.home)+Number(p.draw)),baseline:Number(b.oneX),threshold:82,edge:6,minGames:16,minQuality:78,minLeague:110},
-  {key:'X2',market:'Doble oportunidad',selection:'X2',probability:round(Number(p.away)+Number(p.draw)),baseline:Number(b.xTwo),threshold:82,edge:6,minGames:16,minQuality:78,minLeague:110},
-  {key:'12',market:'Doble oportunidad',selection:'12',probability:round(Number(p.home)+Number(p.away)),baseline:Number(b.oneTwo),threshold:85,edge:6,minGames:16,minQuality:78,minLeague:110},
+  {key:'1x2',market:'Resultado final 1X2',selection:model.selected==='home'?home:model.selected==='away'?away:'Empate',probability:Number(model.confidence),baseline:Number(b[model.selected]),margin:Number(model.margin)},
+  {key:'over15',market:'Total goles',selection:'Más de 1.5',probability:Number(t.over15),baseline:Number(b.over15)},
+  {key:'over25',market:'Total goles',selection:'Más de 2.5',probability:Number(t.over25),baseline:Number(b.over25)},
+  {key:'under25',market:'Total goles',selection:'Menos de 2.5',probability:Number(t.under25),baseline:Number(b.under25)},
+  {key:'bttsYes',market:'Ambos marcan',selection:'Sí',probability:Number(t.btts),baseline:Number(b.btts)},
+  {key:'bttsNo',market:'Ambos marcan',selection:'No',probability:round(100-Number(t.btts)),baseline:Number(b.noBtts)},
+  {key:'1X',market:'Doble oportunidad',selection:'1X',probability:round(Number(p.home)+Number(p.draw)),baseline:Number(b.oneX)},
+  {key:'X2',market:'Doble oportunidad',selection:'X2',probability:round(Number(p.away)+Number(p.draw)),baseline:Number(b.xTwo)},
+  {key:'12',market:'Doble oportunidad',selection:'12',probability:round(Number(p.home)+Number(p.away)),baseline:Number(b.oneTwo)}
  ];
- const eligible=options.filter(o=> Number.isFinite(o.probability)&&o.probability>=o.threshold&&o.probability<=100&&
-  Number.isFinite(quality)&&quality>=o.minQuality&&sample.home>=o.minGames&&sample.away>=o.minGames&&
-  sample.league>=(o.minLeague||36)&& (Number.isFinite(o.baseline)&&o.probability-o.baseline>=o.edge&&(o.key!=='1x2'||o.margin>=12)));
+ const eligible=options.filter(o=>o.key!=='1x2'||o.margin>=12).map(o=>({...o,robustness:vipRiskAssessment(o,model)}))
+  .filter(o=>o.robustness.approved);
  if(eligible.length){
-  // Compare to league baseline, not just raw percentage; ties prefer 1X2.
-  eligible.sort((x,y)=>(y.probability-y.baseline)-(x.probability-x.baseline)||Number(y.key==='1x2')-Number(x.key==='1x2'));
-  return {...eligible[0],visibility:'vip',advantage:Number.isFinite(eligible[0].baseline)?round(eligible[0].probability-eligible[0].baseline):null};
+  // Prefer the conservative scenario advantage, not the highest headline %.
+  eligible.sort((x,y)=>(y.robustness.worst_scenario-y.baseline)-(x.robustness.worst_scenario-x.baseline)||
+   y.robustness.worst_scenario-x.robustness.worst_scenario);
+  const chosen=eligible[0];return {...chosen,visibility:'vip',advantage:round(chosen.probability-chosen.baseline)};
  }
  if(Number.isFinite(model.confidence)&&model.confidence>=40&&model.confidence<68&&Number(model.margin)>=6&&quality>=45){
   return {key:'1x2',market:'Resultado final 1X2',selection:options[0].selection,probability:Number(model.confidence),
@@ -182,6 +236,7 @@ export function selectMarket(match,model){
  }
  return null;
 }
+
 export function makeCandidate(match,model){
  if(!model||!match?.scheduled_time_known||!match.kickoff||!Number.isFinite(Date.parse(match.kickoff)))return null;
  const selected=selectMarket(match,model);if(!selected)return null;
@@ -191,12 +246,13 @@ export function makeCandidate(match,model){
  `Mercado: ${selected.market}. Selección: ${selected.selection}. Probabilidad estimada: ${fmt(selected.probability)}. ${selected.advantage==null?'':`Diferencia frente a la frecuencia histórica de la liga: ${fmt(selected.advantage)} (NO equivale a ventaja frente a la cuota).`}`,
  `1X2 estimado: local ${fmt(model.probabilities.home)}, empate ${fmt(model.probabilities.draw)}, visitante ${fmt(model.probabilities.away)}. Diferencia frente al segundo escenario 1X2: ${fmt(model.margin)}.`,
  `El modelo considera fuerza de los rivales, forma temporal y rendimiento local/visitante cuando hay historial suficiente. Estos ajustes no garantizan mayor acierto.`,
+ ...(selected.visibility==='vip'?[`Prueba de sensibilidad (escenarios, NO intervalo de confianza): peor escenario ${fmt(selected.robustness.worst_scenario)}; discrepancia de modelos ${fmt(selected.robustness.model_gap)}. El mercado aún debe superar el backtesting vigente.`]:[]),
  `Goles proyectados: ${match.home} ${model.lambda.home}, ${match.away} ${model.lambda.away}. Más de 1.5: ${fmt(model.totals.over15)}, más de 2.5: ${fmt(model.totals.over25)}, menos de 2.5: ${fmt(model.totals.under25)}, ambos marcan: ${fmt(model.totals.btts)}.`,
  `Marcador meramente orientativo: ${model.score} (${fmt(model.score_probability)}). No representa una apuesta recomendada ni un resultado seguro.`,
  `Calidad de muestra: ${model.quality}/100 (NO mide precisión). Partidos previos: local ${model.sample.home}, visitante ${model.sample.away}, competición ${model.sample.league}.`,
  `Riesgos: sin datos verificados de lesiones ni alineaciones; posibles cambios de plantilla, horarios reprogramados y variabilidad deportiva. Sin cuotas verificadas ni rentabilidad demostrada.${selected.visibility==='free'?' Esta propuesta gratuita tiene alta incertidumbre.':''}`].join('\n\n');
  const evidence={source:'OpenFootball football.json (CC0-1.0)',model,margin:model.margin,evidence_count:2,
-  pick:{key:selected.key,market:selected.market,selection:selected.selection,probability:selected.probability,baseline:selected.baseline,advantage:selected.advantage},
+  pick:{key:selected.key,market:selected.market,selection:selected.selection,probability:selected.probability,baseline:selected.baseline,advantage:selected.advantage,robustness:selected.robustness||null},
   match_context:{round:match.round||'',country:'',venue:'',city:''},
   goals:{home:match.home,away:match.away,illustrative_score:model.score,
    illustrative_margin:Math.abs(Number(model.score.split('-')[0])-Number(model.score.split('-')[1])),model_based:true},

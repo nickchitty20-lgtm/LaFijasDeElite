@@ -32,7 +32,7 @@ import {publicAnalysisText} from './public-branding.js';
 import {publicPerformanceFilters,performanceWhere,summaryFromGroups,publicRecentResults} from './performance-stats.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
-const APP_VERSION = '3.3.5';
+const APP_VERSION = '3.3.6';
 const app = express();
 let telegramVipControl=null;
 let notificationControl=null;
@@ -276,7 +276,7 @@ app.get('/api/admin/predictions',authenticate,async(req,res)=>{
  const archived=req.query.archived==='1';
  if(archived&&!canRemovePrediction(req.admin.role))return res.status(403).json({error:'Solo el dueño puede revisar pronósticos retirados'});
  try{const [rows]=await db.query(`SELECT id,title,analysis,visibility,outcome,published_at,league,match_date,DATE_FORMAT(match_date,'%Y-%m-%dT%H:%i:%sZ') AS match_kickoff_utc,market,selection,odds,telegram_status,archived_at,archive_reason
- FROM predictions WHERE archived_at IS ${archived?'NOT NULL':'NULL'} ORDER BY id DESC LIMIT 100`);res.json({predictions:rows.map(row=>({...row,analysis:publicAnalysisText(row.analysis)}))});}
+ FROM predictions WHERE archived_at IS ${archived?'NOT NULL':'NULL'} ORDER BY CASE WHEN outcome='pending' THEN 0 ELSE 1 END,id DESC LIMIT 300`);res.json({predictions:rows.map(row=>({...row,analysis:publicAnalysisText(row.analysis)}))});}
  catch(e){console.error('list predictions',e.code||e.message);res.status(500).json({error:'No se pudo listar'});}
 });
 app.post('/api/admin/predictions',authenticate,async(req,res)=>{
@@ -364,6 +364,8 @@ app.get('/api/public/performance',publicPerformanceLimit,async(req,res)=>{
    SUM(CASE WHEN (p.match_date IS NULL OR p.match_date<=UTC_TIMESTAMP()) AND p.outcome='won' THEN 1 ELSE 0 END) AS won,
    SUM(CASE WHEN (p.match_date IS NULL OR p.match_date<=UTC_TIMESTAMP()) AND p.outcome='lost' THEN 1 ELSE 0 END) AS lost,
    SUM(CASE WHEN (p.match_date IS NULL OR p.match_date<=UTC_TIMESTAMP()) AND p.outcome='void' THEN 1 ELSE 0 END) AS void,
+   SUM(CASE WHEN p.archived_at IS NULL AND p.outcome='pending' THEN 1 ELSE 0 END) AS pending,
+   SUM(CASE WHEN p.archived_at IS NOT NULL AND p.outcome='pending' THEN 1 ELSE 0 END) AS retired_unsettled,
    SUM(CASE WHEN p.archived_at IS NOT NULL THEN 1 ELSE 0 END) AS archived,
    SUM(CASE WHEN p.settlement_source='nforce-openfootball' AND p.outcome IN ('won','lost','void') THEN 1 ELSE 0 END) AS source_checked,
    SUM(CASE WHEN p.settlement_source='manual' AND p.outcome IN ('won','lost','void') THEN 1 ELSE 0 END) AS manual_checked
@@ -373,9 +375,10 @@ app.get('/api/public/performance',publicPerformanceLimit,async(req,res)=>{
     AND p.outcome IN ('won','lost','void')
     AND (p.match_date IS NULL OR p.match_date<=UTC_TIMESTAMP())
    ORDER BY COALESCE(p.match_date,p.published_at) DESC,p.id DESC LIMIT 15`,where.params);
-  res.set('Cache-Control','public, max-age=60').json({filters,...summaryFromGroups(groups),recent:publicRecentResults(recent),
+  res.set('Cache-Control','no-store').json({filters,...summaryFromGroups(groups),recent:publicRecentResults(recent),
    methodology:{source:'Resultados ingresados manualmente o cotejados con registros deportivos de terceros (no oficiales, sujetos a retrasos y errores)',
     denominator:'Aciertos / (aciertos + fallos); anulados y pendientes no se incluyen',
+    pending_definition:'Solo pronósticos publicados, pendientes y no retirados; los retirados sin resultado se informan por separado',
     includes_withdrawn:true,not_predictions:'Esta tasa histórica no predice aciertos futuros'},
    generated_at:new Date().toISOString()});
  }catch(error){console.error('public performance',error.code||error.message);res.status(503).json({error:'No fue posible cargar el historial en este momento'});}

@@ -31,23 +31,24 @@ export function performanceWhere({period='all',visibility='all'}={}) {
  return {sql:conditions.join(' AND '),params};
 }
 
-const zero=()=>({total:0,won:0,lost:0,void:0,pending:0,decided:0,archived:0,source_checked:0,manual_checked:0,accuracy:null});
+const zero=()=>({total:0,won:0,lost:0,void:0,pending:0,decided:0,archived:0,retired_unsettled:0,source_checked:0,manual_checked:0,accuracy:null});
 export function summaryFromGroups(rows=[]){
  const by={free:zero(),vip:zero()};
  for(const row of rows){
   if(!Object.hasOwn(by,row.visibility))continue;
   const group=by[row.visibility];
-  for(const key of ['total','won','lost','void','archived','source_checked','manual_checked'])group[key]+=safeNum(row[key]);
+  for(const key of ['total','won','lost','void','archived','retired_unsettled','source_checked','manual_checked'])group[key]+=safeNum(row[key]);
+  // Prefer the explicit database count. The legacy subtraction overcounted
+  // withdrawn, unresolved picks that are absent from the admin's active list.
+  group.pending+=row.pending===undefined?Math.max(0,safeNum(row.total)-safeNum(row.won)-safeNum(row.lost)-safeNum(row.void)):safeNum(row.pending);
  }
  const overall=zero();
  for(const group of Object.values(by)){
   group.decided=group.won+group.lost;
-  group.pending=Math.max(0,group.total-group.decided-group.void);
   group.accuracy=group.decided?Math.round(group.won/group.decided*1000)/10:null;
-  for(const key of ['total','won','lost','void','archived','source_checked','manual_checked'])overall[key]+=group[key];
+  for(const key of ['total','won','lost','void','pending','archived','retired_unsettled','source_checked','manual_checked'])overall[key]+=group[key];
  }
  overall.decided=overall.won+overall.lost;
- overall.pending=Math.max(0,overall.total-overall.decided-overall.void);
  overall.accuracy=overall.decided?Math.round(overall.won/overall.decided*1000)/10:null;
  return {overall,by_visibility:by};
 }

@@ -62,7 +62,7 @@ function quickSplit(title,v,variant){
 }
 async function loadQuickPerformance(){
  const target=el('performanceQuickCards');if(!target)return;
- try{const r=await fetch('/api/public/performance?period=all&visibility=all',{headers:{Accept:'application/json'}});if(!r.ok)throw Error();
+ try{const r=await fetch('/api/public/performance?period=all&visibility=all',{cache:'no-store',headers:{Accept:'application/json'}});if(!r.ok)throw Error();
   const d=await r.json();target.innerHTML=quickSplit('VIP',d.by_visibility?.vip,'vip')+quickSplit('Gratis',d.by_visibility?.free,'free');
   el('performanceQuickSummary').textContent='Ganadas, perdidas y anuladas del historial publicado · Consulta cómo calculamos los resultados.';
  }catch{target.innerHTML='<p class="performance-empty">Todavía no fue posible cargar el historial. Consulta la sección Resultados.</p>';}
@@ -74,7 +74,7 @@ async function loadPublicPerformance(){
  if(!summary||!breakdown||!history)return;
  const period=el('performancePeriod').value,visibility=el('performanceVisibility').value;
  try{
-  const result=await fetch(`/api/public/performance?period=${encodeURIComponent(period)}&visibility=${encodeURIComponent(visibility)}`,{headers:{Accept:'application/json'}});
+  const result=await fetch(`/api/public/performance?period=${encodeURIComponent(period)}&visibility=${encodeURIComponent(visibility)}`,{cache:'no-store',headers:{Accept:'application/json'}});
   if(!result.ok)throw Error('No se pudo cargar');
   const data=await result.json();
   // Ignore any superseded slower response when a visitor rapidly changes filters.
@@ -85,7 +85,7 @@ async function loadPublicPerformance(){
    performanceCard('Ganados',perfNumber(v.won),'Resultado registrado','positive'),
    performanceCard('Perdidos',perfNumber(v.lost),'También cuentan retirados','negative'),
    performanceCard('Anulados',perfNumber(v.void),'No afectan la tasa'),
-   performanceCard('Pendientes',perfNumber(v.pending),'Aún sin resultado'),
+   performanceCard('Pendientes',perfNumber(v.pending),'Activos, sin resultado'),
    performanceCard('Tasa de acierto',perfPercent(v.accuracy),`${perfNumber(v.decided)} pronósticos decididos`,'highlight')
   ].join('');
   breakdown.innerHTML=visibility==='all'?performanceSplit('Pronósticos VIP',data.by_visibility?.vip,'vip')+performanceSplit('Pronósticos gratuitos',data.by_visibility?.free,'free'):performanceSplit(visibility==='free'?'Pronósticos gratuitos':'Pronósticos VIP',v,visibility);
@@ -98,7 +98,7 @@ async function loadPublicPerformance(){
    return `<div class="performance-result"><span class="performance-result-match"><strong>${clean(p.title)}</strong><small>#${clean(p.id)} · ${clean(p.league||'Fútbol')} · ${p.visibility==='vip'?'VIP':'GRATIS'} · ${clean(dateText)}${p.withdrawn?' · Retirado':''}${p.score?' · Marcador '+clean(p.score):''} · ${p.result_source==='automatic'?'Cotejo automático':p.result_source==='manual'?'Registro manual':'Registro anterior'}</small></span><span class="performance-tag ${style}">${label}</span></div>`;
   }).join('');
   const withdrawn=Number(v.archived||0);
-  el('performanceNote').textContent=`Resultados registrados: ${perfNumber(v.source_checked)} cotejos automáticos y ${perfNumber(v.manual_checked)} registros manuales. ${withdrawn?`Se incluyen ${withdrawn} pronóstico(s) retirado(s). `:''}La tasa de acierto considera ganadas y perdidas, sin pendientes ni anuladas. Los resultados anteriores no garantizan futuros aciertos.`;
+  el('performanceNote').textContent=`Resultados registrados: ${perfNumber(v.source_checked)} cotejos automáticos y ${perfNumber(v.manual_checked)} registros manuales. ${withdrawn?`Se incluyen ${withdrawn} pronóstico(s) retirado(s) en el historial; ${perfNumber(v.retired_unsettled)} retirado(s) sin resultado no cuentan como pendientes. `:''}La tasa de acierto considera ganadas y perdidas, sin pendientes ni anuladas. Los resultados anteriores no garantizan futuros aciertos.`;
   el('performanceUpdated').textContent='Actualizado: '+new Intl.DateTimeFormat('es-PE',{dateStyle:'short',timeStyle:'short',timeZone:'America/Lima'}).format(new Date(data.generated_at));
  }catch(e){summary.innerHTML='<p class="performance-empty">Las estadísticas no están disponibles en este momento.</p>';breakdown.replaceChildren();history.innerHTML='<p class="performance-empty">Vuelve a intentar más tarde.</p>';el('performanceUpdated').textContent='Sin conexión';}
 }

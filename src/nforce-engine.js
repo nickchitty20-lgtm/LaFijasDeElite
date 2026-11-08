@@ -1,7 +1,7 @@
 import {publicAnalysisText} from './public-branding.js';
 import {freeTelegramDestination} from './telegram-public.js';
 import {allowedDatasets,fetchOpenFootball,NFORCE_PROVIDER} from './nforce-data.js';
-import {estimateMatch,modelReadiness,makeCandidate,walkForwardBacktest,fulltime,MODEL_VERSION} from './nforce-model.js';
+import {estimateMatch,modelReadiness,makeCandidate,walkForwardBacktest,fulltime,MODEL_VERSION,VIP_RISK_POLICY} from './nforce-model.js';
 import {canAutoPublishCandidate} from './football-publication-policy.js';
 import {evaluateVipEvidence,VIP_POLICY} from './nforce-vip-gate.js';
 import {sendPredictionToTelegram} from './telegram-bridge.js';
@@ -327,7 +327,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     free_public_full:true,telegram_free_ready:!!(process.env.TELEGRAM_BOT_TOKEN&&freeTelegramDestination(process.env)),telegram_vip_ready:!!(process.env.TELEGRAM_BOT_TOKEN&&process.env.TELEGRAM_VIP_CHAT_ID),
     drafts:Number(stats.drafts||0),published:Number(stats.published||0),won:Number(stats.won||0),lost:Number(stats.lost||0),accuracy:decided?Number((100*stats.won/decided).toFixed(1)):null,
     latest:latest||null,scanning,importing,publishing,last_error:lastError,last_import_report:lastImportReport,last_scan_report:lastScanReport,
-    vip_policy:VIP_POLICY,last_publish_report:lastPublishReport,last_scheduler_message:lastSchedulerMessage,scheduled_retry_at:latest?new Date(asUtc(latest.started_at).getTime()+SCAN_INTERVAL_MINUTES*60000).toISOString():null,
+    vip_policy:VIP_POLICY,vip_risk_policy:VIP_RISK_POLICY,last_publish_report:lastPublishReport,last_scheduler_message:lastSchedulerMessage,scheduled_retry_at:latest?new Date(asUtc(latest.started_at).getTime()+SCAN_INTERVAL_MINUTES*60000).toISOString():null,
     scheduled_retry_reason:'Control local cada hora',manual_scan:{available:!scanning,remaining:'Ilimitados con pausa de 5 min',daily_limit:'—'},
     total_matches:Number(stats.total_matches||0),complete_matches:Number(stats.complete_matches||0),source_import:lastImport||null,next_import_at:retry.next,
     settlement:settlement.getStatus(),
