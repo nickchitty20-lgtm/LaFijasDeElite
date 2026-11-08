@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 let currentAdminRole='';
-const ADMIN_PANEL_BUILD='3.3.4';
+const ADMIN_PANEL_BUILD='3.3.5';
 // Diagnose a partial/old Railway deployment instead of silently rendering stale UI.
 async function checkAdminBuild(){
  const label=$('adminBuildVersion'),status=$('adminBuildStatus');
@@ -581,7 +581,7 @@ async function loadFootballEngine(){
    const button=$(id);if(button)button.hidden=!status.engine;
   }
   const stats=[
-   ['Motor de análisis',status.engine?'N-FORCE Football Intelligence':(status.configured?'Motor clásico':'Sin configurar')],
+   ['Motor de análisis',status.engine?'N-FORCE':(status.configured?'Motor clásico':'Sin configurar')],
    ...(status.engine?[['Cotejo automático de resultados',status.settlement?.working?'Comprobando…':status.settlement?.last?`${status.settlement.last.settled} actualizados · ${status.settlement.last.won} ganados · ${status.settlement.last.lost} perdidos · ${status.settlement.last.void} anulados`:'Pendiente del siguiente control'],['Sin cotejar: sin FT / mercado desconocido',status.settlement?.last?`${status.settlement.last.invalid_source} / ${status.settlement.last.unsupported}`:'—']]:[]),
    ...(status.engine?[['Partidos importados',status.total_matches||0],['Resultados históricos',status.complete_matches||0],['Última importación',status.source_import?`${status.source_import.status} · ${status.source_import.sources} registros de competición · ${status.source_import.records} registros`:'Pendiente'],['Backtesting',status.backtest?`${status.backtest.evaluated} evaluados · ${status.backtest.accuracy??'—'}% precisión observada${status.backtest.validated?'':' (muestra insuficiente, antigua o de otra versión)'}`:'Aún sin validar'],
    ['Resultados retrospectivos gratis / VIP',status.backtest?.segments?`Gratis: ${status.backtest.segments.free?.evaluated||0} pruebas · ${status.backtest.segments.free?.accuracy??'—'}% | VIP: ${status.backtest.segments.vip?.evaluated||0} pruebas · ${status.backtest.segments.vip?.accuracy??'—'}%`:'Pendiente de backtesting'],
