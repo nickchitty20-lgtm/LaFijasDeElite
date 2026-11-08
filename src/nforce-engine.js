@@ -149,6 +149,50 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
    return r;
   });
  }
+ /** Refresh one pending proposal against the current model, without publishing it.
+  * The owner must review the updated market/selection and explicitly approve later. */
+ async function refreshCandidate(id,admin){
+  if(!validId(id))throw Error('ID inválido');
+  const all=await loadMatches();
+  const conn=await db.getConnection();
+  try{
+   await conn.beginTransaction();
+   const [rows]=await conn.execute('SELECT * FROM football_candidates WHERE id=? FOR UPDATE',[id]);
+   const row=rows[0];
+   if(!row||row.provider!==NFORCE_PROVIDER||row.status!=='draft'){
+    await conn.rollback();return {refreshed:false,reason:'La propuesta ya se publicó, descartó o no pertenece a N-FORCE.'};
+   }
+   const fixture=all.find(m=>String(m.id)===String(row.fixture_id));
+   if(!fixture||!fixture.kickoff||!fixture.scheduled_time_known||fixture.home_goals!==null||fixture.away_goals!==null){
+    await conn.rollback();return {refreshed:false,reason:'El encuentro no tiene calendario futuro comprobable. Importa datos primero.'};
+   }
+   const kickoff=asUtc(fixture.kickoff).getTime();
+   if(!Number.isFinite(kickoff)||kickoff<now().getTime()+20*60000){
+    await conn.rollback();return {refreshed:false,reason:'El partido comenzó o faltan menos de 20 minutos. No se puede aprobar.'};
+   }
+   const [[live]]=await conn.execute('SELECT kickoff,home_goals,away_goals,source_checked_at FROM nforce_matches WHERE id=? LIMIT 1',[row.fixture_id]);
+   if(!live||live.home_goals!==null||live.away_goals!==null||!live.kickoff||
+      Math.abs(asUtc(live.kickoff).getTime()-kickoff)>60000||
+      !live.source_checked_at||now().getTime()-asUtc(live.source_checked_at).getTime()>36*3600000){
+    await conn.rollback();return {refreshed:false,reason:'Los datos del calendario están desactualizados. Importa datos y vuelve a intentarlo.'};
+   }
+   const model=estimateMatch(fixture,all.filter(fulltime),kickoff);
+   const refreshed=makeCandidate(fixture,model);
+   if(!refreshed){
+    await conn.rollback();return {refreshed:false,reason:'Con el modelo actual, el encuentro no supera los filtros de selección. No se publicará.'};
+   }
+   await conn.execute(`UPDATE football_candidates SET visibility=?,home_team=?,away_team=?,league=?,kickoff=?,
+    market=?,selection=?,provider_probability=?,odds=NULL,analysis=?,evidence_json=?
+    WHERE id=? AND provider=? AND status='draft'`,[
+    refreshed.visibility,refreshed.home_team,refreshed.away_team,refreshed.league,refreshed.kickoff,
+    refreshed.market,refreshed.selection,refreshed.provider_probability,refreshed.analysis,refreshed.evidence_json,
+    id,NFORCE_PROVIDER]);
+   await conn.execute("INSERT INTO audit_logs (actor_admin_id,action,entity_type,entity_id) VALUES (?,'football_candidate_refreshed','football_candidate',?)",[admin.id,id]);
+   await conn.commit();
+   return {refreshed:true,visibility:refreshed.visibility,market:refreshed.market,selection:refreshed.selection,
+    message:'Propuesta actualizada con el modelo vigente. Revisa la nueva selección antes de aprobarla.'};
+  }catch(e){await conn.rollback();throw e;}finally{conn.release();}
+ }
  async function publish(id,admin,{automatic=false}={}){
   if(!validId(id))throw Error('ID inválido');
   const conn=await db.getConnection();let row,recordId;
@@ -266,10 +310,11 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
  app.get(api('candidates'),authenticate,async(req,res)=>{
   if(!owner(req))return res.status(403).json({error:'Solo creador'});
   try{
-   const [rows]=await db.query(`SELECT id,fixture_id,visibility,home_team,away_team,league,kickoff,market,selection,provider_probability,odds,analysis,evidence_json,status,prediction_id,created_at FROM football_candidates WHERE provider=? ORDER BY id DESC LIMIT 40`,[NFORCE_PROVIDER]);
+   const [rows]=await db.query(`SELECT id,fixture_id,visibility,home_team,away_team,league,kickoff,market,selection,provider_probability,odds,analysis,evidence_json,status,prediction_id,created_at FROM football_candidates WHERE provider=? AND status='draft' ORDER BY id DESC LIMIT 40`,[NFORCE_PROVIDER]);
    const [[validation]]=await db.query('SELECT evaluated,model_version,created_at,metrics_json FROM nforce_backtests ORDER BY id DESC LIMIT 1');
    res.json({candidates:rows.map(row=>{const ev=reportLimited(row.evidence_json);const {evidence_json,...r}=row;
     return {...r,goal_projection:ev.goals||null,match_context:ev.match_context||null,own_model:ev.model||null,advanced:null,
+      needs_refresh:row.status==='draft'&&ev.model?.model!==MODEL_VERSION,
       vip_validation:row.visibility==='vip'&&row.status==='draft'?evaluateVipEvidence(row,validation,{asOf:now()}):null};})});
   }catch(e){res.status(500).json({error:safeError(e)});}
  });
@@ -301,6 +346,11 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
   if(scanning)return res.status(409).json({error:'Escaneo en curso'});
   scan({manual:true}).catch(e=>{lastScanReport={ok:false,error:safeError(e)};});
   res.status(202).json({accepted:true,message:'Análisis local iniciado. Actualiza el panel para revisar las propuestas.'});
+ });
+ app.post(api('candidates/:id/refresh'),authenticate,async(req,res)=>{
+  if(!owner(req))return res.status(403).json({error:'Solo creador'});
+  try{res.json(await refreshCandidate(req.params.id,req.admin));}
+  catch(e){res.status(400).json({error:safeError(e)});}
  });
  app.post(api('candidates/:id/refresh-advanced'),authenticate,(req,res)=>{if(!owner(req))return res.status(403).json({error:'Solo creador'});return res.status(409).json({error:'El motor actual usa resultados históricos; no hay lesiones ni alineaciones verificadas disponibles. No se inventan.'});});
  app.post(api('candidates/:id/publish'),authenticate,async(req,res)=>{
@@ -340,5 +390,5 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
  function start(){if(interval)return;
   interval=setInterval(tick,15*60000);interval.unref?.();setImmediate(()=>tick().catch(e=>console.error('nforce scheduler:',safeError(e))));
  }
- return {importData,scan,backtest,publish,publishPending,settle:settlement.run,tick,start,stop:()=>{if(interval)clearInterval(interval);interval=null;}};
+ return {importData,scan,backtest,publish,refreshCandidate,publishPending,settle:settlement.run,tick,start,stop:()=>{if(interval)clearInterval(interval);interval=null;}};
 }

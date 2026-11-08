@@ -339,7 +339,7 @@ export function installFootballAutomation(app,{db,authenticate,request=footballA
  app.get('/api/admin/football/candidates',authenticate,async(req,res)=>{
   if(!isOwner(req))return res.status(403).json({error:'Solo creador'});
   try{
-   const [rows]=await db.query('SELECT id,fixture_id,visibility,home_team,away_team,league,kickoff,market,selection,provider_probability,odds,analysis,evidence_json,status,prediction_id,created_at FROM football_candidates ORDER BY id DESC LIMIT 30');
+   const [rows]=await db.query(`SELECT id,fixture_id,visibility,home_team,away_team,league,kickoff,market,selection,provider_probability,odds,analysis,evidence_json,status,prediction_id,created_at FROM football_candidates WHERE status='draft' ORDER BY id DESC LIMIT 30`);
    const candidates=rows.map(row=>{
     let evidence={};
     try{evidence=typeof row.evidence_json==='string'?JSON.parse(row.evidence_json):row.evidence_json||{};}catch{}

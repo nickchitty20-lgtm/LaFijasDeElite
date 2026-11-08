@@ -580,7 +580,7 @@ async function loadFootballEngine(){
   else if(status.latest?.status==='failed')message.textContent='⚠️ Último escaneo fallido: '+(status.latest.error_message||'Revisa los logs de Railway');
   else if(status.drafts===0&&status.latest?.status==='completed')message.textContent='ℹ️ El último escaneo terminó sin propuestas. Mira el contador de descartes y cuándo se intentará de nuevo.';
   list.replaceChildren();
-  if(!result.candidates.length){list.textContent='No hay propuestas todavía. Importa datos y busca partidos. Si no hay encuentros futuros con horario confirmado, no se crearán fijas.';return;}
+  if(!result.candidates.length){list.textContent='No hay propuestas pendientes. Las descartadas y publicadas no se muestran aquí. Importa datos y analiza nuevos partidos para generar más propuestas.';return;}
   for(const c of result.candidates){
    const item=document.createElement('article');item.className='football-candidate';
    const title=document.createElement('h3');title.textContent=`${c.home_team} vs ${c.away_team}`;
@@ -628,6 +628,22 @@ async function loadFootballEngine(){
    }
    if(c.status==='draft'){
     const actions=document.createElement('div');actions.className='football-candidate-actions';
+    const feedback=document.createElement('p');feedback.className='football-meta';feedback.setAttribute('role','status');item.append(feedback);
+    if(c.needs_refresh){
+     const explanation=document.createElement('p');explanation.className='football-meta';
+     explanation.textContent='⚠️ Propuesta calculada con una versión anterior de N-FORCE. Debes actualizarla antes de aprobarla.';
+     item.append(explanation);
+    }
+    const update=document.createElement('button');update.type='button';update.className='secondary';
+    update.textContent='🔄 Reanalizar esta propuesta';
+    update.addEventListener('click',async()=>{
+     update.disabled=true;
+     try{
+      const r=await api(`/api/admin/football/candidates/${c.id}/refresh`,{method:'POST',body:'{}'});
+      if(!r.refreshed){feedback.textContent=r.reason||'No se pudo actualizar';update.disabled=false;return;}
+      await loadFootballEngine();message.textContent=r.message+' '+r.market+' · '+r.selection;
+     }catch(error){feedback.textContent=error.message;update.disabled=false;}
+    });actions.append(update);
     const refresh=document.createElement('button');refresh.type='button';refresh.className='secondary';refresh.textContent='🔄 Actualizar lesiones y alineaciones';refresh.hidden=Boolean(status.engine);
     refresh.addEventListener('click',async()=>{refresh.disabled=true;try{
       const r=await api(`/api/admin/football/candidates/${c.id}/refresh-advanced`,{method:'POST',body:'{}'});
@@ -635,14 +651,28 @@ async function loadFootballEngine(){
     }catch(error){message.textContent=error.message;refresh.disabled=false;}});actions.append(refresh);
     for(const [action,label] of [['publish','Aprobar y publicar'],['discard','Descartar']]){
      const button=document.createElement('button');button.className=action==='discard'?'secondary':'';button.textContent=label;
-     if(action==='publish'&&c.vip_validation&&!c.vip_validation.approved){
+     if(action==='publish'&&c.visibility==='vip'&&c.vip_validation&&!c.vip_validation.approved){
       button.disabled=true;button.title='Requiere validación histórica VIP antes de publicar';
+     }
+     if(action==='publish'&&c.needs_refresh){
+      button.disabled=true;button.title='Actualiza esta propuesta antes de aprobarla';
      }
      button.addEventListener('click',async()=>{
       if(!confirm(action==='publish'?`¿Publicar esta selección ${c.visibility.toUpperCase()} en web y Telegram?`:'¿Descartar propuesta?'))return;
       button.disabled=true;
-      try{const response=await api(`/api/admin/football/candidates/${c.id}/${action}`,{method:'POST',body:'{}'});message.textContent=action==='publish'?(response.published?`Publicado. Telegram: ${response.telegram||'—'}`:`No publicado: ${response.reason||'Revisa los filtros'}`):'Propuesta descartada';await loadFootballEngine();if(action==='publish')await loadPredictions();}
-      catch(error){message.textContent=error.message;button.disabled=false;}
+      try{
+       const response=await api(`/api/admin/football/candidates/${c.id}/${action}`,{method:'POST',body:'{}'});
+       const notice=action==='publish'?(response.published?`Publicado en web. Telegram: ${response.telegram||'—'}`:`No publicado: ${response.reason||'Revisa los filtros'}`):'Propuesta descartada';
+       if(action==='discard'&&response.ok){
+        // Quitarla al instante; el servidor conserva el estado descartado para auditoría.
+        item.remove();
+        if(!list.querySelector('.football-candidate'))list.textContent='No hay propuestas pendientes. Las nuevas aparecerán en el próximo análisis.';
+       }
+       if(response.published||action==='discard'){await loadFootballEngine();if(action==='publish')await loadPredictions();}
+       else button.disabled=false;
+       message.textContent=notice;
+       if(item.isConnected)feedback.textContent=notice;
+      }catch(error){message.textContent=error.message;feedback.textContent=error.message;button.disabled=false;}
      });actions.append(button);
     }
     item.append(actions);
