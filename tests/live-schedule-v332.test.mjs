@@ -88,7 +88,7 @@ test('un calendario confirmado modifica solo el inicio programado, sin tocar res
   request:async(endpoint,params)=>{assert.equal(endpoint,'fixtures');requested.push(params.date);return params.date==='2026-11-08'?[game()]:[];}});
  const report=await updater.sync();
  assert.equal(report.ok,true);assert.equal(report.matched,1);
- assert.equal(requested.length,4);
+ assert.deepEqual(requested,['2026-11-07','2026-11-08','2026-11-09']);
  assert.equal(writes.filter(x=>x.sql.includes('nforce_fixture_schedules')).length,1);
  const dateUpdate=writes.find(x=>x.sql.includes('UPDATE predictions p'));
  assert.ok(dateUpdate);

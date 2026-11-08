@@ -1,3 +1,14 @@
+# Fijas de Élite v3.3.4 — Horarios compatibles con plan gratuito
+
+## v3.3.4 — Horarios compatibles con plan gratuito (2026-11-08)
+
+- **Solucionado el error de fecha de API-Football Free**: `FOOTBALL_SCHEDULE_PLAN=free` (predeterminado) consulta solo ayer, hoy y mañana **en UTC**. Ya no intenta verificar días +2/+3 que el plan no permite.
+- El motor N-FORCE **sigue analizando partidos de 1 a 72 horas**; el límite de sincronización no reduce la ventana predictiva. Horarios de partidos fuera de cobertura siguen claramente identificados como **no verificados en vivo**.
+- Si el servicio comunica otro rango permitido, el sincronizador lo detecta y evita repetir peticiones fuera de él durante ese día. Evita avisos repetidos en los logs y reduce consumo innecesario de cuota.
+- En `Panel → Análisis automático → Estado del calendario` la API informa `schedule_plan` y `allowed_dates_utc`. Se limpia un error transitorio anterior después de una comprobación satisfactoria.
+- Si más adelante contratas un plan que permita más días, establece `FOOTBALL_SCHEDULE_PLAN=extended` para volver a verificar hoy y los próximos 3 días. No hace falta cambiar otras claves.
+- No modifica MySQL, Telegram, resultados, membresías ni filtros VIP.
+
 # Fijas de Élite v3.3.3 — Identificación de versión y horarios en administrador
 
 - Se muestran el build JS y el del servidor; alerta visible cuando no coinciden (despliegue parcial o caché).
