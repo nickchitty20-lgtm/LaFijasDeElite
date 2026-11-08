@@ -1,3 +1,11 @@
+# Fijas de Élite v3.3.5 — Marca simplificada
+
+- La identidad de la plataforma se presenta como **Fijas de Élite** y el módulo estadístico como **N-FORCE**.
+- Se reemplazó la denominación anterior en portada, acceso, área privada, panel y análisis futuros.
+- Para los análisis anteriores ya guardados, se normaliza el nombre **al mostrarlos o enviarlos a Telegram** sin modificar su trazabilidad en MySQL.
+- Se mantienen el motor, el análisis de 72 horas, la sincronización de horarios, Telegram, usuarios, suscripciones y filtros VIP.
+- Sin migraciones de base de datos ni nuevas variables de entorno. Confirmar `/health` y `Panel JS` = `3.3.5`.
+
 # Fijas de Élite v3.3.4 — Horarios compatibles con plan gratuito
 
 ## v3.3.4 — Horarios compatibles con plan gratuito (2026-11-08)

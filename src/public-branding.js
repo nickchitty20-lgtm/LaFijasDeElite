@@ -3,6 +3,7 @@
 export function publicAnalysisText(value){
  if(value==null)return '';
  return String(value)
+  .replace(/\b(?:N[- ]?FORCE\s+)?FOOTBALL\s+INTELLIGENCE\b/gi,'N-FORCE')
   .replace(/(?:OpenFootball(?:\s+football\.json)?(?:\s+CC0(?:-1\.0)?)?|API[- ]?Football|API[- ]?Sports|football-data\.org)/gi,'datos deportivos de terceros')
   .replace(/\bFuente\s*:/gi,'Datos de referencia:');
 }

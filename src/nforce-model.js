@@ -186,7 +186,7 @@ export function makeCandidate(match,model){
  if(!model||!match?.scheduled_time_known||!match.kickoff||!Number.isFinite(Date.parse(match.kickoff)))return null;
  const selected=selectMarket(match,model);if(!selected)return null;
  const fmt=n=>Number.isFinite(Number(n))?`${Number(n).toFixed(1)}%`:'no disponible';
- const analysis=[`N-FORCE Football Intelligence · Modelo estadístico ${MODEL_VERSION}. Probabilidades estimadas SIN CALIBRAR; datos históricos de encuentros.`,
+ const analysis=[`N-FORCE · Modelo estadístico ${MODEL_VERSION}. Probabilidades estimadas SIN CALIBRAR; datos históricos de encuentros.`,
  `Partido: ${match.home} vs ${match.away}; ${match.league}; ${match.kickoff} UTC. Confirma el horario del encuentro antes de publicar.`,
  `Mercado: ${selected.market}. Selección: ${selected.selection}. Probabilidad estimada: ${fmt(selected.probability)}. ${selected.advantage==null?'':`Diferencia frente a la frecuencia histórica de la liga: ${fmt(selected.advantage)} (NO equivale a ventaja frente a la cuota).`}`,
  `1X2 estimado: local ${fmt(model.probabilities.home)}, empate ${fmt(model.probabilities.draw)}, visitante ${fmt(model.probabilities.away)}. Diferencia frente al segundo escenario 1X2: ${fmt(model.margin)}.`,

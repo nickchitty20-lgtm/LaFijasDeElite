@@ -1,5 +1,5 @@
 /**
- * N-FORCE Football Intelligence: automatic settlement against imported
+ * N-FORCE: automatic settlement against imported
  * OpenFootball CC0 full-time scores. Never guesses, never grades a match
  * without a stable fixture ID. User/admin-origin predictions are untouched.
  */

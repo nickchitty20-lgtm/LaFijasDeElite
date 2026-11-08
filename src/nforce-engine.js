@@ -1,3 +1,4 @@
+import {publicAnalysisText} from './public-branding.js';
 import {freeTelegramDestination} from './telegram-public.js';
 import {allowedDatasets,fetchOpenFootball,NFORCE_PROVIDER} from './nforce-data.js';
 import {estimateMatch,modelReadiness,makeCandidate,walkForwardBacktest,fulltime,MODEL_VERSION} from './nforce-model.js';
@@ -320,7 +321,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
    const [[lastBacktest]]=await db.query('SELECT created_at,evaluated,accuracy,brier,metrics_json FROM nforce_backtests ORDER BY id DESC LIMIT 1');
    const validation=reportLimited(lastBacktest?.metrics_json);const decided=Number(stats.won||0)+Number(stats.lost||0);
    const retry=importDecision(lastImport,now().getTime());
-   res.json({engine:'N-FORCE Football Intelligence',model_version:MODEL_VERSION,configured:true,auto_import:process.env.FOOTBALL_AUTO_IMPORT!=='false',
+   res.json({engine:'N-FORCE',model_version:MODEL_VERSION,configured:true,auto_import:process.env.FOOTBALL_AUTO_IMPORT!=='false',
     scan_lookahead_days:NFORCE_SCAN_LOOKAHEAD_DAYS,scan_fixture_limit:NFORCE_SCAN_FIXTURE_LIMIT,
     auto_scan:process.env.FOOTBALL_AUTO_SCAN==='true',auto_publish:process.env.FOOTBALL_AUTO_PUBLISH==='true'&&process.env.NFORCE_LIVE_RELEASE_ACK==='true',
     free_public_full:true,telegram_free_ready:!!(process.env.TELEGRAM_BOT_TOKEN&&freeTelegramDestination(process.env)),telegram_vip_ready:!!(process.env.TELEGRAM_BOT_TOKEN&&process.env.TELEGRAM_VIP_CHAT_ID),
@@ -340,7 +341,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
    const [rows]=await db.query(`SELECT c.id,c.fixture_id,c.visibility,c.home_team,c.away_team,c.league,COALESCE(s.kickoff,c.kickoff) AS kickoff,c.kickoff AS candidate_kickoff,c.market,c.selection,c.provider_probability,c.odds,c.analysis,c.evidence_json,c.status,c.prediction_id,c.created_at,s.status AS live_status,s.checked_at AS schedule_verified_at FROM football_candidates c LEFT JOIN nforce_fixture_schedules s ON s.nforce_match_id=c.fixture_id AND s.checked_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 12 HOUR) WHERE c.provider=? AND c.status='draft' ORDER BY c.id DESC LIMIT 40`,[NFORCE_PROVIDER]);
    const [[validation]]=await db.query('SELECT evaluated,model_version,created_at,metrics_json FROM nforce_backtests ORDER BY id DESC LIMIT 1');
    res.json({candidates:rows.map(row=>{const ev=reportLimited(row.evidence_json);const {evidence_json,...r}=row;
-    return {...r,goal_projection:ev.goals||null,match_context:ev.match_context||null,own_model:ev.model||null,advanced:null,
+    return {...r,analysis:publicAnalysisText(row.analysis),goal_projection:ev.goals||null,match_context:ev.match_context||null,own_model:ev.model||null,advanced:null,
       needs_refresh:row.status==='draft'&&(ev.model?.model!==MODEL_VERSION||Boolean(row.schedule_verified_at&&Math.abs(asUtc(row.candidate_kickoff).getTime()-asUtc(row.kickoff).getTime())>60000)),
       schedule_changed:Boolean(row.schedule_verified_at&&Math.abs(asUtc(row.candidate_kickoff).getTime()-asUtc(row.kickoff).getTime())>60000),
       vip_validation:row.visibility==='vip'&&row.status==='draft'?evaluateVipEvidence(row,validation,{asOf:now()}):null};})});

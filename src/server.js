@@ -32,7 +32,7 @@ import {publicAnalysisText} from './public-branding.js';
 import {publicPerformanceFilters,performanceWhere,summaryFromGroups,publicRecentResults} from './performance-stats.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
-const APP_VERSION = '3.3.4';
+const APP_VERSION = '3.3.5';
 const app = express();
 let telegramVipControl=null;
 let notificationControl=null;
@@ -276,7 +276,7 @@ app.get('/api/admin/predictions',authenticate,async(req,res)=>{
  const archived=req.query.archived==='1';
  if(archived&&!canRemovePrediction(req.admin.role))return res.status(403).json({error:'Solo el dueño puede revisar pronósticos retirados'});
  try{const [rows]=await db.query(`SELECT id,title,analysis,visibility,outcome,published_at,league,match_date,DATE_FORMAT(match_date,'%Y-%m-%dT%H:%i:%sZ') AS match_kickoff_utc,market,selection,odds,telegram_status,archived_at,archive_reason
- FROM predictions WHERE archived_at IS ${archived?'NOT NULL':'NULL'} ORDER BY id DESC LIMIT 100`);res.json({predictions:rows});}
+ FROM predictions WHERE archived_at IS ${archived?'NOT NULL':'NULL'} ORDER BY id DESC LIMIT 100`);res.json({predictions:rows.map(row=>({...row,analysis:publicAnalysisText(row.analysis)}))});}
  catch(e){console.error('list predictions',e.code||e.message);res.status(500).json({error:'No se pudo listar'});}
 });
 app.post('/api/admin/predictions',authenticate,async(req,res)=>{
