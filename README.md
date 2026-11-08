@@ -1,3 +1,14 @@
+# Fijas de Élite v3.3.6 — Pendientes coherentes y filtro VIP conservador
+
+- **Comparativa corregida**: «Pendientes» cuenta directamente pronósticos publicados activos con `outcome=pending` y `archived_at IS NULL`. Los pendientes retirados dejan de inflar el indicador; sus victorias o derrotas históricas sí se conservan. El API informa `retired_unsettled` para auditar las diferencias.
+- El panel de administración prioriza mostrar pendientes y eleva su límite a 300 registros; sigue existiendo la vista de retirados.
+- Se deshabilita la caché de resultados públicos para reflejar cambios manuales sin demoras de caché.
+- **VIP más selectivas**: exige mayor historial reciente de ambos equipos, rendimiento suficiente como local/visitante, modelo ajustado por rivales y estabilidad ante variaciones ±12% de goles esperados y frente al pronóstico regularizado anterior. No se añade ningún porcentaje artificial. Se priorizan propuestas con mejor escenario conservador respecto de la frecuencia de liga.
+- El criterio VIP sigue exigiendo validación walk-forward vigente, tamaño de muestra y calibración. Si no hay evidencia adecuada, **no se publica una VIP**; ninguna fija es segura o tiene acierto garantizado.
+- Nuevo identificador estadístico `nforce-poisson-1.5`: **es necesario ejecutar «Validar modelo» y «Analizar ahora»** tras importar datos. Propuestas N-FORCE antiguas en borrador requieren «Reanalizar»; las ya publicadas y sus resultados no se alteran.
+- No requiere migración de MySQL ni variables nuevas. Conserva usuarios, pagos, Telegram y los marcadores históricos.
+- Los filtros VIP nuevos no han demostrado por sí solos mayor acierto en producción: revisar el backtesting y seguir acumulando resultados contrastados antes de presentarlos como mejores.
+
 # Fijas de Élite v3.3.5 — Marca simplificada
 
 - La identidad de la plataforma se presenta como **Fijas de Élite** y el módulo estadístico como **N-FORCE**.

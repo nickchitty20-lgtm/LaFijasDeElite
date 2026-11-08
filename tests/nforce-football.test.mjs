@@ -78,28 +78,50 @@ test('Modelo exige historial y respeta corte temporal',()=>{
  const mutated=all.map(x=>({...x}));mutated.push({competition:'en.1',home:teams[0],away:teams[1],kickoff:'2026-11-11T01:00:00Z',home_goals:25,away_goals:0});
  assert.deepEqual(estimateMatch(m,mutated),a,'El futuro no puede contaminar el pronóstico');
 });
+/** Internally consistent fixtures: cannot invent a 90% probability that
+ * contradicts its Poisson goal model just to pass the VIP risk filter. */
+function robustFixtureModel(h,a,overrides={}){
+ const r=n=>Number((100*n).toFixed(1));
+ const probs={home:0,draw:0,away:0};
+ const totals={over15:0,over25:0,under25:0,btts:0};
+ for(const c of scoreDistribution(h,a)){
+  probs[c.home>c.away?'home':c.home<c.away?'away':'draw']+=c.p;
+  if(c.home+c.away>=2)totals.over15+=c.p;
+  if(c.home+c.away>=3)totals.over25+=c.p;else totals.under25+=c.p;
+  if(c.home>0&&c.away>0)totals.btts+=c.p;
+ }
+ const order=Object.keys(probs).sort((x,y)=>probs[y]-probs[x]);
+ return {model:MODEL_VERSION,quality:92,confidence:r(probs[order[0]]),margin:r(probs[order[0]]-probs[order[1]]),selected:order[0],
+  probabilities:Object.fromEntries(Object.entries(probs).map(([k,v])=>[k,r(v)])),
+  totals:Object.fromEntries(Object.entries(totals).map(([k,v])=>[k,r(v)])),
+  lambda:{home:h,away:a},previous_lambda:{home:Number((h*.98).toFixed(3)),away:Number((a*1.02).toFixed(3))},
+  opponent_model:{active:true},score:'2-0',score_probability:11,
+  sample:{home:26,away:25,league:210,home_venue:12,away_venue:11,home_effective:18,away_effective:17,age_home_days:5,age_away_days:6},
+  leagueBaseline:{home:42,draw:25,away:33,over15:68,over25:54,under25:46,btts:52,noBtts:48,oneX:67,xTwo:58,oneTwo:75},
+  ...overrides};
+}
+
 test('Una propuesta propia conserva la selección VIP y oculta datos en el adelanto público',()=>{
  const m={id:12345,scheduled_time_known:true,competition:'en.1',season:'2026-27',round:'Matchday 10',home:'Club A',away:'Club B',league:'Premier League',
   kickoff:'2026-11-10T20:00:00Z',source_path:dataset.path};
- const model={model:MODEL_VERSION,quality:84,confidence:74,margin:58,selected:'home',probabilities:{home:74,draw:16,away:10},totals:{over15:76,over25:59,over35:32,btts:54},
-  lambda:{home:2.14,away:1.06},score:'2-1',score_probability:10.3,sample:{home:18,away:17,league:122},leagueBaseline:{home:43,draw:26,away:31,over15:73,over25:55,under25:45,btts:54,noBtts:46,oneX:69,xTwo:57,oneTwo:74}};
+ const model=robustFixtureModel(2.8,0.5);
  const candidate=makeCandidate(m,model);
  assert.equal(candidate.visibility,'vip');assert.equal(candidate.selection,'Club A');assert.equal(candidate.odds,null);
  assert.equal(canAutoPublishCandidate({...candidate,status:'draft'}),true);
  const details=publishedFootballDetails(candidate.evidence_json);
- assert.equal(details.model_goals.over25,59);
- assert.equal(details.provider_1x2.home,74);
+ assert.equal(details.model_goals.over25,model.totals.over25);
+ assert.equal(details.provider_1x2.home,model.probabilities.home);
  const payload={id:77,auto_generated:true,title:'Club A vs Club B',visibility:'vip',league:'Premier League',
   match_date:'2026-11-10 20:00:00',market:candidate.market,selection:candidate.selection,analysis:candidate.analysis,football_details:details};
  const preview=telegramVipPublicPreview(payload,'https://site.example');
  assert.ok(preview.includes('Club A vs Club B'));
- assert.ok(!preview.includes('74%'));
+ assert.ok(!preview.includes(`${model.confidence}%`));
  assert.ok(!preview.includes('1X2 · Selección'));
  assert.ok(!preview.includes('Marcador estadístico'));
  const privatePost=telegramVipPost(payload);
  assert.ok(privatePost.includes('Club A'));
- assert.ok(privatePost.includes('59%'));
- assert.ok(privatePost.includes('2-1'));
+ assert.ok(privatePost.includes(`${model.totals.over25}%`));
+ assert.ok(privatePost.includes('2-0'));
 });
 test('Ficha gratuita de alto riesgo, no promete garantías',()=>{
  const m={id:4444,scheduled_time_known:true,competition:'en.1',season:'2026-27',home:'Club A',away:'Club C',league:'Premier League',kickoff:at};
@@ -156,29 +178,31 @@ test('Backtesting informa calibración por banda y desempeño gratis/VIP sin con
 });
 
 
-test('VIP multimerkado: sin ventaja sobre la liga no hay VIP artificial',()=>{
+test('VIP multimerkado: evita falsos positivos y solo acepta mercados estables',()=>{
  const m={id:883,scheduled_time_known:true,home:'Local',away:'Visita',league:'Demo',kickoff:at};
- const model={model:MODEL_VERSION,quality:86,confidence:48,margin:7,selected:'home',
-   probabilities:{home:48,draw:26,away:26},totals:{over15:79,over25:63,under25:37,btts:53},
-   lambda:{home:1.7,away:1.2},score:'1-1',score_probability:11,
-   sample:{home:19,away:20,league:150},leagueBaseline:{home:44,draw:27,away:29,over15:78,over25:54,under25:46,btts:51,noBtts:49,oneX:71,xTwo:56,oneTwo:73}};
- assert.equal(selectMarket(m,model).visibility,'free','79% sobre 78% no basta para VIP');
+ const model=robustFixtureModel(1.7,1.5,{leagueBaseline:{home:43,draw:25,away:32,
+  over15:83,over25:54,under25:46,btts:52,noBtts:48,oneX:68,xTwo:57,oneTwo:75}});
+ assert.notEqual(selectMarket(m,model)?.visibility,'vip','Sin ventaja sobre la liga no crea VIP');
  model.leagueBaseline.over15=68;
- const recommended=selectMarket(m,model);
- assert.equal(recommended.visibility,'vip');assert.equal(recommended.market,'Total goles');assert.equal(recommended.selection,'Más de 1.5');
+ const chosen=selectMarket(m,model);
+ assert.equal(chosen.visibility,'vip');
+ assert.equal(chosen.key,'over15');
+ assert.equal(chosen.market,'Total goles');
+ assert.equal(chosen.selection,'Más de 1.5');
+ assert.ok(chosen.robustness.worst_scenario>=76);
  const candidate=makeCandidate(m,model);
- assert.equal(candidate.visibility,'vip');assert.equal(candidate.provider_probability,79);
+ assert.equal(candidate.visibility,'vip');
  assert.equal(selectedMarketWon(candidate,{...m,home_goals:2,away_goals:0}),true);
  assert.equal(selectedMarketWon(candidate,{...m,home_goals:1,away_goals:0}),false);
  assert.equal(canAutoPublishCandidate({...candidate,status:'draft'}),true);
  assert.equal(canAutoPublishCandidate({...candidate,selection:'Menos de 1.5',status:'draft'}),false);
 });
 
-test('Mercados 1X/X2/12: la frecuencia de liga actúa como referencia, no como cuota',()=>{
- const m={home:'A',away:'B'};
- const model={model:MODEL_VERSION,quality:90,confidence:59,margin:11,selected:'home',
-  probabilities:{home:59,draw:24,away:17},totals:{over15:61,over25:51,under25:49,btts:45},
-  sample:{home:22,away:21,league:210},leagueBaseline:{home:43,draw:25,away:32,over15:70,over25:50,under25:50,btts:52,noBtts:48,oneX:68,xTwo:57,oneTwo:75}};
- const pick=selectMarket(m,model);
- assert.equal(pick.key,'1X');assert.equal(pick.probability,83);assert.equal(pick.visibility,'vip');
+test('Doble oportunidad: 1X aprobado solo con respaldo y escenario conservador',()=>{
+ const model=robustFixtureModel(1.8,0.6);
+ const pick=selectMarket({home:'A',away:'B'},model);
+ assert.equal(pick.key,'1X');
+ assert.ok(pick.probability>=86);
+ assert.equal(pick.visibility,'vip');
+ assert.ok(pick.robustness.worst_scenario>=76);
 });

@@ -9,7 +9,7 @@ const home=readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
 
 test('sin registros no se inventa un porcentaje de acierto',()=>{
  const stats=summaryFromGroups([]);
- assert.deepEqual(stats.overall,{total:0,won:0,lost:0,void:0,pending:0,decided:0,archived:0,source_checked:0,manual_checked:0,accuracy:null});
+ assert.deepEqual(stats.overall,{total:0,won:0,lost:0,void:0,pending:0,decided:0,archived:0,retired_unsettled:0,source_checked:0,manual_checked:0,accuracy:null});
  assert.equal(stats.by_visibility.vip.accuracy,null);
 });
 test('el acierto excluye anulados y pendientes',()=>{
@@ -77,4 +77,27 @@ test('página principal muestra estadísticas sin valores de muestra',()=>{
  assert.match(landing,/Cotejos automáticos/);
  assert.match(landing,/Registro manual/);
  assert.match(home,/registros deportivos públicos de terceros, no oficiales/);
+});
+
+test('pendientes visibles no incluye propuestas retiradas sin resultado; conserva derrotas históricas',()=>{
+ const stats=summaryFromGroups([
+  {visibility:'free',total:8,won:6,lost:0,void:0,pending:0,retired_unsettled:2,archived:2},
+  {visibility:'vip',total:5,won:2,lost:2,void:0,pending:1,archived:0}
+ ]);
+ assert.equal(stats.by_visibility.free.pending,0);
+ assert.equal(stats.by_visibility.free.retired_unsettled,2);
+ assert.equal(stats.by_visibility.free.accuracy,100);
+ assert.equal(stats.by_visibility.vip.pending,1);
+ assert.equal(stats.overall.pending,1);
+ assert.equal(stats.overall.lost,2);
+ const start=server.indexOf("app.get('/api/public/performance'");
+ const end=server.indexOf('// Legacy endpoint',start);
+ const route=server.slice(start,end);
+ assert.match(route,/p\.archived_at IS NULL AND p\.outcome='pending'/);
+ assert.match(route,/AS retired_unsettled/);
+ assert.match(route,/AS pending/);
+ assert.match(route,/no-store/);
+ const admin=server.slice(server.indexOf("app.get('/api/admin/predictions'"),server.indexOf("app.post('/api/admin/predictions'"));
+ assert.match(admin,/archived_at IS/);
+ assert.match(admin,/CASE WHEN outcome='pending' THEN 0/);
 });

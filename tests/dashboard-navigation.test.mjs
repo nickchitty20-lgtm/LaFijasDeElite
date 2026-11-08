@@ -28,9 +28,9 @@ test('errores secundarios no cierran la sesión administrativa',()=>{
  assert.match(customerJS,/Promise\.allSettled\(\[loadCustomerPicks\(\)/);
 });
 test('la version y recursos del dashboard evitan caches cruzadas',()=>{
- assert.match(server,/APP_VERSION = '3\.3\.5'/);
+ assert.match(server,/APP_VERSION = '3\.3\.6'/);
  assert.match(server,/Cache-Control/);
- assert.match(html,/app\.js\?v=3\.3\.5/);
+ assert.match(html,/app\.js\?v=3\.3\.6/);
  assert.match(client,/clientes\.js\?v=3\.3\.2/);
 });
 test('sigue presente la desvinculacion sin expulsion',()=>{
