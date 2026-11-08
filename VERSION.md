@@ -1,3 +1,11 @@
+# Fijas de Élite v3.3.3 — Identificación de versión y horarios en administrador
+
+- Se muestran el build JS y el del servidor; alerta visible cuando no coinciden (despliegue parcial o caché).
+- La API de pronósticos administrativos devuelve `match_kickoff_utc` como UTC explícito para evitar interpretaciones ambiguas de `DATETIME`.
+- Cada pronóstico muestra la hora de Perú: se usa el calendario verificado cuando está disponible y, si falla el módulo, se conserva una hora programada **sin afirmar que sea en vivo**.
+- No afecta predicciones, cuotas, historial, MySQL, envíos Telegram ni filtros VIP.
+- Railway: tras desplegar, verifica `/health` = `3.3.3` y `Panel JS v3.3.3`. Si la captura sigue mostrando `cuota null`, estás viendo código anterior.
+
 # Fijas de Élite v3.3.2 — Sincronización verificable de horarios
 
 - UTC fijado explícitamente para las fechas MySQL; todas las vistas muestran `America/Lima` sin depender de la zona horaria del dispositivo.

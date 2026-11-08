@@ -32,7 +32,7 @@ import {publicAnalysisText} from './public-branding.js';
 import {publicPerformanceFilters,performanceWhere,summaryFromGroups,publicRecentResults} from './performance-stats.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
-const APP_VERSION = '3.3.2';
+const APP_VERSION = '3.3.3';
 const app = express();
 let telegramVipControl=null;
 let notificationControl=null;
@@ -275,7 +275,7 @@ app.get('/api/admin/predictions',authenticate,async(req,res)=>{
  if(!allowedToPublish(req.admin))return res.status(403).json({error:'Sin permisos'});
  const archived=req.query.archived==='1';
  if(archived&&!canRemovePrediction(req.admin.role))return res.status(403).json({error:'Solo el dueño puede revisar pronósticos retirados'});
- try{const [rows]=await db.query(`SELECT id,title,analysis,visibility,outcome,published_at,league,match_date,market,selection,odds,telegram_status,archived_at,archive_reason
+ try{const [rows]=await db.query(`SELECT id,title,analysis,visibility,outcome,published_at,league,match_date,DATE_FORMAT(match_date,'%Y-%m-%dT%H:%i:%sZ') AS match_kickoff_utc,market,selection,odds,telegram_status,archived_at,archive_reason
  FROM predictions WHERE archived_at IS ${archived?'NOT NULL':'NULL'} ORDER BY id DESC LIMIT 100`);res.json({predictions:rows});}
  catch(e){console.error('list predictions',e.code||e.message);res.status(500).json({error:'No se pudo listar'});}
 });
@@ -1068,11 +1068,12 @@ footballControl=process.env.FOOTBALL_ENGINE_MODE==='api'
 liveScheduleControl=installLiveSchedule(app,{db,authenticate});
 // No /admin.html publico: area privada solo para sesiones con rol administrativo.
 app.get('/panel',authenticate,(req,res)=>{
- res.setHeader('Cache-Control','no-store');
+ res.setHeader('Cache-Control','no-store, max-age=0');
+ res.setHeader('X-Fijas-Build',APP_VERSION);
  res.sendFile(path.resolve(root,'../views/panel.html'));
 });
 app.use(express.static(root,{index:'index.html',dotfiles:'ignore',setHeaders(res,servedPath){
- if(/\.(?:html|js|css)$/i.test(servedPath))res.setHeader('Cache-Control','no-store');
+ if(/\.(?:html|js|css)$/i.test(servedPath)){res.setHeader('Cache-Control','no-store, max-age=0');res.setHeader('X-Fijas-Build',APP_VERSION);}
 }}));
 app.use('/api',(req,res)=>res.status(404).json({error:'Ruta no encontrada'}));
 app.use((req,res)=>res.status(404).send('Not Found'));

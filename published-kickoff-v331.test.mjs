@@ -8,11 +8,11 @@ const read = path => readFileSync(new URL('../'+path,import.meta.url),'utf8');
 test('published admin predictions show the kickoff from the database, next to result controls',()=>{
  const app=read('public/app.js');
  const server=read('src/server.js');
- assert.match(server,/SELECT id,title,analysis,visibility,outcome,published_at,league,match_date,market,selection,odds,telegram_status/);
+ assert.match(server,/DATE_FORMAT\(match_date,'%Y-%m-%dT%H:%i:%sZ'\) AS match_kickoff_utc/);
  const list=app.slice(app.indexOf('async function loadPredictions()'),app.indexOf('async function refreshPredictionSummary()'));
- assert.match(list,/FijasMatchSchedule\?\.render\(p\.match_date,\{prediction_id:p\.id\}\)/);
- assert.match(list,/Inicio del partido: horario no disponible/);
- assert.ok(list.indexOf('FijasMatchSchedule?.render(p.match_date,{prediction_id:p.id})')<list.indexOf('Guardar resultado'));
+ assert.match(list,/FijasMatchSchedule\?\.render\(storedKickoff,\{prediction_id:p\.id\}\)/);
+ assert.match(list,/fallbackAdminKickoff\(storedKickoff\)/);
+ assert.ok(list.indexOf('FijasMatchSchedule?.render(storedKickoff,{prediction_id:p.id})')<list.indexOf('Guardar resultado'));
  assert.match(read('views/panel.html'),/Cada ficha muestra el inicio programado del partido en hora de Perú/);
 });
 

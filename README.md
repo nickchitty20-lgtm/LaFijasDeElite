@@ -1,3 +1,7 @@
+## v3.3.3 — El panel muestra su versión y el horario de todos los pronósticos publicados
+
+En **Panel → Pronósticos → Últimos pronósticos**, la etiqueta `Panel JS v3.3.3` permite detectar caché antigua. La consulta `/health` debe responder `3.3.3`. La API entrega `match_kickoff_utc` explícitamente; se muestra en la zona `America/Lima`. Si no se confirma con datos deportivos recientes, se identifica como horario programado no verificado; no se inventa una cuenta regresiva.
+
 ## v3.3.2 — Horarios deportivos contrastados y sincronizados (opcional)
 
 La web, el panel administrativo y el área de clientes comparten horarios en **hora de Perú (America/Lima)**. Se consulta el endpoint `/api/schedules/live` periódicamente; éste consulta exclusivamente datos ya verificables en MySQL (NO hace una petición externa por cada visitante). Los partidos que todavía no han sido verificados muestran **Horario sin confirmación reciente** y no presentan una cuenta regresiva engañosa. Las horas manuales se introducen en Perú y se guardan en UTC.
