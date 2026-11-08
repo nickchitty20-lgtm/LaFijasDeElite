@@ -28,7 +28,7 @@ test('errores secundarios no cierran la sesión administrativa',()=>{
  assert.match(customerJS,/Promise\.allSettled\(\[loadCustomerPicks\(\)/);
 });
 test('la version y recursos del dashboard evitan caches cruzadas',()=>{
- assert.match(server,/APP_VERSION = '3\.2\.9\.2'/);
+ assert.match(server,/APP_VERSION = '3\.2\.9\.4'/);
  assert.match(server,/Cache-Control/);
  assert.match(html,/app\.js\?v=3\.2\.9/);
  assert.match(client,/clientes\.js\?v=3\.2\.8\.1/);

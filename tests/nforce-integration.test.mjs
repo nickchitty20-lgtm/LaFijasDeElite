@@ -19,7 +19,7 @@ test('N-FORCE local: datos CC0 simulados → MySQL → pronóstico VIP → Teleg
    date:kickoff.slice(0,10),kickoff,scheduled_time_known:true,home_goals:i%4===0?3:2,away_goals:i%3===0?2:0,source_path:'2026-27/en.1.json'});
  }
  const future={id:887799,source_key:'2026-27/en.1.json|Club A|Club B',competition:'en.1',league:'Premier League',season:'2026-27',round:'Matchday 30',
-  home:'Club A',away:'Club B',date:'2026-11-10',kickoff:'2026-11-10T20:00:00.000Z',scheduled_time_known:true,
+  home:'Club A',away:'Club B',date:'2026-11-12',kickoff:'2026-11-12T20:00:00.000Z',scheduled_time_known:true,
   home_goals:null,away_goals:null,source_path:'2026-27/en.1.json'};
  const table=[],candidates=[],published=[],telegram=[];let importId=0,scanId=0,createdId=900,validation=null;
  function shape(m){return {...m,home_team:m.home,away_team:m.away,round_name:m.round,match_date:m.date,source_checked_at:now};}
@@ -78,7 +78,7 @@ test('N-FORCE local: datos CC0 simulados → MySQL → pronóstico VIP → Teleg
   assert.equal(imported.sources,1);assert.equal(imported.records,matches.length+1);
   assert.equal(table.length,matches.length+1);
   const scanned=await controller.scan({manual:true});
-  assert.equal(scanned.ok,true);assert.equal(scanned.fixtures_in_window,1);assert.equal(scanned.drafts_created,1);
+  assert.equal(scanned.ok,true);assert.equal(scanned.lookahead_days,3);assert.equal(scanned.fixtures_in_window,1);assert.equal(scanned.drafts_created,1);
   assert.equal(candidates[0].provider,'nforce-openfootball');
   assert.ok(JSON.parse(candidates[0].evidence_json).model.model===MODEL_VERSION);
   const denied=await controller.publish(candidates[0].id,{id:22});

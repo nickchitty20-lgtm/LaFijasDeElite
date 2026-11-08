@@ -16,6 +16,11 @@ const reportLimited=e=>{try{return typeof e==='string'?JSON.parse(e):e||{};}catc
 const owner=req=>req.admin?.role==='owner';
 export const IMPORT_INTERVAL_HOURS=2;
 export const SCAN_INTERVAL_MINUTES=60;
+// Only analyze upcoming fixtures in the next 72 hours (at least 1h before kickoff).
+// A short horizon prioritizes near-term information; it cannot guarantee that
+// the stored historical data or team news is current.
+export const NFORCE_SCAN_LOOKAHEAD_DAYS=3;
+export const NFORCE_SCAN_FIXTURE_LIMIT=240;
 
 export function importDecision(last,now=Date.now(),hours=IMPORT_INTERVAL_HOURS){
  if(!last)return {due:true,next:null};
@@ -98,9 +103,15 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
    try{
     const all=await loadMatches(),time=now().getTime();
     const usable=all.filter(x=>fulltime(x));
-    const future=all.filter(x=>x.scheduled_time_known&&x.kickoff&&x.home_goals===null&&Date.parse(x.kickoff)>time+60*60000&&Date.parse(x.kickoff)<time+72*3600000)
-     .sort((a,b)=>Date.parse(a.kickoff)-Date.parse(b.kickoff)).slice(0,120);
-    let models=0,drafts=0,underMin=0,rejected=0,alreadyPresent=0,updatedDrafts=0;const examples=[];const missingReasons={};const filteredExamples=[];
+    const horizon=time+NFORCE_SCAN_LOOKAHEAD_DAYS*DAY;
+    const futureWithTimes=all.filter(x=>x.scheduled_time_known&&x.kickoff&&x.home_goals===null&&Date.parse(x.kickoff)>time+60*60000)
+     .sort((a,b)=>Date.parse(a.kickoff)-Date.parse(b.kickoff));
+    const withinWindow=futureWithTimes.filter(x=>Date.parse(x.kickoff)<horizon);
+    const future=withinWindow.slice(0,NFORCE_SCAN_FIXTURE_LIMIT);
+    const nextBeyondWindow=futureWithTimes.find(x=>Date.parse(x.kickoff)>=horizon);
+    let models=0,drafts=0,underMin=0,rejected=0,alreadyPresent=0,updatedDrafts=0;
+    const existingByStatus={draft:0,discarded:0,published:0,other:0};
+    const examples=[];const missingReasons={};const filteredExamples=[];
     for(const m of future){
      const model=estimateMatch(m,usable,Date.parse(m.kickoff));
      if(!model){underMin++;const why=modelReadiness(m,usable,Date.parse(m.kickoff));missingReasons[why.reason]=(missingReasons[why.reason]||0)+1;if(examples.length<4)examples.push(`${m.home} vs ${m.away}: ${why.reason} (liga ${why.sample?.league||0}, local ${why.sample?.home||0}, visita ${why.sample?.away||0})`);continue;}
@@ -114,6 +125,12 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
       candidate.kickoff,candidate.market,candidate.selection,candidate.provider_probability,null,candidate.analysis,candidate.evidence_json]);
      if(!Number(r.affectedRows||0)){
       alreadyPresent++;
+      // Count already-seen fixtures by actual persisted status, so an owner
+      // knows whether the scan was exhausted by drafts or by prior discards.
+      const [[registered]]=await conn.execute('SELECT status FROM football_candidates WHERE provider=? AND fixture_id=? LIMIT 1',
+       [candidate.provider,candidate.fixture_id]);
+      const storedStatus=String(registered?.status||'other');
+      existingByStatus[storedStatus in existingByStatus?storedStatus:'other']++;
       // A v3.0 draft or rescheduled fixture must be refreshed before publishing.
       // Never revive discarded proposals or mutate already-published picks.
       const [updated]=await conn.execute(`UPDATE football_candidates SET visibility=?,home_team=?,away_team=?,league=?,kickoff=?,
@@ -128,15 +145,20 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     }
     await conn.execute('UPDATE nforce_scans SET status=?,finished_at=UTC_TIMESTAMP(),upcoming=?,modeled=?,drafts=?,insufficient=?,filtered=? WHERE id=?',
      ['completed',future.length,models,drafts,underMin,rejected,id]);
-    lastError='';lastScanReport={ok:true,mode:manual?'manual':'scheduled',fixtures_in_window:future.length,examined:future.length,
-     modeled:models,drafts_created:drafts,already_present:alreadyPresent,updated_existing_drafts:updatedDrafts,eligible:drafts+alreadyPresent,
+    lastError='';lastScanReport={ok:true,mode:manual?'manual':'scheduled',
+     lookahead_days:NFORCE_SCAN_LOOKAHEAD_DAYS,fixture_limit:NFORCE_SCAN_FIXTURE_LIMIT,
+     fixtures_with_known_time:futureWithTimes.length,fixtures_in_window:future.length,examined:future.length,
+     fixtures_truncated:Math.max(0,withinWindow.length-future.length),
+     next_fixture_beyond_window:nextBeyondWindow?{match:`${nextBeyondWindow.home} vs ${nextBeyondWindow.away}`,kickoff:nextBeyondWindow.kickoff}:null,
+     modeled:models,drafts_created:drafts,already_present:alreadyPresent,existing_by_status:existingByStatus,
+     updated_existing_drafts:updatedDrafts,eligible:drafts+alreadyPresent,
      insufficient_history:underMin,insufficient_reasons:missingReasons,below_filters:rejected,rejection_examples:examples,filter_examples:filteredExamples,
      fixtures_without_time:all.filter(x=>x.home_goals===null&&!x.scheduled_time_known&&x.date>=now().toISOString().slice(0,10)).length,
      note_on_quality:'El indicador de calidad de muestra NO representa el porcentaje real de aciertos.',
-     note:drafts?`${drafts} propuestas nuevas guardadas; las propuestas se publican tras aprobarlas.`:future.length===0?
-      'No hay partidos con horario válido en las próximas 72 horas. Los calendarios pueden estar desactualizados.':
-      alreadyPresent?`${alreadyPresent} propuestas elegibles ya existentes (${updatedDrafts} borradores revisados); 0 nuevas. Revisa las tarjetas y sus estados.`:
-      'Sin propuestas nuevas: historial insuficiente o ningún mercado superó los filtros.'};
+     note:drafts?`${drafts} propuestas nuevas guardadas; revísalas antes de aprobar.`:future.length===0?
+      'Sin encuentros con hora conocida en las próximas 72 horas. Revisa la importación y los horarios sin confirmar.':
+      alreadyPresent?`${alreadyPresent} propuestas elegibles ya registradas (pendientes: ${existingByStatus.draft}, descartadas: ${existingByStatus.discarded}, publicadas: ${existingByStatus.published}); no se regeneran duplicados.`:
+      'No hay propuestas nuevas: el historial es insuficiente o los filtros han rechazado los mercados.'};
     return lastScanReport;
    }catch(e){lastError=safeError(e);await conn.execute('UPDATE nforce_scans SET status=?,finished_at=UTC_TIMESTAMP(),error_message=? WHERE id=?',['failed',lastError,id]);throw e;}
   });}finally{scanning=false;}
@@ -295,6 +317,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
    const validation=reportLimited(lastBacktest?.metrics_json);const decided=Number(stats.won||0)+Number(stats.lost||0);
    const retry=importDecision(lastImport,now().getTime());
    res.json({engine:'N-FORCE Football Intelligence',model_version:MODEL_VERSION,configured:true,auto_import:process.env.FOOTBALL_AUTO_IMPORT!=='false',
+    scan_lookahead_days:NFORCE_SCAN_LOOKAHEAD_DAYS,scan_fixture_limit:NFORCE_SCAN_FIXTURE_LIMIT,
     auto_scan:process.env.FOOTBALL_AUTO_SCAN==='true',auto_publish:process.env.FOOTBALL_AUTO_PUBLISH==='true'&&process.env.NFORCE_LIVE_RELEASE_ACK==='true',
     free_public_full:true,telegram_free_ready:!!(process.env.TELEGRAM_BOT_TOKEN&&freeTelegramDestination(process.env)),telegram_vip_ready:!!(process.env.TELEGRAM_BOT_TOKEN&&process.env.TELEGRAM_VIP_CHAT_ID),
     drafts:Number(stats.drafts||0),published:Number(stats.published||0),won:Number(stats.won||0),lost:Number(stats.lost||0),accuracy:decided?Number((100*stats.won/decided).toFixed(1)):null,
@@ -335,10 +358,15 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
  app.post(api('test'),authenticate,async(req,res)=>{
   if(!owner(req))return res.status(403).json({error:'Solo creador'});
   try{const all=await loadMatches();const usable=all.filter(m=>fulltime(m));const future=all.filter(m=>m.kickoff&&m.scheduled_time_known&&m.home_goals==null&&Date.parse(m.kickoff)>now().getTime());
-   const eligible=future.filter(m=>estimateMatch(m,usable,Date.parse(m.kickoff)));
-   res.json({ok:true,api_connected:true,fixture_total:all.length,fixtures_in_window:future.length,examined:eligible.length,
-    reason:future.length?`Partidos futuros con análisis estadístico: ${eligible.length} / ${future.length}. Sin resultados suficientes, no hay pronósticos.`:
-      'Sin partidos futuros con hora conocida: importa datos y verifica si la fuente mantiene actualizado el calendario.',source:'Resultados históricos almacenados en MySQL; motor estadístico propio'});
+   const inWindow=future.filter(m=>Date.parse(m.kickoff)>now().getTime()+3600000&&Date.parse(m.kickoff)<now().getTime()+NFORCE_SCAN_LOOKAHEAD_DAYS*DAY);
+   const eligible=inWindow.filter(m=>estimateMatch(m,usable,Date.parse(m.kickoff)));
+   res.json({ok:true,api_connected:true,fixture_total:all.length,scan_lookahead_days:NFORCE_SCAN_LOOKAHEAD_DAYS,
+    fixtures_in_window:inWindow.length,examined:eligible.length,
+    future_with_known_time:future.length,
+    future_without_known_time:all.filter(m=>m.home_goals===null&&!m.scheduled_time_known&&m.date>=now().toISOString().slice(0,10)).length,
+    reason:inWindow.length?`Partidos con hora dentro de los próximos ${NFORCE_SCAN_LOOKAHEAD_DAYS} días: ${eligible.length} de ${inWindow.length} con modelo estadístico suficiente. Estos no son necesariamente propuestas nuevas.`:
+      'No hay partidos futuros con hora confirmada en la ventana de 72 horas; importa datos y comprueba el calendario.',
+    source:'Resultados históricos almacenados en MySQL; motor estadístico propio'});
   }catch(e){res.status(500).json({error:safeError(e)});}
  });
  app.post(api('scan'),authenticate,async(req,res)=>{
