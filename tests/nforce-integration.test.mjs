@@ -21,7 +21,7 @@ test('N-FORCE local: datos CC0 simulados → MySQL → pronóstico VIP → Teleg
  const future={id:887799,source_key:'2026-27/en.1.json|Club A|Club B',competition:'en.1',league:'Premier League',season:'2026-27',round:'Matchday 30',
   home:'Club A',away:'Club B',date:'2026-11-10',kickoff:'2026-11-10T20:00:00.000Z',scheduled_time_known:true,
   home_goals:null,away_goals:null,source_path:'2026-27/en.1.json'};
- const table=[],candidates=[],published=[],telegram=[];let importId=0,scanId=0,createdId=900;
+ const table=[],candidates=[],published=[],telegram=[];let importId=0,scanId=0,createdId=900,validation=null;
  function shape(m){return {...m,home_team:m.home,away_team:m.away,round_name:m.round,match_date:m.date,source_checked_at:now};}
  const connection=()=>({
   async query(sql,args=[]){
@@ -30,10 +30,10 @@ test('N-FORCE local: datos CC0 simulados → MySQL → pronóstico VIP → Teleg
    if(sql.includes('FROM nforce_import_runs'))return [[null]];
    if(sql.includes('FROM nforce_scans'))return [[null]];
    if(sql.includes('FROM admins'))return [[{id:22}]];
+   if(sql.includes('FROM nforce_backtests'))return [[validation]];
    throw Error('No se esperaba conn.query: '+sql.slice(0,130));
   },
   async execute(sql,args=[]){
-   if(sql.includes('UPDATE football_candidates c JOIN nforce_matches') || sql.includes('UPDATE football_candidates c\n'))return [{affectedRows:0}];
    if(sql.includes('INSERT INTO nforce_import_runs'))return [{insertId:++importId}];
    if(sql.includes('INSERT INTO nforce_matches')){
     for(let i=0;i<args.length;i+=14){const [id,source_key,competition,league,season,round_name,home_team,away_team,match_date,kickoff,scheduled_time_known,home_goals,away_goals,source_path]=args.slice(i,i+14);
@@ -52,7 +52,7 @@ test('N-FORCE local: datos CC0 simulados → MySQL → pronóstico VIP → Teleg
    }
    if(sql.includes('UPDATE nforce_scans'))return [{affectedRows:1}];
    if(sql.includes('SELECT * FROM football_candidates WHERE id='))return [candidates.filter(x=>x.id===args[0])];
-   if(sql.includes('COALESCE(override_kickoff,kickoff) AS kickoff'))return [[table.find(x=>x.id===args[0])]];
+   if(sql.includes('SELECT kickoff,home_goals,away_goals'))return [[table.find(x=>x.id===args[0])]];
    if(sql.includes('SELECT p.id FROM predictions'))return [[]];
    if(sql.includes('INSERT INTO predictions')){published.push({id:++createdId,values:args});return [{insertId:createdId}];}
    if(sql.includes("UPDATE football_candidates SET status='published'")){const c=candidates.find(x=>x.id===args[1]);c.status='published';return [{affectedRows:1}];}
@@ -81,6 +81,13 @@ test('N-FORCE local: datos CC0 simulados → MySQL → pronóstico VIP → Teleg
   assert.equal(scanned.ok,true);assert.equal(scanned.fixtures_in_window,1);assert.equal(scanned.drafts_created,1);
   assert.equal(candidates[0].provider,'nforce-openfootball');
   assert.ok(JSON.parse(candidates[0].evidence_json).model.model===MODEL_VERSION);
+  const denied=await controller.publish(candidates[0].id,{id:22});
+  assert.equal(denied.published,false,'Un VIP sin backtesting no se puede publicar manualmente');
+  assert.equal(denied.vip_evidence.code,'missing_backtest');
+  assert.equal(published.length,0);
+  const pick=JSON.parse(candidates[0].evidence_json).pick;
+  validation={evaluated:150,model_version:MODEL_VERSION,created_at:now,metrics_json:{model:MODEL_VERSION,
+   by_market:{[pick.key]:{evaluated:55,correct:45,accuracy:81.8,brier:0.14,baseline_brier:0.23,mean_forecast:79,mean_baseline:62}}}};
   const approved=await controller.publish(candidates[0].id,{id:22});
   assert.equal(approved.published,true);
   assert.equal(approved.telegram,'sent');

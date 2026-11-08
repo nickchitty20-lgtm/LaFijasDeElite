@@ -17,7 +17,7 @@ test('los paneles cliente y dueño muestran el estudio',()=>{
 });
 test('el backend oculta toda evidencia VIP a clientes sin permiso',()=>{
  const server=src('src/server.js');
- assert.match(server,/if\(p\.visibility==='vip'&&!vip\)return \{id:p\.id,title:p\.title,league:p\.league,match_date:p\.match_date,visibility:'vip',locked:true,\.\.\.fixtureInfo\}/);
+ assert.match(server,/if\(p\.visibility==='vip'&&!vip\)return \{id:p\.id,title:p\.title,league:p\.league,match_date:p\.match_date,visibility:'vip',locked:true\}/);
  assert.match(src('src/football-report.js'),/advancedReportForPublic/);
 });
 test('los adelantos VIP públicos no incorporan el estudio privado',()=>{

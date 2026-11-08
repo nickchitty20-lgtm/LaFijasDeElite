@@ -1,52 +1,45 @@
-# v3.3.1 — Grupo de comunidad visible en la página principal
+## Fijas de Élite v3.2.9.2 — Propuestas pendientes limpias
 
-La portada destaca ahora el **grupo público de Fijas de Élite** mediante un botón en la sección principal y una sección visual de Comunidad con enlaces separados al grupo y al canal oficial. El enlace del grupo se activa solamente si `TELEGRAM_FREE_GROUP_URL` contiene su URL pública real. No basta con `TELEGRAM_FREE_CHAT_ID`: ese ID sirve para que el bot publique avisos, no como enlace para usuarios.
-
-Railway (ejemplo; reemplaza el nombre por el usuario o enlace real de tu grupo):
-```env
-TELEGRAM_FREE_GROUP_URL=https://t.me/TU_GRUPO_PUBLICO
-```
-
-El sistema de publicaciones sigue igual: **fijas GRATIS completas al canal**, **VIP completas al canal privado**, **avisos breves al grupo de comunidad**.
-
-# Fijas de Élite v3.3.0 — Horarios y estados de partidos
-
-**Nuevo en esta versión:** sincronización aditiva de horarios importados con borradores y pronósticos pendientes; correcciones verificadas desde el panel privado; estados deportivos prudentes en las fichas de administración y clientes; ajuste de lectura MySQL a UTC. Mantiene las funciones de seguridad de la v3.2.9 y la estructura de membresías, Telegram y pagos.
-
-## Cómo usar la nueva verificación
-
-1. Despliega todo el ZIP y revisa que `GET /health` muestre `version: 3.3.0`. La inicialización agrega automáticamente las columnas necesarias a `nforce_matches`, sin borrar datos.
-2. En el panel del propietario → **Análisis automático**, pulsa **Importar datos** y después **Analizar ahora** si hay propuestas cambiadas. La importación periódica también actualiza los horarios cuando el fichero los corrige.
-3. Si un horario no coincide con el de la competición, abre **Verificar / corregir horario del partido** en la tarjeta, confirma el inicio en **hora de Perú (UTC−5)** y guarda. Para un partido reprogramado, usa `Programado`; si solo está pospuesto, utiliza `Pospuesto`. El campo `En vivo` se utiliza exclusivamente después de comprobarlo y caduca a los 90 minutos.
-4. Si una propuesta borrador cambia de hora, vuelve a **Analizar ahora** antes de publicarla. Las fijas ya publicadas y pendientes actualizan su hora en web sin cambiar su pronóstico ni su resultado. Los mensajes ya enviados por Telegram no se editan automáticamente.
-5. No marques `Ganada` o `Fallada` solo porque la hora de inicio pasó. Espera el marcador final y el cotejo correspondiente. Ante discrepancias entre calendarios o ausencia de datos, permanece `Estado sin confirmar`.
-
-**Límite técnico:** los archivos CC0 de calendario no son una fuente de estados en vivo. El sistema no puede saber de inmediato de una reprogramación que todavía no figure en ellos. Por ello incluye una corrección auditada como alternativa; no afirmará `En vivo` o `Finalizado` sin verificación. No se añadieron servicios externos con condiciones de atribución pública incompatibles con el diseño solicitado.
-
-**Configuración:** conserva `PUBLIC_BASE_URL`, MySQL, Telegram y `FOOTBALL_AUTO_IMPORT=true`. No hay cambios obligatorios de variables. Pruebas unitarias locales no sustituyen comprobar una migración real en Railway con respaldo de la base de datos.
+- Al pulsar **Descartar** en el panel, una propuesta automática desaparece inmediatamente de la lista al confirmar el servidor el cambio.
+- Los dos motores (N-FORCE y clásico) ahora consultan **solo propuestas en estado `draft`** en sus listas de pendientes. Las descartadas y publicadas no consumen lugares en los primeros 40/30 registros.
+- El registro descartado **no se borra de MySQL**: queda con estado `discarded` y auditoría, para evitar que el escaneo vuelva a proponer el mismo partido repetidamente.
+- Descartar no ejecuta una búsqueda automática nueva ni cambia filtros de calidad. Para generar nuevas, usa **Analizar ahora** o espera al escaneo programado.
+- Incluye la reparación v3.2.9.1: las propuestas gratuitas de un modelo anterior pueden actualizarse mediante **Reanalizar esta propuesta** antes de aprobarlas.
+- Sin migraciones de MySQL, nuevas variables de entorno ni alteraciones a Telegram, VIP o pagos.
 
 ---
 
-# Fijas de Élite v3.2.9 — Seguridad de frontend + API
+## Corrección v3.2.9.1: aprobación de fijas GRATIS
 
-El navegador no es una barrera de confianza. Los endpoints siguen verificando el rol y los permisos del servidor. Se añadieron un token anti-CSRF vinculado a cada cookie de sesión, validación estricta de origen y solicitudes JSON, controles de destino de API en JavaScript, límites para rutas privadas y cabeceras CSP/anti-iframe reforzadas. Webhooks firmados PayPal/Telegram conservan sus rutas y verificaciones originales.
+Si una propuesta quedó en borrador con el modelo antiguo `nforce-poisson-1.2`, la v3.2.9 la bloquea porque ahora utiliza `nforce-poisson-1.3`. En el panel de análisis, pulsa **Reanalizar esta propuesta**, revisa la selección actualizada y entonces pulsa **Aprobar y publicar**. No se exige validación VIP a una propuesta gratis. Si no se puede actualizar, el panel indica el motivo (inicio próximo, calendario sin actualizar o filtros actuales no superados).
 
-**Despliegue:** sustituye la versión anterior y reinicia Railway. Mantén el dominio HTTPS exacto en `PUBLIC_BASE_URL`; la interfaz y la API deben servirse desde el mismo origen. No hay nuevas variables obligatorias ni migraciones de base de datos. Recarga las pestañas antiguas para actualizar `request-guard.js` y los scripts. Verifica con una cuenta de prueba el acceso, aprobación de pronósticos, Telegram, recuperación y pagos Sandbox antes de producción. Los límites están en memoria del proceso; despliegues con más de una réplica necesitan un almacén compartido.
+La publicación no se ejecuta durante la actualización: requiere un segundo paso explícito de aprobación. No se publican partidos ya comenzados ni se eliminan pronósticos anteriores.
 
-**Advertencia:** ninguna capa de frontend puede impedir por completo llamadas directas a endpoints. La seguridad depende de controles de servidor, configuración correcta, actualizaciones y auditorías continuas; falta MFA para operaciones administrativas de alto riesgo.
+# Fijas de Élite v3.2.9 — Filtro VIP con validación histórica
 
----
+Esta versión completa conserva la web, el canal oficial, la comunidad, Telegram VIP, acceso unificado, pagos y base de datos de v3.2.8.2.
 
-# Fijas de Élite v3.2.8.3 — Aprobación con mensajes de estado visibles
+## Cambio central
 
-**Corrección del panel (sin cambiar la lógica de publicación):**
-- Las propuestas de N-FORCE cierran la aprobación manual cuando faltan menos de 20 minutos para el inicio, y las del motor clásico cuando faltan 10 minutos o menos; son protecciones que ya existían, ahora se explican en la tarjeta antes de pulsar.
-- El botón muestra «Publicando y contactando Telegram…» mientras trabaja. Los errores del servidor quedan visibles tanto al lado de la propuesta como en un mensaje de estado separado que no se borra al actualizar la lista.
-- «Publicado en web» y el estado de Telegram se muestran por separado. Un fallo de Telegram no deshace la publicación ya confirmada en MySQL.
-- En respuestas sin publicación, se muestra la razón real del servidor (por ejemplo, propuesta ya procesada), en lugar de «sin cambios».
-- No modifica las fijas, los mercados, los filtros ni los avisos breves al grupo. No necesita nuevas variables ni migraciones.
+Una propuesta del motor N-FORCE se etiqueta como candidata VIP si supera los filtros de pronóstico, pero **NO se puede aprobar ni publicar** hasta superar los filtros de validación del mercado. Afecta tanto a aprobación manual como automática; nunca inventa aciertos, cuotas ni resultados.
 
-Comprueba `GET /health` → `version: 3.2.8.3` y prueba la aprobación con un partido que comience en más de 20 minutos. Revisa si Telegram está configurado y el bot tiene permisos. Pruebas automatizadas locales no validan tu entorno Railway.
+- Filtros de generación VIP más selectivos: muestra >=16 partidos por equipo, >=110 de liga, calidad >=78/100; mayores probabilidades mínimas y ventaja estadística frente a la frecuencia de la liga.
+- Requiere backtesting cronológico de la versión actual (modelo `nforce-poisson-1.3`), ejecutado hace menos de 8 días, con >=80 encuentros evaluados y >=40 selecciones retrospectivas de **ese mercado**.
+- Requiere >=70% de aciertos observados por mercado (solo en el backtest), límite inferior de Wilson >=58%, diferencia entre la media estimada y la observada <=12 puntos, al menos +5 puntos de acierto sobre la frecuencia histórica del mismo mercado, y reducción de error Brier >=0.01 frente a esa referencia.
+- Cuando existen >=40 selecciones retrospectivas GRATIS y VIP, exige además que el conjunto VIP supere en >=5 puntos la tasa observada del conjunto GRATIS. Sin muestras suficientes no se hacen comparaciones concluyentes.
+- Si falla la evaluación, la VIP queda **pendiente sin botón de publicación habilitado** y el panel indica el motivo. No se elimina la propuesta ni se modifica la historia publicada.
+- La generación GRATUITA y las publicaciones anteriores no se alteran. El dueño conserva la aprobación manual. Publicaciones VIP de otros flujos administrativos no se reclasifican retroactivamente.
+- Un backtest aprobado **no prueba** que futuras VIP vayan a ganar más que las GRATIS, ni demuestra rentabilidad. El modelo no cuenta con cuotas verificadas ni datos confirmados de lesiones o alineaciones. Puede ser normal que por periodos **no haya ninguna VIP**.
+
+## Despliegue
+
+1. Actualiza GitHub/Railway con este ZIP sin borrar MySQL; no requiere nuevas variables.
+2. Comprueba `GET /health` y la versión `3.2.9`.
+3. En Panel → Análisis automático: **Importar datos → Validar modelo → Analizar ahora**. Esto recalcula borradores del motor previo (no modifica los publicados).
+4. Si una VIP aparece bloqueada, consulta el motivo en su ficha. No bajes umbrales para forzar pronósticos. Actualiza backtesting según cambien los resultados.
+5. Conserva `FOOTBALL_AUTO_PUBLISH=false` si deseas aprobación manual y tus variables Telegram existentes.
+
+Las pruebas incluidas funcionan con datos simulados y verifican selección, validación, controles de publicación y retrocompatibilidad. No validan Railway ni demuestran precisión predictiva en producción.
 
 ---
 

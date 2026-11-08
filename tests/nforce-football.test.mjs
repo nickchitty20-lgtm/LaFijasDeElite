@@ -81,19 +81,19 @@ test('Modelo exige historial y respeta corte temporal',()=>{
 test('Una propuesta propia conserva la selección VIP y oculta datos en el adelanto público',()=>{
  const m={id:12345,scheduled_time_known:true,competition:'en.1',season:'2026-27',round:'Matchday 10',home:'Club A',away:'Club B',league:'Premier League',
   kickoff:'2026-11-10T20:00:00Z',source_path:dataset.path};
- const model={model:MODEL_VERSION,quality:84,confidence:65,margin:16,selected:'home',probabilities:{home:65,draw:21,away:14},totals:{over15:76,over25:59,over35:32,btts:54},
-  lambda:{home:2.14,away:1.06},score:'2-1',score_probability:10.3,sample:{home:18,away:17,league:122}};
+ const model={model:MODEL_VERSION,quality:84,confidence:74,margin:58,selected:'home',probabilities:{home:74,draw:16,away:10},totals:{over15:76,over25:59,over35:32,btts:54},
+  lambda:{home:2.14,away:1.06},score:'2-1',score_probability:10.3,sample:{home:18,away:17,league:122},leagueBaseline:{home:43,draw:26,away:31,over15:73,over25:55,under25:45,btts:54,noBtts:46,oneX:69,xTwo:57,oneTwo:74}};
  const candidate=makeCandidate(m,model);
  assert.equal(candidate.visibility,'vip');assert.equal(candidate.selection,'Club A');assert.equal(candidate.odds,null);
  assert.equal(canAutoPublishCandidate({...candidate,status:'draft'}),true);
  const details=publishedFootballDetails(candidate.evidence_json);
  assert.equal(details.model_goals.over25,59);
- assert.equal(details.provider_1x2.home,65);
+ assert.equal(details.provider_1x2.home,74);
  const payload={id:77,auto_generated:true,title:'Club A vs Club B',visibility:'vip',league:'Premier League',
   match_date:'2026-11-10 20:00:00',market:candidate.market,selection:candidate.selection,analysis:candidate.analysis,football_details:details};
  const preview=telegramVipPublicPreview(payload,'https://site.example');
  assert.ok(preview.includes('Club A vs Club B'));
- assert.ok(!preview.includes('65%'));
+ assert.ok(!preview.includes('74%'));
  assert.ok(!preview.includes('1X2 · Selección'));
  assert.ok(!preview.includes('Marcador estadístico'));
  const privatePost=telegramVipPost(payload);
