@@ -1,10 +1,39 @@
 const $=id=>document.getElementById(id);
 let currentAdminRole='';
+const ADMIN_PANEL_BUILD='3.3.3';
+// Diagnose a partial/old Railway deployment instead of silently rendering stale UI.
+async function checkAdminBuild(){
+ const label=$('adminBuildVersion'),status=$('adminBuildStatus');
+ if(label)label.textContent='Panel JS v'+ADMIN_PANEL_BUILD;
+ try{
+  const response=await fetch('/health',{cache:'no-store',credentials:'same-origin'});
+  const server=await response.json();
+  const deployed=String(server.version||'desconocida');
+  if(status){status.textContent=deployed===ADMIN_PANEL_BUILD
+   ?'✓ Panel actualizado · v'+ADMIN_PANEL_BUILD+' · Horarios en hora de Perú'
+   :'⚠️ Versión distinta: servidor v'+deployed+' / navegador v'+ADMIN_PANEL_BUILD+'. Recarga sin caché y revisa el despliegue.';
+   status.dataset.buildMatch=String(deployed===ADMIN_PANEL_BUILD);}
+ }catch{if(status)status.textContent='No se pudo verificar la versión desplegada. Prueba recargar la página.';}
+}
+// Fallback independent of the live-schedule helper; never shows an unverified countdown.
+function fallbackAdminKickoff(value){
+ const row=document.createElement('p');row.className='fe-kickoff-missing';
+ if(!value){row.textContent='🗓 Inicio del partido: horario no disponible';return row;}
+ const raw=String(value).trim(),normalized=/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2})?$/.test(raw)?raw.replace(' ','T')+'Z':raw;
+ const dt=new Date(normalized);
+ if(!Number.isFinite(dt.getTime())){row.textContent='🗓 Inicio del partido: horario no disponible';return row;}
+ row.textContent='🗓 Inicio programado: '+new Intl.DateTimeFormat('es-PE',{
+  timeZone:'America/Lima',weekday:'short',day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false
+ }).format(dt)+' (Perú) · Horario sin confirmar en vivo';
+ return row;
+}
+
 async function api(url,options={}){
  const r=await fetch(url,{...options,credentials:'same-origin',headers:{'Content-Type':'application/json'}});
  const data=await r.json().catch(()=>({error:'Respuesta inesperada'}));
  if(!r.ok)throw new Error(data.error||'Error de conexión');return data;
 }
+checkAdminBuild();
 // El acceso de todas las cuentas se realiza en la portada con /api/login.
 // Esta pagina solo se sirve tras validar una sesion administrativa en el servidor.
 function show(id){if(id==='dashboard')$('dashboard').hidden=false;}
@@ -78,9 +107,10 @@ async function loadPredictions(){
    const meta=document.createElement('p');meta.textContent=`${p.visibility.toUpperCase()} · ${p.market} · ${p.selection} · cuota ${p.odds??'No disponible'} · Telegram: ${p.telegram_status}`;item.append(meta);
    // El inicio del PARTIDO (no la fecha de publicación) ya viene de MySQL en UTC.
    // Una hora vencida no implica un resultado final confirmado.
-   const kickoff=window.FijasMatchSchedule?.render(p.match_date,{prediction_id:p.id});
+   const storedKickoff=p.match_kickoff_utc||p.match_date;
+   const kickoff=window.FijasMatchSchedule?.render(storedKickoff,{prediction_id:p.id});
    if(kickoff)item.append(kickoff);
-   else{const unknown=document.createElement('p');unknown.className='fe-kickoff-missing';unknown.textContent='🗓 Inicio del partido: horario no disponible';item.append(unknown);}
+   else item.append(fallbackAdminKickoff(storedKickoff));
    if(showArchivedPredictions){const archived=document.createElement('p');archived.textContent=`Retirado: ${p.archived_at||'—'} · Motivo: ${p.archive_reason||'—'}`;item.append(archived);}
    else {
     const select=document.createElement('select');for(const v of ['pending','won','lost','void']){const o=document.createElement('option');o.value=v;o.textContent=({pending:'Pendiente',won:'Acertado',lost:'Fallado',void:'Anulado'})[v];select.append(o);}select.value=p.outcome;
