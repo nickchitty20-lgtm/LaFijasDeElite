@@ -25,14 +25,12 @@ import {installTelegramRoutes} from './telegram-routes.js';
 import {installNotificationCenter,enqueueVipActivation,enqueuePredictionEvent} from './notification-center.js';
 import {installFootballAutomation} from './football-automation.js';
 import {installNforceEngine} from './nforce-engine.js';
-import {fixturePhase} from './nforce-fixture-sync.js';
 import {publishedFootballDetails} from './football-report.js';
 import {publicAnalysisText} from './public-branding.js';
 import {publicPerformanceFilters,performanceWhere,summaryFromGroups,publicRecentResults} from './performance-stats.js';
-import {readCookie,csrfForCookie,evaluateApiRequest} from './request-security.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
-const APP_VERSION = '3.3.1';
+const APP_VERSION = '3.2.9';
 const app = express();
 let telegramVipControl=null;
 let notificationControl=null;
@@ -40,18 +38,11 @@ let footballControl=null;
 // Railway terminates HTTPS behind one reverse proxy; trust only that hop.
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
-app.use(helmet({contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'"],styleSrc:["'self'"],connectSrc:["'self'"],imgSrc:["'self'","data:"],objectSrc:["'none'"],baseUri:["'self'"],formAction:["'self'"],frameAncestors:["'none'"]}}}));
-app.use((req,res,next)=>{res.setHeader('Permissions-Policy','camera=(), microphone=(), geolocation=()');next();});
+app.use(helmet({contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'"],styleSrc:["'self'"],connectSrc:["'self'"],imgSrc:["'self'","data:"],objectSrc:["'none'"]}}}));
 app.use(cors({origin:process.env.CORS_ORIGIN?.split(',') || false}));
 // Preserve PayPal's exact signed bytes before the JSON parser runs.
 app.use('/api/payments/paypal/webhook',express.raw({type:'application/json',limit:'128kb'}));
 app.use(express.json({limit:'16kb'}));
-// Return JSON, not HTML/stack traces, on malformed JSON and oversized bodies.
-app.use((error,req,res,next)=>{
- if(error?.type==='entity.parse.failed')return res.status(400).json({error:'JSON inválido',code:'INVALID_JSON'});
- if(error?.type==='entity.too.large')return res.status(413).json({error:'Solicitud demasiado grande',code:'BODY_TOO_LARGE'});
- next(error);
-});
 
 // Persistent same-site sessions, no JWT exposed to browser JavaScript.
 // Customers stay connected for 14 days; administrative sessions expire after 12 hours.
@@ -91,26 +82,25 @@ function sessionStillValid(payload,hash){
  // HttpOnly-cookie sessions are invalidated whenever the password changes.
  return !payload.sv || payload.sv===sessionFingerprint(hash);
 }
-// Stronger defense-in-depth: exact origin, Fetch Metadata, JSON-only writes,
-// and session-bound CSRF tokens. Signed webhooks are validated separately.
+// Cookie-based authentication needs a CSRF defense on state-changing requests.
+// Accept requests only from this origin; PayPal returns via a top-level GET (SameSite=Lax).
 app.use('/api',(req,res,next)=>{
  res.set('Cache-Control','no-store');
- if(req.originalUrl.length>2048)return res.status(414).json({error:'URL demasiado larga'});
- if((req.get('Cookie')||'').length>8192)return res.status(431).json({error:'Cabeceras de sesión demasiado grandes'});
- if(req.method==='POST' && ['/payments/paypal/webhook','/telegram/webhook'].includes(req.path))return next();
- const host=req.get('host');
- if(!host||/[\r\n\s]/.test(host))return res.status(400).json({error:'Host inválido'});
- const requestOrigin=`${req.protocol}://${host}`;
- const sessionCookie=readCookie(req.get('Cookie'));
- const result=evaluateApiRequest({method:req.method,requestOrigin,headers:{
-  'content-type':req.get('Content-Type'),origin:req.get('Origin'),referer:req.get('Referer'),
-  'sec-fetch-site':req.get('Sec-Fetch-Site'),'x-csrf-token':req.get('X-CSRF-Token')
- },sessionCookie,secret:process.env.JWT_SECRET,path:req.path});
- if(!result.ok)return res.status(result.status).json({error:result.error,code:result.code});
+ if(['/payments/paypal/webhook','/telegram/webhook'].includes(req.path) && req.method==='POST')return next(); // Webhook uses PayPal cryptographic signature.
+ if(['GET','HEAD','OPTIONS'].includes(req.method))return next();
+ const origin=req.get('Origin');
+ const requestOrigin=`${req.protocol}://${req.get('host')}`;
+ let configuredOrigin=requestOrigin;
+ try{if(process.env.PUBLIC_BASE_URL)configuredOrigin=new URL(process.env.PUBLIC_BASE_URL).origin;}catch{}
+ if(origin && origin!==requestOrigin && origin!==configuredOrigin)
+  return res.status(403).json({error:'Origen de solicitud no autorizado'});
+ if(!origin && req.headers.cookie && !req.headers.authorization){
+  let refererOrigin='';
+  try{if(req.get('Referer'))refererOrigin=new URL(req.get('Referer')).origin;}catch{}
+  if(![requestOrigin,configuredOrigin].includes(refererOrigin) && req.get('Sec-Fetch-Site')!=='same-origin')
+   return res.status(403).json({error:'Solicitud no autorizada desde otro sitio'});
+ }
  next();
-});
-app.get('/api/security/csrf',(req,res)=>{
- res.json({csrfToken:csrfForCookie(readCookie(req.get('Cookie')),process.env.JWT_SECRET)});
 });
 
 // All /api rate limits return JSON, so clients never parse HTML/text 429 pages as JSON.
@@ -122,14 +112,6 @@ const apiRateLimit=options=>rateLimit({
   code:'RATE_LIMITED'
  })
 });
-// A burst limit protects expensive private APIs in addition to individual login/payment limits.
-// In multi-replica deployments replace this in-memory store with a shared Redis store.
-const privilegedReadLimit=apiRateLimit({windowMs:5*60*1000,limit:240,standardHeaders:'draft-7',legacyHeaders:false});
-const privilegedWriteLimit=apiRateLimit({windowMs:5*60*1000,limit:75,standardHeaders:'draft-7',legacyHeaders:false});
-for(const prefix of ['/api/admin','/api/customers']){
- app.use(prefix,privilegedReadLimit);
- app.use(prefix,(req,res,next)=>['GET','HEAD','OPTIONS'].includes(req.method)?next():privilegedWriteLimit(req,res,next));
-}
 const authLimit=apiRateLimit({windowMs:15*60*1000,limit:10,standardHeaders:'draft-7',legacyHeaders:false});
 app.use('/api/auth',authLimit);
 // Public links only: never return bot tokens, chat IDs or webhook secrets.
@@ -477,21 +459,15 @@ app.get('/api/customers/predictions',customerAuth,async(req,res)=>{
   const entitlement=await getVipEntitlement(db,req.customer.id);
   const vip=entitlement.hasVip;
   const [rows]=await db.query(`SELECT p.id,p.title,p.league,p.match_date,p.visibility,p.analysis,p.market,p.selection,p.odds,p.outcome,
-   f.evidence_json AS football_evidence,f.provider AS fixture_provider,
-   COALESCE(nm.override_kickoff,nm.kickoff) AS effective_kickoff,
-   nm.override_status,nm.override_checked_at,nm.home_goals,nm.away_goals
-   FROM predictions p
+   f.evidence_json AS football_evidence FROM predictions p
    LEFT JOIN football_candidates f ON f.prediction_id=p.id
-   LEFT JOIN nforce_matches nm ON nm.id=f.fixture_id AND f.provider='nforce-openfootball'
    WHERE p.published_at IS NOT NULL AND p.archived_at IS NULL ORDER BY p.id DESC LIMIT 50`);
   res.set('Cache-Control','private, no-store');
   res.json({has_vip:vip,staff_vip:entitlement.staff,predictions:rows.map(p=>{
-   const matchPhase=p.fixture_provider==='nforce-openfootball'?fixturePhase({...p,kickoff:p.effective_kickoff},new Date()):null;
-   const fixtureInfo=matchPhase?{fixture_status:matchPhase.status,fixture_status_label:matchPhase.label,fixture_checked_at:p.override_checked_at}:{};
    // Important: NEVER return stored analysis, probabilities, or goal market info for locked VIP.
-   if(p.visibility==='vip'&&!vip)return {id:p.id,title:p.title,league:p.league,match_date:p.match_date,visibility:'vip',locked:true,...fixtureInfo};
-   const {football_evidence,fixture_provider,effective_kickoff,override_status,override_checked_at,home_goals,away_goals,...visible}=p;
-   return {...visible,...fixtureInfo,analysis:publicAnalysisText(visible.analysis),locked:false,football_details:publishedFootballDetails(football_evidence)};
+   if(p.visibility==='vip'&&!vip)return {id:p.id,title:p.title,league:p.league,match_date:p.match_date,visibility:'vip',locked:true};
+   const {football_evidence,...visible}=p;
+   return {...visible,analysis:publicAnalysisText(visible.analysis),locked:false,football_details:publishedFootballDetails(football_evidence)};
   })});
  }catch(e){console.error('customer predictions',e.code||e.message);res.status(500).json({error:'No se pudieron cargar los pronósticos'});}
 });

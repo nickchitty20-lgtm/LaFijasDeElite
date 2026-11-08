@@ -13,4 +13,4 @@ const config = process.env.DATABASE_URL
 if (!process.env.DATABASE_URL && (!config.host || !config.user || !config.database)) {
   throw new Error('Configure DB_HOST, DB_USER, DB_PASSWORD and DB_NAME in Railway');
 }
-export const db = mysql.createPool({ ...config, waitForConnections: true, connectionLimit: 10, decimalNumbers: true, timezone: 'Z' });
+export const db = mysql.createPool({ ...config, waitForConnections: true, connectionLimit: 10, decimalNumbers: true });

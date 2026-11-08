@@ -62,7 +62,7 @@ export function eligibleResult(row,now=new Date()){
   Number.isFinite(kick)&&Number.isFinite(published)&&Number.isFinite(expected)&&Number.isFinite(checked)&&
   ms>=kick+twoHours && published<=kick && Math.abs(expected-kick)<=5*60000 &&
   ms>=checked && ms-checked<=fortyEightHours &&
-  row.outcome==='pending' && !['postponed','cancelled','live'].includes(row.override_status);
+  row.outcome==='pending';
 }
 
 const summarizeError=e=>String(e?.message||e).slice(0,180);
@@ -78,7 +78,7 @@ export function createNforceSettlement({db,now=()=>new Date()}={}){
    if(Number(lock?.acquired)!==1)return {busy:true};locked=true;
    // No selection/odds/analysis leak: this query stays private to the worker.
    const [rows]=await conn.execute(`SELECT p.id,p.outcome,p.published_at,p.match_date,p.market,p.selection,
-      c.home_team AS homeTeam,c.away_team AS awayTeam,COALESCE(m.override_kickoff,m.kickoff) AS kickoff,m.scheduled_time_known,m.override_status,m.home_goals,m.away_goals,m.source_checked_at
+      c.home_team AS homeTeam,c.away_team AS awayTeam,m.kickoff,m.scheduled_time_known,m.home_goals,m.away_goals,m.source_checked_at
       FROM football_candidates c JOIN predictions p ON p.id=c.prediction_id
       JOIN nforce_matches m ON m.id=c.fixture_id
       WHERE c.provider=? AND c.status='published' AND p.published_at IS NOT NULL AND p.outcome='pending'

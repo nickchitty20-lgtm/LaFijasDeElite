@@ -49,18 +49,3 @@
 .fe-advanced-report h6{color:#dfc58a;font-size:12px;letter-spacing:.06em;margin:2px 0 8px}
 .fe-advanced-report{overflow-wrap:anywhere;min-width:0}
 @media(max-width:600px){.football-advanced-preview,.fe-advanced-team{padding:11px 12px}.football-candidate-actions button{white-space:normal}}
-
-/* v3.2.8.3: publicación con respuesta persistente y corte visible */
-#footballActionResult:empty,.football-action-inline:empty{display:none}
-#footballActionResult{padding:12px 14px;border-radius:12px;border:1px solid #695938;background:#26231d;color:#f2d18b;margin:12px 0;line-height:1.5;overflow-wrap:anywhere}
-#footballActionResult[data-state="error"]{border-color:#98604f;background:#321e1e;color:#ffc2b5}
-.football-approval-deadline{padding:10px 12px;border-radius:10px;background:#30221f;border:1px solid #8e5c46;color:#ffd2ac!important;font-weight:650}
-.football-action-inline{width:100%;color:#f1c88b!important;overflow-wrap:anywhere}
-.football-candidate-actions button:disabled{opacity:.58;cursor:not-allowed}
-
-/* 3.3.0 — fixture verification controls in the owner dashboard */
-.football-schedule-tools{margin:12px 0;padding:10px 12px;border:1px solid #756038;border-radius:9px;background:rgba(176,133,52,.06)}
-.football-schedule-tools summary{cursor:pointer;color:#dcb665;font-weight:700}
-.football-schedule-tools p{font-size:.83rem;color:#aaa;margin:8px 0}
-.football-schedule-tools input,.football-schedule-tools select{display:block;width:100%;box-sizing:border-box;max-width:450px;margin:8px 0;color:#eee;background:#101721;border:1px solid #786b56;border-radius:6px;padding:9px}
-.football-schedule-tools button{margin:5px 8px 5px 0}

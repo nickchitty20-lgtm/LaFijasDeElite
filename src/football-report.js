@@ -10,7 +10,7 @@ export function publishedFootballDetails(raw){
  let data=raw;
  try{if(Buffer.isBuffer(data))data=data.toString('utf8');if(typeof data==='string')data=JSON.parse(data);}catch{return null;}
  if(!data||typeof data!=='object'||!data.goals||typeof data.goals!=='object')return null;
- if(['nforce-poisson-1.1','nforce-poisson-1.2'].includes(data.model?.model)){
+ if(['nforce-poisson-1.1','nforce-poisson-1.2','nforce-poisson-1.3'].includes(data.model?.model)){
   const m=data.model;
   const probability=numeric(m.confidence,0,100),p=m.probabilities||{},t=m.totals||{};
   return {home_line:{market_label:`Goles esperados ${m.lambda?.home??'—'}`,direction:'over',threshold:0.5},

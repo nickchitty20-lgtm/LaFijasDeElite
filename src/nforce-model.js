@@ -5,7 +5,7 @@
 const DAY=86400000;
 const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
 const round=(x,n=1)=>Number(x.toFixed(n));
-export const MODEL_VERSION='nforce-poisson-1.2';
+export const MODEL_VERSION='nforce-poisson-1.3';
 export const MODEL_SETTINGS=Object.freeze({lookbackDays:540,teamGames:30,leagueGames:250,minTeam:7,minLeague:36,freshDays:90,rho:-0.07});
 
 export function fulltime(row){
@@ -149,19 +149,19 @@ export function selectMarket(match,model){
  const home=String(match.home),away=String(match.away);
  const options=[
   {key:'1x2',market:'Resultado final 1X2',selection:model.selected==='home'?home:model.selected==='away'?away:'Empate',probability:Number(model.confidence),
-   baseline:Number(b[model.selected]),threshold:62,edge:0,margin:Number(model.margin),minGames:10,minQuality:58},
-  {key:'over15',market:'Total goles',selection:'Más de 1.5',probability:Number(t.over15),baseline:Number(b.over15),threshold:75,edge:6,minGames:14,minQuality:70,minLeague:90},
-  {key:'over25',market:'Total goles',selection:'Más de 2.5',probability:Number(t.over25),baseline:Number(b.over25),threshold:70,edge:7,minGames:14,minQuality:70,minLeague:90},
-  {key:'under25',market:'Total goles',selection:'Menos de 2.5',probability:Number(t.under25),baseline:Number(b.under25),threshold:70,edge:7,minGames:14,minQuality:70,minLeague:90},
-  {key:'bttsYes',market:'Ambos marcan',selection:'Sí',probability:Number(t.btts),baseline:Number(b.btts),threshold:70,edge:7,minGames:14,minQuality:70,minLeague:90},
-  {key:'bttsNo',market:'Ambos marcan',selection:'No',probability:round(100-Number(t.btts)),baseline:Number(b.noBtts),threshold:72,edge:7,minGames:14,minQuality:70,minLeague:90},
-  {key:'1X',market:'Doble oportunidad',selection:'1X',probability:round(Number(p.home)+Number(p.draw)),baseline:Number(b.oneX),threshold:80,edge:6,minGames:14,minQuality:70,minLeague:90},
-  {key:'X2',market:'Doble oportunidad',selection:'X2',probability:round(Number(p.away)+Number(p.draw)),baseline:Number(b.xTwo),threshold:80,edge:6,minGames:14,minQuality:70,minLeague:90},
-  {key:'12',market:'Doble oportunidad',selection:'12',probability:round(Number(p.home)+Number(p.away)),baseline:Number(b.oneTwo),threshold:83,edge:6,minGames:14,minQuality:70,minLeague:90},
+   baseline:Number(b[model.selected]),threshold:68,edge:8,margin:Number(model.margin),minGames:16,minQuality:78,minLeague:110},
+  {key:'over15',market:'Total goles',selection:'Más de 1.5',probability:Number(t.over15),baseline:Number(b.over15),threshold:78,edge:6,minGames:16,minQuality:78,minLeague:110},
+  {key:'over25',market:'Total goles',selection:'Más de 2.5',probability:Number(t.over25),baseline:Number(b.over25),threshold:74,edge:7,minGames:16,minQuality:78,minLeague:110},
+  {key:'under25',market:'Total goles',selection:'Menos de 2.5',probability:Number(t.under25),baseline:Number(b.under25),threshold:74,edge:7,minGames:16,minQuality:78,minLeague:110},
+  {key:'bttsYes',market:'Ambos marcan',selection:'Sí',probability:Number(t.btts),baseline:Number(b.btts),threshold:74,edge:7,minGames:16,minQuality:78,minLeague:110},
+  {key:'bttsNo',market:'Ambos marcan',selection:'No',probability:round(100-Number(t.btts)),baseline:Number(b.noBtts),threshold:75,edge:7,minGames:16,minQuality:78,minLeague:110},
+  {key:'1X',market:'Doble oportunidad',selection:'1X',probability:round(Number(p.home)+Number(p.draw)),baseline:Number(b.oneX),threshold:82,edge:6,minGames:16,minQuality:78,minLeague:110},
+  {key:'X2',market:'Doble oportunidad',selection:'X2',probability:round(Number(p.away)+Number(p.draw)),baseline:Number(b.xTwo),threshold:82,edge:6,minGames:16,minQuality:78,minLeague:110},
+  {key:'12',market:'Doble oportunidad',selection:'12',probability:round(Number(p.home)+Number(p.away)),baseline:Number(b.oneTwo),threshold:85,edge:6,minGames:16,minQuality:78,minLeague:110},
  ];
  const eligible=options.filter(o=> Number.isFinite(o.probability)&&o.probability>=o.threshold&&o.probability<=100&&
   Number.isFinite(quality)&&quality>=o.minQuality&&sample.home>=o.minGames&&sample.away>=o.minGames&&
-  sample.league>=(o.minLeague||36)&& (o.key!=='1x2'?Number.isFinite(o.baseline)&&o.probability-o.baseline>=o.edge:o.margin>=12));
+  sample.league>=(o.minLeague||36)&& (Number.isFinite(o.baseline)&&o.probability-o.baseline>=o.edge&&(o.key!=='1x2'||o.margin>=12)));
  if(eligible.length){
   // Compare to league baseline, not just raw percentage; ties prefer 1X2.
   eligible.sort((x,y)=>(y.probability-y.baseline)-(x.probability-x.baseline)||Number(y.key==='1x2')-Number(x.key==='1x2'));
@@ -228,12 +228,25 @@ export function walkForwardBacktest(matches,{maxGames=300,now=new Date()}={}){
   const bin=calibration[bucket]||{evaluated:0,correct:0,predicted_sum:0};bin.evaluated++;bin.correct+=Number(wasCorrect);bin.predicted_sum+=forecast.confidence;calibration[bucket]=bin;
   const candidate=makeCandidate({...m,scheduled_time_known:true,kickoff:new Date(t).toISOString()},forecast);
   if(candidate){const hit=selectedMarketWon(candidate,m);if(hit!==null){const seg=segments[candidate.visibility];seg.evaluated++;seg.correct+=Number(hit);
-   const marketKey=JSON.parse(candidate.evidence_json).pick.key;const bucket=by_market[marketKey]||{evaluated:0,correct:0,brier_sum:0};
-   bucket.evaluated++;bucket.correct+=Number(hit);bucket.brier_sum+=(candidate.provider_probability/100-Number(hit))**2;by_market[marketKey]=bucket;}}
+   const marketKey=JSON.parse(candidate.evidence_json).pick.key;const bucket=by_market[marketKey]||{evaluated:0,correct:0,brier_sum:0,baseline_brier_sum:0,predicted_sum:0,baseline_sum:0};
+   const picked=JSON.parse(candidate.evidence_json).pick;
+   const pred=Number(candidate.provider_probability)/100,base=Number(picked.baseline)/100;
+   bucket.evaluated++;bucket.correct+=Number(hit);bucket.brier_sum+=(pred-Number(hit))**2;
+   if(Number.isFinite(base)){
+    bucket.baseline_brier_sum+=(base-Number(hit))**2;
+    bucket.baseline_sum+=base;
+   }else{
+    bucket.baseline_brier_sum=NaN;bucket.baseline_sum=NaN;
+   }
+   bucket.predicted_sum+=pred;by_market[marketKey]=bucket;}}
  }
  for(const x of Object.values(perLeague))x.accuracy=x.evaluated?round(100*x.correct/x.evaluated):null;
  for(const x of Object.values(segments))x.accuracy=x.evaluated?round(100*x.correct/x.evaluated):null;
- for(const x of Object.values(by_market)){x.accuracy=round(100*x.correct/x.evaluated);x.brier=round(x.brier_sum/x.evaluated,4);delete x.brier_sum;}
+ for(const x of Object.values(by_market)){x.accuracy=round(100*x.correct/x.evaluated);x.brier=round(x.brier_sum/x.evaluated,4);
+  x.baseline_brier=Number.isFinite(x.baseline_brier_sum)?round(x.baseline_brier_sum/x.evaluated,4):null;
+  x.mean_forecast=round(100*x.predicted_sum/x.evaluated);
+  x.mean_baseline=Number.isFinite(x.baseline_sum)?round(100*x.baseline_sum/x.evaluated):null;
+  delete x.brier_sum;delete x.baseline_brier_sum;delete x.predicted_sum;delete x.baseline_sum;}
  for(const x of Object.values(calibration)){x.mean_forecast=round(x.predicted_sum/x.evaluated);x.observed_accuracy=round(100*x.correct/x.evaluated);delete x.predicted_sum;}
  return {model:MODEL_VERSION,attempted:cut.length,evaluated,accuracy:evaluated?round(100*correct/evaluated):null,
   brier:evaluated?round(brier/evaluated,4):null,logloss:evaluated?round(logloss/evaluated,4):null,

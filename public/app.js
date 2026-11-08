@@ -1,7 +1,7 @@
 const $=id=>document.getElementById(id);
 let currentAdminRole='';
 async function api(url,options={}){
- const r=await window.FijasSecurity.apiFetch(url,{...options,headers:{'Content-Type':'application/json'}});
+ const r=await fetch(url,{...options,credentials:'same-origin',headers:{'Content-Type':'application/json'}});
  const data=await r.json().catch(()=>({error:'Respuesta inesperada'}));
  if(!r.ok)throw new Error(data.error||'Error de conexión');return data;
 }
@@ -494,7 +494,7 @@ async function loadMyTelegram(){
    const card=document.createElement('article');card.className='my-vip-pick';
    const h=document.createElement('strong');h.textContent=p.locked?'🔒 '+p.title:p.title;
    card.append(h);
-   const schedule=window.FijasMatchSchedule?.render(p.match_date,p.locked?null:p.football_details?.match_context,{status:p.fixture_status,label:p.fixture_status_label,checked_at:p.fixture_checked_at});if(schedule)card.append(schedule);
+   const schedule=window.FijasMatchSchedule?.render(p.match_date,p.locked?null:p.football_details?.match_context);if(schedule)card.append(schedule);
    if(p.locked){const body=document.createElement('p');body.textContent='Necesitas acceso VIP vigente.';card.append(body);}
    else if(window.FijasPickReport){card.append(window.FijasPickReport.pickInfo(p));const goals=window.FijasPickReport.goals(p);if(goals)card.append(goals);const adv=window.FijasPickReport.advanced?.(p);if(adv)card.append(adv);const details=window.FijasPickReport.analysis(p);if(details)card.append(details);}
    else{const body=document.createElement('p');body.textContent=p.analysis||'Sin análisis';card.append(body);}
@@ -527,23 +527,6 @@ $('myTelegramChangeForm')?.addEventListener('submit',async event=>{
 });
 
 
-// Reportes de aprobación independientes de los indicadores del motor.
-// Un refresco automático de propuestas no borra el resultado de la acción.
-function showFootballActionResult(text,isError=false){
- const node=$('footballActionResult')||$('footballEngineMsg');
- if(!node)return;
- node.textContent=text;
- node.dataset.state=isError?'error':'info';
-}
-function footballApprovalDeadline(candidate,isOwnEngine){
- const kickoff=window.FijasMatchSchedule?.parse?.((candidate.effective_kickoff===undefined?candidate.kickoff:candidate.effective_kickoff));
- const minutes=isOwnEngine?20:10;
- if(!kickoff||!Number.isFinite(kickoff.getTime()))return {closed:true,minutes,reason:'No hay horario válido'};
- if(['live','postponed','cancelled','finished','unconfirmed'].includes(candidate.match_status))return {closed:true,minutes,reason:candidate.match_status_label||'Estado no apto'};
- if(candidate.needs_reanalysis)return {closed:true,minutes,reason:'El horario cambió: ejecuta «Analizar ahora» para recalcular la propuesta'};
- return {closed:kickoff.getTime()<=Date.now()+minutes*60000,minutes};
-}
-// v3.2.8.3 — estado visible de publicación y aviso de plazo antes del partido.
 // v2.1.3 — Manual scan and detailed reasons, owner-only.
 async function loadFootballEngine(){
  const summary=$('footballEngineSummary'),list=$('footballCandidateList'),message=$('footballEngineMsg');
@@ -557,7 +540,7 @@ async function loadFootballEngine(){
   const stats=[
    ['Motor de análisis',status.engine?'N-FORCE Football Intelligence':(status.configured?'Motor clásico':'Sin configurar')],
    ...(status.engine?[['Cotejo automático de resultados',status.settlement?.working?'Comprobando…':status.settlement?.last?`${status.settlement.last.settled} actualizados · ${status.settlement.last.won} ganados · ${status.settlement.last.lost} perdidos · ${status.settlement.last.void} anulados`:'Pendiente del siguiente control'],['Sin cotejar: sin FT / mercado desconocido',status.settlement?.last?`${status.settlement.last.invalid_source} / ${status.settlement.last.unsupported}`:'—']]:[]),
-   ...(status.engine?[['Partidos importados',status.total_matches||0],['Resultados históricos',status.complete_matches||0],['Horarios reconciliados',status.last_import_report?.calendar_changes?`${status.last_import_report.calendar_changes.published_updated} publicadas · ${status.last_import_report.calendar_changes.drafts_updated} borradores`:'Esperando actualización'],['Última importación',status.source_import?`${status.source_import.status} · ${status.source_import.sources} registros de competición · ${status.source_import.records} registros`:'Pendiente'],['Backtesting',status.backtest?`${status.backtest.evaluated} evaluados · ${status.backtest.accuracy??'—'}% precisión observada${status.backtest.validated?'':' (muestra insuficiente, antigua o de otra versión)'}`:'Aún sin validar'],
+   ...(status.engine?[['Partidos importados',status.total_matches||0],['Resultados históricos',status.complete_matches||0],['Última importación',status.source_import?`${status.source_import.status} · ${status.source_import.sources} registros de competición · ${status.source_import.records} registros`:'Pendiente'],['Backtesting',status.backtest?`${status.backtest.evaluated} evaluados · ${status.backtest.accuracy??'—'}% precisión observada${status.backtest.validated?'':' (muestra insuficiente, antigua o de otra versión)'}`:'Aún sin validar'],
    ['Resultados retrospectivos gratis / VIP',status.backtest?.segments?`Gratis: ${status.backtest.segments.free?.evaluated||0} pruebas · ${status.backtest.segments.free?.accuracy??'—'}% | VIP: ${status.backtest.segments.vip?.evaluated||0} pruebas · ${status.backtest.segments.vip?.accuracy??'—'}%`:'Pendiente de backtesting'],
    ['Evaluación por mercado',status.backtest?.by_market?Object.entries(status.backtest.by_market).map(([market,v])=>`${market}: ${v.evaluated} pruebas · ${v.accuracy}%`).join(' | ')||'Sin selecciones históricas validadas':'Pendiente']]:[]),
    ['Búsqueda automática',status.auto_scan?'Activada':'Desactivada'],
@@ -602,7 +585,7 @@ async function loadFootballEngine(){
    const item=document.createElement('article');item.className='football-candidate';
    const title=document.createElement('h3');title.textContent=`${c.home_team} vs ${c.away_team}`;
    const info=document.createElement('p');info.className='football-meta';info.textContent=`${c.league} · ${c.visibility.toUpperCase()} · ${c.status}`;
-   const schedule=window.FijasMatchSchedule?.render((c.effective_kickoff===undefined?c.kickoff:c.effective_kickoff),c.match_context,{status:c.match_status,label:c.match_status_label,checked_at:c.override_checked_at});
+   const schedule=window.FijasMatchSchedule?.render(c.kickoff,c.match_context);
    const pick=document.createElement('p');pick.textContent=`Mercado: ${c.market} · Selección: ${c.selection} · ${status.engine?'Probabilidad estimada N-FORCE':'Estimación del proveedor'}: ${c.provider_probability}% (no calibrada) · Cuota: ${c.odds==null?'No disponible':c.odds}`;
    if(status.engine&&c.own_model?.quality!=null)pick.textContent+=` · Calidad del historial: ${c.own_model.quality}/100 (NO es acierto)`;
    const goals=c.goal_projection;
@@ -635,87 +618,34 @@ async function loadFootballEngine(){
     item.append(adv);
    }
    const detail=document.createElement('details');const heading=document.createElement('summary');heading.textContent='Leer análisis, datos y riesgos';const paragraph=document.createElement('p');paragraph.textContent=c.analysis;paragraph.className='football-analysis';detail.append(heading,paragraph);
-   if(schedule)item.append(schedule);
-   else if(c.match_status){const notice=document.createElement('p');notice.className='football-approval-deadline';notice.textContent='⚠️ '+(c.match_status_label||'Horario sin confirmar');item.append(notice);}
-   item.append(pick,detail);
-   // Owner can verify a changed fixture time without editing the published pick.
-   // Controls use Peru wall-clock time (UTC-5, no daylight saving).
-   if(status.engine==='N-FORCE Football Intelligence'){
-    const editor=document.createElement('details');editor.className='football-schedule-tools';
-    const toggle=document.createElement('summary');toggle.textContent='🕒 Verificar / corregir horario del partido';editor.append(toggle);
-    const caption=document.createElement('p');caption.textContent='Solo administración. Comprueba el horario en el organizador del torneo. Hora de Perú (UTC−5). Las correcciones quedan auditadas.';editor.append(caption);
-    const field=document.createElement('input');field.type='datetime-local';field.setAttribute('aria-label','Nuevo inicio en hora de Perú');
-    const date=window.FijasMatchSchedule?.parse?.((c.effective_kickoff===undefined?c.kickoff:c.effective_kickoff));
-    if(date){const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Lima',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(date);
-     const part=k=>parts.find(p=>p.type===k)?.value;field.value=`${part('year')}-${part('month')}-${part('day')}T${part('hour')}:${part('minute')}`;}
-    const select=document.createElement('select');select.setAttribute('aria-label','Estado verificado');
-    for(const [value,label] of [['scheduled','Programado'],['live','En vivo (verificado)'],['postponed','Pospuesto'],['cancelled','Cancelado']]){
-     const option=document.createElement('option');option.value=value;option.textContent=label;select.append(option);
-    }select.value=c.override_status||'scheduled';
-    const send=document.createElement('button');send.type='button';send.className='secondary';send.textContent='Guardar horario / estado';
-    const clear=document.createElement('button');clear.type='button';clear.className='secondary';clear.textContent='Usar calendario importado';
-    const message=document.createElement('p');message.className='football-action-inline';message.setAttribute('role','status');
-    const submit=async action=>{
-     const body={action};if(action!=='clear'){
-      body.status=select.value;
-      if(field.value){const iso=new Date(`${field.value}:00-05:00`);if(!Number.isFinite(iso.getTime())){message.textContent='Hora inválida';return;}body.kickoff=iso.toISOString();}
-     }
-     if(!confirm('¿Confirmas que verificaste el horario/estado de este encuentro?'))return;
-     send.disabled=clear.disabled=true;message.textContent='Guardando verificación…';
-     try{const output=await api(`/api/admin/football/fixtures/${c.fixture_id}/schedule`,{method:'POST',body:JSON.stringify(body)});
-      showFootballActionResult('✅ '+output.message);await loadFootballEngine();await loadPredictions();
-     }catch(error){message.textContent='❌ '+error.message;send.disabled=clear.disabled=false;}
-    };
-    send.addEventListener('click',()=>submit('set'));clear.addEventListener('click',()=>submit('clear'));
-    editor.append(field,select,send,clear,message);item.append(editor);
+   if(schedule)item.append(schedule);item.append(pick,detail);
+   if(c.vip_validation){
+    const badge=document.createElement('p');badge.className='football-meta';
+    badge.textContent=c.vip_validation.approved?
+     `👑 VIP verificada retrospectivamente: ${c.vip_validation.evaluated} pruebas · ${c.vip_validation.accuracy}% observado (no garantizado).`:
+     `⚠️ VIP sin validación suficiente: ${c.vip_validation.reason}`;
+    badge.style.color=c.vip_validation.approved?'#d3b468':'#edb2a9';item.append(badge);
    }
    if(c.status==='draft'){
-    const deadline=footballApprovalDeadline(c,Boolean(status.engine));
-    if(deadline.closed){
-     const warning=document.createElement('p');warning.className='football-approval-deadline';
-     warning.textContent=`⚠️ Plazo cerrado: ${deadline.reason||`faltan menos de ${deadline.minutes} minutos para el inicio`}. Comprueba el horario antes de publicar.`;
-     item.append(warning);
-    }
     const actions=document.createElement('div');actions.className='football-candidate-actions';
-    const itemResult=document.createElement('p');itemResult.className='football-action-inline';
-    itemResult.setAttribute('role','status');itemResult.setAttribute('aria-live','polite');
     const refresh=document.createElement('button');refresh.type='button';refresh.className='secondary';refresh.textContent='🔄 Actualizar lesiones y alineaciones';refresh.hidden=Boolean(status.engine);
     refresh.addEventListener('click',async()=>{refresh.disabled=true;try{
       const r=await api(`/api/admin/football/candidates/${c.id}/refresh-advanced`,{method:'POST',body:'{}'});
-      showFootballActionResult(r.message||'Datos actualizados');await loadFootballEngine();
-    }catch(error){showFootballActionResult(error.message,true);refresh.disabled=false;}});actions.append(refresh);
+      message.textContent=r.message||'Datos actualizados';await loadFootballEngine();
+    }catch(error){message.textContent=error.message;refresh.disabled=false;}});actions.append(refresh);
     for(const [action,label] of [['publish','Aprobar y publicar'],['discard','Descartar']]){
-     const button=document.createElement('button');button.type='button';button.className=action==='discard'?'secondary':'';button.textContent=label;
-     if(action==='publish'&&deadline.closed){button.disabled=true;button.title=`El plazo de aprobación terminó ${deadline.minutes} minutos antes del inicio`;}
+     const button=document.createElement('button');button.className=action==='discard'?'secondary':'';button.textContent=label;
+     if(action==='publish'&&c.vip_validation&&!c.vip_validation.approved){
+      button.disabled=true;button.title='Requiere validación histórica VIP antes de publicar';
+     }
      button.addEventListener('click',async()=>{
-      if(action==='publish'&&footballApprovalDeadline(c,Boolean(status.engine)).closed){
-       const text=`⚠️ No se publicó «${c.home_team} vs ${c.away_team}»: ${deadline.reason||'se cerró el plazo antes del partido'}.`;
-       itemResult.textContent=text;showFootballActionResult(text,true);button.disabled=true;return;
-      }
       if(!confirm(action==='publish'?`¿Publicar esta selección ${c.visibility.toUpperCase()} en web y Telegram?`:'¿Descartar propuesta?'))return;
-      button.disabled=true;button.textContent=action==='publish'?'Publicando y contactando Telegram…':'Descartando…';
-      itemResult.textContent=action==='publish'?'⏳ Guardando en la web y enviando a Telegram…':'⏳ Descartando propuesta…';
-      showFootballActionResult(itemResult.textContent);
-      try{
-       const response=await api(`/api/admin/football/candidates/${c.id}/${action}`,{method:'POST',body:'{}'});
-       if(action==='publish'&&!response.published){
-        const text=`⚠️ No se publicó «${c.home_team} vs ${c.away_team}»: ${response.reason||'el servidor no realizó cambios'}.`;
-        itemResult.textContent=text;showFootballActionResult(text,true);button.disabled=false;button.textContent=label;return;
-       }
-       await loadFootballEngine();
-       if(action==='publish'){
-        const telegram=response.telegram||'sin confirmación';
-        const result=`✅ Publicado en la web (#${response.prediction_id||'—'}). Telegram: ${telegram}.`;
-        showFootballActionResult(result,telegram==='failed');
-        await loadPredictions();
-       }else showFootballActionResult('✅ Propuesta descartada.');
-      }catch(error){
-       const text=`❌ No se pudo ${action==='publish'?'publicar':'descartar'} «${c.home_team} vs ${c.away_team}»: ${error.message}`;
-       itemResult.textContent=text;showFootballActionResult(text,true);button.disabled=false;button.textContent=label;
-      }
+      button.disabled=true;
+      try{const response=await api(`/api/admin/football/candidates/${c.id}/${action}`,{method:'POST',body:'{}'});message.textContent=action==='publish'?(response.published?`Publicado. Telegram: ${response.telegram||'—'}`:`No publicado: ${response.reason||'Revisa los filtros'}`):'Propuesta descartada';await loadFootballEngine();if(action==='publish')await loadPredictions();}
+      catch(error){message.textContent=error.message;button.disabled=false;}
      });actions.append(button);
     }
-    item.append(actions,itemResult);
+    item.append(actions);
    }
    list.append(item);
   }
