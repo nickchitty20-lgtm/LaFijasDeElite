@@ -1,3 +1,4 @@
+import {safeTelegramPublicUrl,freeTelegramDestination} from './telegram-public.js';
 import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import {sha256,safeTelegramId,telegramApi,telegramLinkStart,telegramWebhookSecretValid} from './telegram-bridge.js';
@@ -263,7 +264,8 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
     staff_vip:entitlement.staff,access_reason:entitlement.staff?'staff':entitlement.paid?'paid':null,
     change_pending:change?.status==='awaiting_new',change_cooldown_minutes:Number(change?.cooldown_minutes||0),
     change_reissue_minutes:Number(change?.reissue_minutes||0),change_expires_minutes:Number(change?.expires_minutes||0),
-    public_group_url:process.env.TELEGRAM_FREE_GROUP_URL||null});
+    public_channel_url:safeTelegramPublicUrl(process.env.TELEGRAM_FREE_CHANNEL_URL),
+    public_group_url:safeTelegramPublicUrl(process.env.TELEGRAM_FREE_GROUP_URL)});
   }catch(error){console.error('telegram customer status',error.code||error.message);res.status(503).json({error:'No se pudo cargar Telegram'});}
  });
  app.post('/api/customers/telegram/link',limit,customerAuth,async(req,res)=>{
@@ -539,7 +541,7 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
    const [[exceptions]]=await db.query('SELECT COUNT(*) AS total FROM telegram_owner_preserved');
    let reportedChannelMembers=null;
    if(telegramEnabled())try{reportedChannelMembers=Number(await api('getChatMemberCount',{chat_id:process.env.TELEGRAM_VIP_CHAT_ID}));}catch(error){console.error('Telegram channel count',error.message);}
-   res.json({bot_configured:Boolean(process.env.TELEGRAM_BOT_TOKEN),vip_channel_configured:Boolean(process.env.TELEGRAM_VIP_CHAT_ID),free_group_configured:Boolean(process.env.TELEGRAM_FREE_CHAT_ID),webhook_secret_configured:validWebhookSecret(),public_base_url_configured:Boolean(process.env.PUBLIC_BASE_URL),linked:Number(stats.linked),vip_members:Number(stats.members),detached_pending:Number(stats.detached_pending),tracked_members:Number(tracking.known_current||0),tracked_total:Number(tracking.total||0),creator_preserved:Number(exceptions.total||0),telegram_member_count:reportedChannelMembers,full_scan_available:false});
+   res.json({bot_configured:Boolean(process.env.TELEGRAM_BOT_TOKEN),vip_channel_configured:Boolean(process.env.TELEGRAM_VIP_CHAT_ID),free_channel_configured:Boolean(freeTelegramDestination(process.env)),free_group_configured:Boolean(process.env.TELEGRAM_FREE_CHAT_ID),webhook_secret_configured:validWebhookSecret(),public_base_url_configured:Boolean(process.env.PUBLIC_BASE_URL),linked:Number(stats.linked),vip_members:Number(stats.members),detached_pending:Number(stats.detached_pending),tracked_members:Number(tracking.known_current||0),tracked_total:Number(tracking.total||0),creator_preserved:Number(exceptions.total||0),telegram_member_count:reportedChannelMembers,full_scan_available:false});
   }catch(error){console.error('telegram admin',error.code||error.message);res.status(503).json({error:'No se pudo consultar Telegram'});}
  });
  // The original owner is created before customer registration and may lack a user row.

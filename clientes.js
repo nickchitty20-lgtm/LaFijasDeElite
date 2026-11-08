@@ -24,11 +24,11 @@ async function loadCustomerPicks(){
    const article=document.createElement('article');article.className='customer-pick fe-research-card'+(p.locked?' is-locked':'');
    const h=document.createElement('h4');h.textContent=(p.locked?'🔒 ':'⚽ ')+p.title;article.append(h);
    const meta=document.createElement('p');meta.textContent=`${p.league||'Fútbol'} · ${p.visibility==='vip'?'VIP':'Gratis'}`;article.append(meta);
-   const schedule=window.FijasMatchSchedule?.render(p.match_date,p.locked?null:p.football_details?.match_context);if(schedule)article.append(schedule);
+   const schedule=window.FijasMatchSchedule?.render(p.match_date,{...(p.locked?{}:p.football_details?.match_context||{}),prediction_id:p.id});if(schedule)article.append(schedule);
    if(p.locked){const desc=document.createElement('p');desc.textContent='🔒 Selección, mercados y análisis ocultos. Necesitas una membresía VIP activa.';article.append(desc);
     const go=document.createElement('a');go.className='vip-unlock';go.href='#request';go.textContent='Desbloquear VIP';article.append(go);
    }else{
-    if(window.FijasPickReport){article.append(window.FijasPickReport.pickInfo(p));const goalBox=window.FijasPickReport.goals(p);if(goalBox)article.append(goalBox);const detail=window.FijasPickReport.analysis(p);if(detail)article.append(detail);}
+    if(window.FijasPickReport){article.append(window.FijasPickReport.pickInfo(p));const goalBox=window.FijasPickReport.goals(p);if(goalBox)article.append(goalBox);const advancedBox=window.FijasPickReport.advanced?.(p);if(advancedBox)article.append(advancedBox);const detail=window.FijasPickReport.analysis(p);if(detail)article.append(detail);}
     else{const desc=document.createElement('p');desc.textContent=`${p.market||''}: ${p.selection||''} · ${p.analysis||''}`;article.append(desc);}
     const status=document.createElement('span');status.className='outcome outcome-'+(p.outcome||'pending');status.textContent=({won:'Ganado',lost:'Perdido',pending:'Pendiente',void:'Anulado'})[p.outcome]||'Pendiente';article.append(status);
    }
@@ -112,7 +112,7 @@ async function enterCustomerPanel(){
  document.querySelector('.auth-card').hidden=true;$('customer-area').hidden=false;
  document.body.classList.add('client-logged-in');
  if(pendingPayPalReturn){$('payment-method').value='paypal';updatePaymentMethod();clientTab('payments');}
- else clientTab('overview');
+ else clientTab(/^\d+$/.test(new URLSearchParams(location.search).get('plan')||'')?'payments':'overview');
  await Promise.allSettled([loadCustomerPicks(),loadDashboard(),refreshTelegramStatus(),loadNoticePreferences()]);
  if(pendingPayPalReturn)await completePayPalReturn();
 }
@@ -120,7 +120,7 @@ $('signin').addEventListener('submit',async e=>{
  e.preventDefault();$('loginMsg').textContent='Comprobando acceso…';
  try{
   const r=await call('/api/login',form('signin'));
-  if(r.accountType==='admin'){location.replace('/admin.html');return;}
+  if(r.accountType==='admin'){location.replace('/panel');return;}
   await enterCustomerPanel();$('loginMsg').textContent='';
  }catch(err){$('loginMsg').textContent=err.message;}
 });
@@ -237,7 +237,7 @@ async function resumeCustomerSession(){
  if(new URLSearchParams(location.search).has('reset_token'))return;
  try{
   const session=await call('/api/session');
-  if(session.accountType==='admin'){location.replace('/admin.html');return;}
+  if(session.accountType==='admin'){location.replace('/panel');return;}
   if(session.authenticated && session.accountType==='customer')await enterCustomerPanel();
  }catch(err){$('loginMsg').textContent='Tu sesión no pudo restaurarse. Inicia sesión para continuar.';}
 }
@@ -269,9 +269,14 @@ async function refreshTelegramStatus(){
    !r.linked?r.change_cooldown_minutes>0?'El Telegram anterior ya salió. Espera el plazo de seguridad de 30 días, salvo excepción autorizada por el dueño.':'Primero vincula tu Telegram para verificar tu identidad.':
    `${r.telegram_username?'@'+r.telegram_username:'Cuenta Telegram vinculada'} · ${r.is_member?'Ya perteneces al canal VIP':r.has_vip?'VIP activo: puedes solicitar acceso':'VIP no activo: renueva tu membresía para ingresar'}`;
   const group=$('telegramPublicLink');group.replaceChildren();
-  if(r.public_group_url && /^https:\/\/t\.me\//i.test(r.public_group_url)){
-   const a=document.createElement('a');a.href=r.public_group_url;a.target='_blank';a.rel='noopener noreferrer';a.className='telegram-action';a.textContent='Abrir comunidad pública ↗';group.append(a);
-  }else group.textContent='El dueño compartirá el enlace del grupo público.';
+  const addPublicLink=(url,label)=>{
+   if(!url||!/^https:\/\/t\.me\//i.test(url))return;
+   const a=document.createElement('a');a.href=url;a.target='_blank';a.rel='noopener noreferrer';
+   a.className='telegram-action';a.textContent=label;group.append(a);
+  };
+  addPublicLink(r.public_channel_url,'📢 Canal GRATIS · Pronósticos ↗');
+  addPublicLink(r.public_group_url,'💬 Grupo GRATIS · Comunidad extra ↗');
+  if(!group.childElementCount)group.textContent='Los enlaces públicos aparecerán cuando el dueño los configure.';
  }catch(error){status.textContent=error.message;}
 }
 $('telegramLinkButton').addEventListener('click',async()=>{

@@ -18,3 +18,8 @@
 .section-heading h2 i{background:linear-gradient(100deg,#e9ce96,#b18b4e,#e9ce96);background-size:200% auto;background-clip:text;-webkit-background-clip:text;color:transparent;animation:goldShift 9s ease-in-out infinite}
 @keyframes goldShift{50%{background-position:100% center}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}.reveal-ready{opacity:1!important;transform:none!important}.scroll-progress{display:none}}
+/* v3.2.8: optional Telegram calls-to-action only appear when configured. */
+[hidden]{display:none!important}
+
+/* v3.3.1 — Inicio programado en tarjetas de pronósticos publicados. */
+.pick-kickoff{color:#e1be79;font-size:.84rem;font-weight:600;line-height:1.5;margin:8px 0 14px;overflow-wrap:anywhere}

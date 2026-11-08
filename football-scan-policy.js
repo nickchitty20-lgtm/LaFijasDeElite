@@ -1,21 +1,28 @@
-// Scans are deliberately selective; the Free tier is limited to 100/day and 10/min.
-// Diversify the first five matches across leagues, instead of blindly taking
-// three fixtures from the same competition in chronological order.
-export const FOOTBALL_SCAN_FIXTURES_LIMIT=5;
+// Prefer widely covered competitions when there are hundreds of matches,
+// but never suppress all other leagues. The API's prediction coverage varies.
+export const FOOTBALL_SCAN_FIXTURES_LIMIT=10;
 export const MANUAL_SCAN_DAILY_LIMIT=2;
 export const MANUAL_SCAN_MINUTES=10;
+const WELL_COVERED_LEAGUES=new Set([2,3,39,61,71,78,88,94,128,135,140,144,179,253,262,307,848]);
 export function pickScanFixtures(fixtures, limit=FOOTBALL_SCAN_FIXTURES_LIMIT){
- const selected=[], leagues=new Set(), ids=new Set();
- const valid=(f)=>Number.isSafeInteger(Number(f?.fixture?.id));
- const add=(f)=>{const id=Number(f.fixture.id);if(ids.has(id))return false;ids.add(id);selected.push(f);return true;};
- for(const f of fixtures||[]){
-  if(selected.length>=limit)break;
-  if(!valid(f))continue;
-  const league=String(f?.league?.id||f?.league?.name||'')||'unknown';
-  if(leagues.has(league))continue;
-  if(add(f))leagues.add(league);
+ const original=(Array.isArray(fixtures)?fixtures:[]).filter(f=>Number.isSafeInteger(Number(f?.fixture?.id)));
+ const seen=new Set();
+ const distinct=original.filter(f=>{const id=Number(f.fixture.id);if(seen.has(id))return false;seen.add(id);return true;});
+ // Stable ordering: priority competitions first, then closer kickoffs.
+ distinct.sort((a,b)=>{
+  const weight=x=>WELL_COVERED_LEAGUES.has(Number(x?.league?.id))?0:1;
+  return weight(a)-weight(b)||Date.parse(a.fixture.date)-Date.parse(b.fixture.date);
+ });
+ const selected=[],leagues=new Set();
+ for(const f of distinct){if(selected.length>=limit)break;
+  const league=String(f?.league?.id||f?.league?.name||'desconocida');
+  if(leagues.has(league))continue;leagues.add(league);selected.push(f);
  }
- for(const f of fixtures||[]){if(selected.length>=limit)break;if(valid(f))add(f);}
+ const selectedIds=new Set(selected.map(f=>Number(f.fixture.id)));
+ for(const f of distinct){if(selected.length>=limit)break;
+  if(selectedIds.has(Number(f.fixture.id)))continue;
+  selected.push(f);selectedIds.add(Number(f.fixture.id));
+ }
  return selected;
 }
 export function canRunManual({countToday=0,lastStartedAt=null,now=Date.now(),limit=MANUAL_SCAN_DAILY_LIMIT,minutes=MANUAL_SCAN_MINUTES}={}){

@@ -1,4 +1,5 @@
 import {goalProjection,goalAnalysisLines} from './football-goals.js';
+import {advancedAnalysisLines,createAdvancedSnapshot} from './football-advanced.js';
 /**
  * Evidence-first football analysis. No LLM-generated facts and no fabricated odds.
  * API-Football: https://www.api-football.com/documentation_v3
@@ -7,7 +8,7 @@ import {goalProjection,goalAnalysisLines} from './football-goals.js';
  */
 export const FOOTBALL_PROVIDER='api-football';
 export const DEFAULT_MIN_HOURS=1;
-export const DEFAULT_MAX_HOURS=6;
+export const DEFAULT_MAX_HOURS=24;
 
 export function parseProviderPercent(value){
  if(value==null)return null;
@@ -30,7 +31,7 @@ export function upcomingFixtures(fixtures,now=new Date(),minHours=DEFAULT_MIN_HO
    &&Number.isSafeInteger(Number(f.fixture?.id))
    &&Number.isSafeInteger(Number(f.teams?.home?.id))
    &&Number.isSafeInteger(Number(f.teams?.away?.id));
- }).sort((a,b)=>fixtureKickoff(a)-fixtureKickoff(b));
+ }).filter((f,i,list)=>list.findIndex(x=>String(x.fixture.id)===String(f.fixture.id))===i).sort((a,b)=>fixtureKickoff(a)-fixtureKickoff(b));
 }
 
 export function predictedResult(p){
@@ -64,7 +65,7 @@ export function latestCompletedHeadToHead(h2h,limit=5){
   .sort((a,b)=>fixtureKickoff(b).getTime()-fixtureKickoff(a).getTime())
   .slice(0,Math.max(0,Math.min(20,Math.floor(Number(limit)||0))));
 }
-export function createAssessment(fixture,predictionResponse,{h2h=[],injuries=[]}={}){
+export function createAssessment(fixture,predictionResponse,{h2h=[],injuries=[],advanced=null}={}){
  const fixtureId=Number(fixture?.fixture?.id);
  const kickoff=fixtureKickoff(fixture);
  const home=clean(fixture?.teams?.home?.name,90),away=clean(fixture?.teams?.away?.name,90);
@@ -85,14 +86,17 @@ export function createAssessment(fixture,predictionResponse,{h2h=[],injuries=[]}
  if(attackH!==null&&attackA!==null)evidence++;
  if(defenceH!==null&&defenceA!==null)evidence++;
  if(h2hRows.length>=2)evidence++;
- // VIP requires several independent descriptions of data and a clear favorite.
+ // These are UNCAlIBRATED provider probabilities, not measured hit rates.
+ // Two independent evidence families required; do not confuse estimated
+ // probabilities with historical accuracy. A free pick remains <=50% as agreed.
+ // VIP needs a clear 1X2 favorite, but not the extremely rare 72% threshold.
  let visibility=null;
- if(pick.confidence>=72&&pick.margin>=18&&evidence>=2)visibility='vip';
- else if(pick.confidence>=48&&pick.confidence<72&&evidence>=2)visibility='free';
+ if(pick.confidence>=63&&pick.margin>=12&&evidence>=2)visibility='vip';
+ else if(pick.confidence>=40&&pick.confidence<=50&&pick.margin>=8&&evidence>=2)visibility='free';
  if(!visibility)return null;
  const selection=pick.outcome==='home'?home:pick.outcome==='away'?away:'Empate';
  const lines=[
-  `Fuente: API-Football. Partido: ${home} vs ${away}; ${league}, ${kickoff.toISOString()}.`,
+  `Datos deportivos de terceros. Partido: ${home} vs ${away}; ${league}, ${kickoff.toISOString()}.`,
   `Mercado analizado: resultado final (1X2). Selección: ${selection}.`,
   `Probabilidades ESTIMADAS por el proveedor (no calibradas ni garantizadas): local ${fmt(pick.percent.home)}, empate ${fmt(pick.percent.draw)}, visitante ${fmt(pick.percent.away)}. Diferencia con la segunda opción: ${fmt(pick.margin)}.`,
  ];
@@ -100,21 +104,21 @@ export function createAssessment(fixture,predictionResponse,{h2h=[],injuries=[]}
  if(attackH!==null&&attackA!==null)lines.push(`Comparación de ataque (indicador del proveedor): local ${fmt(attackH)}, visitante ${fmt(attackA)}.`);
  if(defenceH!==null&&defenceA!==null)lines.push(`Comparación defensiva (indicador del proveedor): local ${fmt(defenceH)}, visitante ${fmt(defenceA)}.`);
  if(h2hRows.length>=2)lines.push(`Enfrentamientos previos consultados: ${h2hRows.length} partidos finalizados; estos antecedentes no determinan el resultado futuro.`);
+ if(visibility==='free')lines.push('PRONÓSTICO GRATUITO DE RIESGO ALTO: estimación del proveedor entre 40 y 50%, NO es una tasa de aciertos, ni garantiza rentabilidad.');
  // Secondary goal notes are not additional betting picks; the official
  // market remains 1X2 and the source goal lines are not exact scores.
  const goals=goalProjection(fixture,predictionResponse,h2hRows);
  lines.push(...goalAnalysisLines(goals));
- const injuryCount=Array.isArray(injuries)?injuries.length:null;
- if(injuryCount!==null&&injuryCount>0)lines.push(`El proveedor registra ${injuryCount} incidencias de bajas/lesiones asociadas al partido; confirma su vigencia antes de apostar.`);
- else lines.push('Lesiones y alineaciones: no se consideran confirmadas con la información disponible; revisar antes del inicio.');
+ const advancedData=advanced||createAdvancedSnapshot({fixture,prediction:predictionResponse});
  lines.push('Riesgos: cambios de última hora en alineaciones, rotación, tarjetas, arbitraje y varianza deportiva. Ningún pronóstico es una certeza.');
  lines.push('No se ha estimado rentabilidad ni se presupone una cuota de mercado. La confianza del proveedor no equivale a una tasa de acierto verificada.');
+ lines.push('[ESTUDIO AVANZADO V2.2]\n'+advancedAnalysisLines(advancedData).join('\n'));
  return {provider:FOOTBALL_PROVIDER,fixture_id:fixtureId,home,away,league,kickoff: kickOffString(kickoff),
   selection,market:'Resultado final 1X2',visibility,confidence:pick.confidence,evidence_count:evidence,
   analysis:lines.join('\n\n').slice(0,7900),odds:null,
-  raw_evidence:{percent:pick.percent,margin:pick.margin,home_form:homeForm,away_form:awayForm,
+  raw_evidence:{percent:pick.percent,margin:pick.margin,evidence_count:evidence,home_form:homeForm,away_form:awayForm,
    attack:{home:attackH,away:attackA},defence:{home:defenceH,away:defenceA},h2h_count:h2hRows.length,
-   injuries_reported:injuryCount,goals,match_context:{country:clean(fixture?.league?.country,65),round:clean(fixture?.league?.round,90),venue:clean(fixture?.fixture?.venue?.name,130),city:clean(fixture?.fixture?.venue?.city,95)},source:'API-Football /predictions, /fixtures/headtohead, /injuries'}
+   advanced:advancedData,team_ids:{home:Number(fixture.teams.home.id),away:Number(fixture.teams.away.id)},injuries_reported:advancedData.injuries?.reported??null,goals,match_context:{country:clean(fixture?.league?.country,65),round:clean(fixture?.league?.round,90),venue:clean(fixture?.fixture?.venue?.name,130),city:clean(fixture?.fixture?.venue?.city,95)},source:'API-Football /predictions, /fixtures/headtohead, /injuries, /fixtures/lineups, /teams/statistics'}
  };
 }
 export function kickOffString(date){return date.toISOString().slice(0,19).replace('T',' ');}
@@ -134,10 +138,25 @@ export function extractMatchWinnerOdds(response,selection,home,away){
  return null;
 }
 
+// API-FOOTBALL Free is 10 requests/minute. Queue requests in-process, not only
+// within a scan, to avoid self-inflicted 429 errors from the diagnostic/refresh.
+// Other installations using the SAME key still count toward the shared limit.
+let nextProviderCall=0;
+let providerQueue=Promise.resolve();
+async function awaitProviderSlot(){
+ const slot=providerQueue.then(async()=>{
+  const delay=Math.max(0,nextProviderCall-Date.now());
+  if(delay)await new Promise(resolve=>setTimeout(resolve,delay));
+  nextProviderCall=Date.now()+6500;
+ });
+ providerQueue=slot.catch(()=>{});
+ await slot;
+}
 export async function footballApi(endpoint,params={},env=process.env){
  if(!env.FOOTBALL_API_KEY)throw Error('FOOTBALL_API_KEY sin configurar');
  const url=new URL(`https://v3.football.api-sports.io/${endpoint}`);
  for(const [k,v] of Object.entries(params))url.searchParams.set(k,String(v));
+ await awaitProviderSlot();
  const response=await fetch(url,{headers:{'x-apisports-key':env.FOOTBALL_API_KEY},signal:AbortSignal.timeout(13000)});
  if(!response.ok)throw Error(`API-Football HTTP ${response.status}`);
  const json=await response.json();

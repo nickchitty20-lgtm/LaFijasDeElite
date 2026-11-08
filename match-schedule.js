@@ -1,52 +1,47 @@
-/* Fijas de Élite v2.1.6 — Match kickoff clock, display-only. */
-(()=>{'use strict';
- const MINUTE=60_000;
- function parse(value){
-  if(value instanceof Date)return Number.isFinite(value.getTime())?value:null;
-  if(typeof value!=='string')return null;
-  const raw=value.trim();
-  if(!raw)return null;
-  const iso=/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2})?$/.test(raw)?raw.replace(' ','T')+'Z':raw;
-  const dt=new Date(iso);return Number.isFinite(dt.getTime())?dt:null;
- }
- function countdown(value,now=Date.now()){
-  const date=parse(value);if(!date)return {phase:'unknown',label:'Hora no disponible'};
-  const left=date.getTime()-now;
-  if(left<=0)return {phase:'passed',label:'La hora programada ya pasó · confirma el estado del partido'};
-  const mins=Math.ceil(left/MINUTE);
-  if(mins<=1)return {phase:'soon',label:'Comienza en menos de 1 minuto'};
-  if(mins<60)return {phase:'soon',label:`Comienza en ${mins} min`};
-  const days=Math.floor(mins/1440),hours=Math.floor((mins%1440)/60),remaining=mins%60;
-  return {phase:'upcoming',label:'Comienza en '+(days?`${days} d ${hours} h`:`${hours} h${remaining?` ${remaining} min`:''}`)};
- }
- function formatDate(value){
-  const date=parse(value);if(!date)return null;
-  return new Intl.DateTimeFormat('es-PE',{timeZone:'America/Lima',weekday:'short',day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).format(date);
- }
- function render(value,context=null){
-  const date=parse(value);if(!date)return null;
-  const card=document.createElement('section');card.className='fe-match-schedule';
-  const title=document.createElement('span');title.className='fe-match-label';title.textContent='🗓 Inicio del partido';
-  const dateEl=document.createElement('time');dateEl.className='fe-match-date';dateEl.dateTime=date.toISOString();dateEl.textContent=formatDate(date)+' · Hora de Perú';
-  const count=document.createElement('span');count.className='fe-match-countdown';count.dataset.fixtureKickoffMs=String(date.getTime());
-  const note=document.createElement('small');note.className='fe-match-disclaimer';note.textContent='Horario programado; el estado en vivo debe verificarse con la competición.';
-  card.append(title,dateEl,count);
-  if(context&&typeof context==='object'){
-   const parts=[];if(context.round)parts.push('🏆 '+String(context.round).slice(0,90));
-   if(context.venue)parts.push('🏟 '+String(context.venue).slice(0,130));
-   if(context.city)parts.push('📍 '+String(context.city).slice(0,95));
-   for(const part of parts){const label=document.createElement('span');label.className='fe-match-extra';label.textContent=part;card.append(label);}
-  }
-  card.append(note);refresh(card);return card;
- }
- function refresh(root=document){
-  if(!root||typeof root.querySelectorAll!=='function')return;
-  for(const node of root.querySelectorAll('[data-fixture-kickoff-ms]')){
-   const value=Number(node.dataset.fixtureKickoffMs);
-   if(!Number.isFinite(value))continue;
-   const state=countdown(new Date(value));node.textContent='⏳ '+state.label;node.dataset.matchPhase=state.phase;
-  }
- }
- window.FijasMatchSchedule={render,refresh,countdown,formatDate,parse};
- if(typeof window.setInterval==='function')window.setInterval(()=>refresh(),30000);
-})();
+/** Match time in API-Football / DB is UTC; show exact Lima time and a snapshot for Telegram. */
+const MINUTE=60_000;
+export function parseMatchDate(value){
+ if(value instanceof Date)return Number.isFinite(value.getTime())?new Date(value.getTime()):null;
+ if(typeof value!=='string')return null;
+ const raw=value.trim();
+ if(!raw)return null;
+ // MySQL DATETIME (UTC) and datetime-local (form explicitly labeled UTC).
+ const normalized=/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2})?$/.test(raw)
+  ?raw.replace(' ','T')+'Z':raw;
+ const date=new Date(normalized);
+ return Number.isFinite(date.getTime())?date:null;
+}
+export function matchCountdown(value,now=Date.now()){
+ const date=parseMatchDate(value);
+ if(!date)return {phase:'unknown',label:'Hora de inicio no disponible'};
+ const remaining=date.getTime()-Number(now);
+ if(remaining<=0)return {phase:'passed',label:'La hora programada ya pasó · confirma el estado del partido'};
+ const minutes=Math.ceil(remaining/MINUTE);
+ if(minutes<=1)return {phase:'soon',label:'Comienza en menos de 1 minuto'};
+ if(minutes<60)return {phase:'soon',label:`Comienza en ${minutes} min`};
+ const days=Math.floor(minutes/1440),hours=Math.floor((minutes%1440)/60),mins=minutes%60;
+ const label=days?`${days} d ${hours} h`:`${hours} h${mins?` ${mins} min`:''}`;
+ return {phase:'upcoming',label:`Comienza en ${label}`};
+}
+export function formatPeruKickoff(value){
+ const date=parseMatchDate(value);
+ if(!date)return null;
+ return new Intl.DateTimeFormat('es-PE',{timeZone:'America/Lima',weekday:'short',day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).format(date);
+}
+export function telegramMatchSchedule(value,now=Date.now()){
+ const start=formatPeruKickoff(value);
+ if(!start)return '\n📅 Horario: no disponible';
+ return `\n🗓 Inicio programado: ${start} (hora de Perú)\n⏳ ${matchCountdown(value,now).label} (al publicar)`;
+}
+/** Interpret a datetime-local input explicitly as Peru wall-clock time.
+ * Lima is UTC-05 and does not observe DST. Avoid server/browser local timezone.
+ */
+export function peruLocalToUtc(value){
+ if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d$/.test(value))return null;
+ const date=new Date(value+':00-05:00');
+ if(!Number.isFinite(date.getTime()))return null;
+ const parts=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'America/Lima',
+  year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(date).map(p=>[p.type,p.value]));
+ if(`${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`!==value)return null;
+ return date.toISOString();
+}
