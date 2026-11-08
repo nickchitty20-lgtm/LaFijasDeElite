@@ -1,3 +1,19 @@
+## Versión 3.2.9.4 — Propuestas dentro de las próximas 72 horas
+
+Se volvió a limitar el análisis de N-FORCE a **3 días (72 horas)**, para priorizar partidos cercanos. El sistema examina únicamente partidos con hora conocida que comiencen entre **1 y 72 horas** desde cada escaneo. Se conserva la capacidad de hasta 240 partidos dentro de esa ventana y el diagnóstico de duplicados/rechazos de la versión previa.
+
+Los intervalos actuales de importación y análisis permanecen intactos; el usuario debe tener `FOOTBALL_AUTO_IMPORT=true` y `FOOTBALL_AUTO_SCAN=true` para la operación automática. La cercanía del partido no garantiza que estén disponibles lesiones, alineaciones o noticias recientes; N-FORCE sigue utilizando los datos deportivos que efectivamente haya importado.
+
+Para desplegar: actualizar el proyecto, confirmar `/health` con `3.2.9.4`, luego en el panel pulsar **Importar datos** y **Analizar ahora**. Las fijas descartadas o publicadas siguen sin regenerarse, y el sistema mantiene las restricciones de aprobación. No hay migraciones de MySQL ni nuevas variables obligatorias.
+
+---
+
+## Historial: versión 3.2.9.3 — Ventana de 14 días (revertida en 3.2.9.4)
+
+El escaneo ahora examina partidos con hora conocida hasta 14 días adelante. Esto evita quedarse sin nuevas propuestas cuando hay pausas de competición. No elimina el límite estadístico: es posible obtener cero propuestas si los partidos ya están registrados, carecen de historial o no superan los filtros.
+
+Tras actualizar, en el panel pulsa **Importar datos**, espera a que termine, luego **Analizar ahora**. El diagnóstico separa propuestas pendientes, descartadas y publicadas. No hay cambios de MySQL ni nuevas variables obligatorias. La publicación requiere aprobación manual, tal como antes.
+
 ## Fijas de Élite v3.2.9.2 — Propuestas pendientes limpias
 
 - Al pulsar **Descartar** en el panel, una propuesta automática desaparece inmediatamente de la lista al confirmar el servidor el cambio.

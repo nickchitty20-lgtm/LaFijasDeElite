@@ -689,6 +689,8 @@ function footballDiagnosticSummary(d){
   ['Conexión',d.api_connected?'Correcta':'Sin verificar'],
   ['Partidos disponibles',d.fixture_total??d.fixtures_returned??'—'],
   ['Próximos partidos con horario',d.fixtures_in_window??'—'],
+  ['Ventana del motor',d.scan_lookahead_days!=null?`${d.scan_lookahead_days} días`:'—'],
+  ['Partidos sin horario exacto',d.future_without_known_time??'—'],
   ['Predicción de muestra',d.sample?.prediction_available===true?'Disponible':d.sample?.prediction_available===false?'No disponible':'No comprobada'],
   ['Aprobación de filtros',d.sample?.passes_filters===true?'Sí':d.sample?.passes_filters===false?'No':'Sin muestra'],
  ];
@@ -709,11 +711,15 @@ function showFootballScanReport(r){
  const line=(label,value)=>{const row=document.createElement('p');const b=document.createElement('strong');b.textContent=label+': ';row.append(b,document.createTextNode(String(value)));report.append(row);};
  line('Resultado',r?.message||r?.note||r?.error||'Escaneo finalizado');
  if(r?.ok){
+  if(r.lookahead_days!=null)line('Ventana de búsqueda',`${r.lookahead_days} días`);
   line('Partidos próximos analizados',r.fixtures_in_window);
   line('Partidos realmente estudiados',r.examined);
   line('Modelos calculados',r.modeled??r.qualified??'—');
   line('Propuestas nuevas guardadas',r.drafts_created);
   if(r.already_present!=null)line('Propuestas elegibles ya registradas',r.already_present);
+  if(r.existing_by_status)line('Ya registradas (pendientes / descartadas / publicadas)',`${r.existing_by_status.draft||0} / ${r.existing_by_status.discarded||0} / ${r.existing_by_status.published||0}`);
+  if(r.fixtures_without_time!=null)line('Partidos futuros sin hora exacta',r.fixtures_without_time);
+  if(r.next_fixture_beyond_window)line('Siguiente fuera de la ventana',`${r.next_fixture_beyond_window.match} · ${new Date(r.next_fixture_beyond_window.kickoff).toLocaleString('es-PE')}`);
   if(r.updated_existing_drafts!=null)line('Borradores actualizados con el nuevo modelo',r.updated_existing_drafts);
   if(r.eligible!=null)line('Propuestas elegibles (nuevas + existentes)',r.eligible);
   if(r.recently_skipped!=null)line('Partidos pausados temporalmente (ahorro API)',r.recently_skipped);
