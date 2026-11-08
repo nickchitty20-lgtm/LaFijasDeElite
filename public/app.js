@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 let currentAdminRole='';
-const ADMIN_PANEL_BUILD='3.3.3';
+const ADMIN_PANEL_BUILD='3.3.4';
 // Diagnose a partial/old Railway deployment instead of silently rendering stale UI.
 async function checkAdminBuild(){
  const label=$('adminBuildVersion'),status=$('adminBuildStatus');
@@ -571,7 +571,10 @@ async function loadFootballEngine(){
   const syncLabel=$('liveScheduleStatus');
   if(syncLabel)api('/api/admin/schedules/status').then(s=>{
    const time=s.latest_verified?window.FijasMatchSchedule?.formatDate(s.latest_verified):null;
-   syncLabel.textContent=s.live_configured?`⚽ Calendario conectado · ${s.verified_matches} partidos vinculados · Última verificación: ${time||'pendiente'}. ${s.last_error?'Último error: '+s.last_error:''}`:`⚠️ Calendario NO sincronizado en vivo. Configura FOOTBALL_SCHEDULE_LIVE=true y FOOTBALL_API_KEY en Railway. Los horarios actuales son orientativos.`;
+   const scope=s.allowed_dates_utc?` · Fechas consultables (UTC): ${s.allowed_dates_utc.from} a ${s.allowed_dates_utc.to}`:'';
+   syncLabel.textContent=s.live_configured?
+    `${s.last_error?'⚠️ Calendario con incidencia':'⚽ Calendario configurado'} · ${s.verified_matches} partidos vinculados · Última verificación: ${time||'pendiente'}${scope}. ${s.last_error?'Último error: '+s.last_error:'Los horarios fuera de cobertura siguen sin confirmar.'}`:
+    '⚠️ Calendario NO sincronizado en vivo. Configura FOOTBALL_SCHEDULE_LIVE=true y FOOTBALL_API_KEY en Railway. Los horarios actuales son orientativos.';
   }).catch(()=>{syncLabel.textContent='⚠️ No se pudo verificar el estado del calendario.';});
   summary.replaceChildren();
   for(const id of ['footballImportButton','footballBacktestButton','footballSettleButton']){

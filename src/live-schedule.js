@@ -14,6 +14,23 @@ const providerLeague=Object.freeze({39:'en.1',140:'es.1',78:'de.1',135:'it.1',61
 const STATUS=new Set(['NS','TBD','1H','HT','2H','ET','BT','P','FT','AET','PEN','PST','CANC','ABD','SUSP','INT','AWD','WO','LIVE']);
 const sourceFreshMs=90*MINUTE;
 const safeErr=e=>String(e?.message||e).replace(/(sk_live_|sk_test_|pk_live_|pk_test_)[^\s]+/g,'[redacted]').slice(0,160);
+// Free API-Football fixtures are restricted to the provider's sliding date window.
+// This window is independent from N-FORCE's 72-hour prediction horizon.
+// On paid plans, FOOTBALL_SCHEDULE_PLAN=extended restores the previous four-day checks.
+export function scheduleDatesForPlan(date,plan='free'){
+ const now=date instanceof Date?date:new Date(date);
+ if(!Number.isFinite(now.getTime()))return [];
+ const origin=Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate());
+ const days=plan==='extended'?[{offset:0,frequency:30},{offset:1,frequency:120},{offset:2,frequency:240},{offset:3,frequency:360}]:
+  [{offset:-1,frequency:360},{offset:0,frequency:30},{offset:1,frequency:120}];
+ return days.map(({offset,frequency})=>({date:new Date(origin+offset*86400000).toISOString().slice(0,10),frequencyMs:frequency*MINUTE}));
+}
+export function allowedDateRangeFromError(error){
+ const match=String(error?.message||error||'').match(/free plans do not have access to this date[^\n]*?try from (\d{4}-\d{2}-\d{2}) to (\d{4}-\d{2}-\d{2})/i);
+ if(!match||match[1]>match[2])return null;
+ return {from:match[1],to:match[2]};
+}
+
 export function cleanTeamName(value){
  return String(value??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()
   .replace(/&/g,' and ').replace(/[^a-z0-9 ]/g,' ').replace(/\b(fc|ac|afc|cf|sc|ss|as|cd|club|football|soccer)\b/g,' ')
@@ -70,8 +87,10 @@ export function schedulePresentation(record,{now=Date.now(),liveConfigured=false
    'Horario comprobado recientemente.'};
 }
 export function installLiveSchedule(app,{db,authenticate,request=footballApi,now=()=>new Date(),env=process.env}={}){
- let interval=null,running=false,lastError=null,lastRun=null,requestsUsed=0;
+ let interval=null,running=false,lastError=null,lastRun=null;
+ let providerAllowedWindow=null;
  const configured=()=>env.FOOTBALL_SCHEDULE_LIVE==='true'&&Boolean(env.FOOTBALL_API_KEY);
+ const plan=()=>env.FOOTBALL_SCHEDULE_PLAN==='extended'?'extended':'free';
  const eligibleId=x=>/^\d{1,18}$/.test(String(x));
  const asIds=raw=>{
   if(typeof raw!=='string'||raw.length>850)return [];
@@ -99,9 +118,11 @@ export function installLiveSchedule(app,{db,authenticate,request=footballApi,now
   if(req.admin?.role!=='owner')return res.status(403).json({error:'Solo creador'});
   let latest=null;
   try{const [[r]]=await db.query('SELECT MAX(checked_at) AS last_verified,COUNT(*) AS linked FROM nforce_fixture_schedules');latest=r||null;}catch{}
+  const dates=scheduleDatesForPlan(now(),plan());
   res.json({live_configured:configured(),interval_minutes:5,last_run:lastRun,last_error:lastError,
    verified_matches:Number(latest?.linked||0),latest_verified:latest?.last_verified||null,
-   note:configured()?'Comprobaciones periódicas, no una señal minuto a minuto.':'Activa FOOTBALL_SCHEDULE_LIVE=true y configura FOOTBALL_API_KEY para contrastar horarios.'});
+   schedule_plan:plan(),allowed_dates_utc:dates.length?{from:dates[0].date,to:dates.at(-1).date}:null,
+   note:configured()?plan()==='free'?'Plan gratuito: solo se verifican las fechas admitidas; los otros horarios son orientativos. No es una señal minuto a minuto.':'Comprobaciones periódicas, no una señal minuto a minuto.':'Activa FOOTBALL_SCHEDULE_LIVE=true y configura FOOTBALL_API_KEY para contrastar horarios.'});
  });
  async function sync({force=false}={}){
   if(!configured())return {skipped:true,reason:'Sin conexión de calendario verificado'};
@@ -117,18 +138,36 @@ export function installLiveSchedule(app,{db,authenticate,request=footballApi,now
    const [[usage]]=await conn.query('SELECT COUNT(*) AS calls FROM nforce_schedule_requests WHERE requested_at>=UTC_DATE()');
    const maxCalls=Math.max(1,Math.min(75,Number(env.FOOTBALL_SCHEDULE_MAX_CALLS||70)));
    let remaining=Math.max(0,maxCalls-Number(usage.calls||0));
-   const [runDates]=await conn.query('SELECT day_utc,MAX(requested_at) AS last_requested FROM nforce_schedule_requests WHERE day_utc>=UTC_DATE() AND day_utc<=DATE_ADD(UTC_DATE(),INTERVAL 3 DAY) GROUP BY day_utc');
+   const [runDates]=await conn.query('SELECT day_utc,MAX(requested_at) AS last_requested FROM nforce_schedule_requests WHERE day_utc>=DATE_SUB(UTC_DATE(),INTERVAL 1 DAY) AND day_utc<=DATE_ADD(UTC_DATE(),INTERVAL 3 DAY) GROUP BY day_utc');
    const previous=new Map(runDates.map(r=>[String(r.day_utc instanceof Date?r.day_utc.toISOString().slice(0,10):r.day_utc).slice(0,10),r.last_requested?asUtc(r.last_requested).getTime():0]));
    const fixtures=[];
-   for(let i=0;i<4&&remaining>0;i++){
-    const date=new Date(today.getTime()+i*86400000).toISOString().slice(0,10);
-    const frequency=[30,120,240,360][i]*MINUTE;
-    if(!force&&today.getTime()-(previous.get(date)||0)<frequency)continue;
+   const utcToday=today.toISOString().slice(0,10);
+   if(providerAllowedWindow?.asOf!==utcToday)providerAllowedWindow=null;
+   let succeeded=0,cycleError=null;
+   for(const {date,frequencyMs} of scheduleDatesForPlan(today,plan())){
+    if(remaining<=0)break;
+    // Respect a narrower window learned from the provider; refresh this boundary daily.
+    if(providerAllowedWindow&&(date<providerAllowedWindow.from||date>providerAllowedWindow.to))continue;
+    if(!force&&today.getTime()-(previous.get(date)||0)<frequencyMs)continue;
     await conn.execute('INSERT INTO nforce_schedule_requests(day_utc,requested_at) VALUES (?,UTC_TIMESTAMP())',[date]);
     remaining--;queried++;
-    try{const response=await request('fixtures',{date});fixtures.push(...(Array.isArray(response)?response:[]));}
-    catch(e){lastError=safeErr(e);console.warn('live schedule source unavailable:',lastError);}
+    try{
+     const response=await request('fixtures',{date});
+     succeeded++;fixtures.push(...(Array.isArray(response)?response:[]));
+    }catch(e){
+     const restricted=allowedDateRangeFromError(e);
+     if(restricted){
+      providerAllowedWindow={...restricted,asOf:utcToday};
+      // This is a plan date restriction, not a connectivity outage. Don't log repeatedly.
+      cycleError=`El plan no permite la fecha ${date}; rango admitido ${restricted.from} a ${restricted.to}.`;
+     }else{
+      cycleError=safeErr(e);
+      console.warn('live schedule source unavailable:',cycleError);
+     }
+    }
    }
+   if(cycleError)lastError=cycleError;
+   else if(succeeded>0)lastError=null;
    if(fixtures.length){
     const [locals]=await conn.query(`SELECT m.id,m.competition,m.home_team,m.away_team,m.kickoff,m.match_date,s.provider_fixture_id AS live_fixture_id
      FROM nforce_matches m LEFT JOIN nforce_fixture_schedules s ON s.nforce_match_id=m.id
@@ -152,7 +191,7 @@ export function installLiveSchedule(app,{db,authenticate,request=footballApi,now
      matched++;
     }
    }
-   lastRun=now().toISOString();if(matched)lastError=null;
+   lastRun=now().toISOString();
    return {ok:true,requests:queried,matched,remaining};
   }finally{if(locked)await conn.query("SELECT RELEASE_LOCK('fijas_live_schedule_sync')").catch(()=>{});conn.release();running=false;}
  }
