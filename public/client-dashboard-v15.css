@@ -1,0 +1,120 @@
+/* Panel de clientes v1.5 — diseño oscuro premium, navegación por módulos */
+body.client-logged-in>header{display:none}body.client-logged-in .auth-layout{max-width:none;margin:0;padding:0;display:block}body.client-logged-in .auth-intro{display:none}body.client-logged-in .customer-area{max-width:none;width:100%;border:0;background:transparent;box-shadow:none;padding:0;margin:0}.client-shell{display:grid;grid-template-columns:250px minmax(0,1fr);min-height:100vh;background:#101319}.client-sidebar{position:sticky;top:0;height:100vh;display:flex;flex-direction:column;background:#0c1016;border-right:1px solid #2a303a;padding:29px 15px}.client-brand{color:#e9c37c;font-weight:900;letter-spacing:.6px;font-size:17px;padding:12px 10px;text-decoration:none}.client-brand b{color:#fff}.client-nav-caption{font-size:10px;letter-spacing:2px;color:#798390;padding:9px 13px 25px}.client-nav{display:grid;gap:8px}.client-nav button{background:transparent;border:1px solid transparent;color:#aeb6c1;text-align:left;border-radius:12px;padding:14px 16px;font-weight:650;transition:background .2s,border-color .2s,color .2s}.client-nav button:hover{background:#1c222b;color:#fff}.client-nav button.active{color:#f0ca85;border-color:#81683c;background:linear-gradient(105deg,#342a1a,#1b1d21)}.client-side-footer{margin-top:auto;padding:12px;font-size:10px;color:#717985;letter-spacing:1.1px}.client-content{min-width:0;padding:0 clamp(18px,4vw,56px) 70px;background:radial-gradient(ellipse at 80% 0,#292318 0,transparent 42%),#101319}.client-topbar{height:75px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #303640;font-size:11px;letter-spacing:2px;color:#969eaa}.client-logout{background:transparent!important;border:1px solid #4c4539!important;border-radius:9px;color:#e6c382!important;padding:9px 12px!important;font-size:12px!important;letter-spacing:0}.client-welcome{display:flex;justify-content:space-between;align-items:center;gap:16px;margin:36px 0}.client-welcome h2{font-size:clamp(26px,3.5vw,40px);letter-spacing:-.04em;margin:8px 0}.client-welcome p{color:#a8b0bc;margin:0}.client-gold{color:#d6b36e}.client-panel[hidden]{display:none!important}.client-section-heading{margin:10px 0 22px}.client-section-heading h3{font-size:clamp(21px,2.5vw,27px);margin:0 0 8px;color:#f4efe6}.client-section-heading p{color:#a8b0bb;margin:0}.client-panel .vip-summary{margin:0 0 18px;padding:24px}.client-panel .vip-stats{margin:0 0 20px}.client-shortcuts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:25px}.client-shortcuts button,.client-cta{border-radius:13px;padding:18px;background:#252117;color:#f2cd8b;border:1px solid #695636;text-align:left;font-weight:700}.client-panel .customer-picks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.client-panel .customer-pick{margin:0;padding:23px;border:1px solid #343d49;border-radius:17px;background:#181f27;min-width:0}.client-panel .customer-pick h4{margin-top:0}.client-memberships{display:grid;gap:12px}.client-memberships p{padding:19px 22px;background:#1a2029;border:1px solid #353d48;border-radius:14px;margin:0}.client-payment-layout{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(230px,.65fr);gap:18px}.client-form-card,.client-payment-info{background:#191f27;border:1px solid #343c47;border-radius:18px;padding:clamp(20px,3vw,30px)}.client-form-card label{display:block;margin-bottom:16px}.client-form-card select,.client-form-card input{display:block;width:100%;box-sizing:border-box;margin-top:8px}.client-form-card button{width:100%;margin-top:10px}.client-payment-info{background:linear-gradient(145deg,#272115,#191e25);border-color:#78633d}.client-payment-info span{color:#e9c47f;font-size:40px}.client-payment-info h4{font-size:22px;color:#e9c47f}.client-payment-info p{line-height:1.7;color:#b9c0c9}.client-panel .vip-notices{max-width:850px}.client-panel .vip-notice{padding:20px;margin:0;border-radius:13px}.client-panel .vip-mark{flex:0 0 auto}.client-panel{animation:clientEnter .25s ease-out}@keyframes clientEnter{from{opacity:.65;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}@media(max-width:950px){.client-shell{grid-template-columns:205px minmax(0,1fr)}.client-panel .customer-picks{grid-template-columns:1fr}.client-payment-layout{grid-template-columns:1fr}}@media(max-width:700px){.client-shell{display:block}.client-sidebar{position:sticky;top:0;z-index:10;height:auto;padding:9px 12px 12px;border-right:0;border-bottom:1px solid #333a45}.client-brand{font-size:14px;padding:4px 7px}.client-nav-caption,.client-side-footer{display:none}.client-nav{display:flex;overflow-x:auto;gap:7px;padding-top:9px;scrollbar-width:thin}.client-nav button{flex:0 0 auto;padding:10px 13px;font-size:12px}.client-content{padding:0 16px 35px}.client-topbar{height:55px}.client-welcome{margin:25px 0}.client-welcome .vip-mark{font-size:13px}.client-panel .vip-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.client-shortcuts{grid-template-columns:1fr}}@media(prefers-reduced-motion:reduce){.client-panel{animation:none}.client-nav button{transition:none}}
+
+.culqi-card{border:1px solid #8d7040!important;background:linear-gradient(140deg,#201b16,#12161e)!important}.culqi-card h4{color:#e4c68c}.culqi-card button{background:#c5a362;color:#121212;border:0;border-radius:10px;padding:13px 20px;font-weight:800;cursor:pointer}.culqi-card button:disabled{opacity:.5;cursor:not-allowed}
+
+/* v1.8.3: unified payment methods */
+.unified-checkout{min-width:0}
+.unified-checkout h4{font-size:21px;margin:12px 0 19px;color:#f7eddb}
+.unified-checkout .eyebrow{font-size:10px;letter-spacing:1.8px;color:#d6b36e}
+.unified-checkout label{color:#e1d9c9;font-weight:650}
+.unified-checkout #payment-method{border-color:#80683d;background:#171b20;color:#f8efd8}
+.unified-checkout #payment-method:focus{outline:2px solid #d6b36e;outline-offset:2px}
+.unified-checkout #payment-submit{background:linear-gradient(100deg,#e6c681,#c99e53);color:#19150e;border:1px solid #d6b36e;font-weight:900}
+.unified-checkout #payment-submit:disabled{opacity:.5;cursor:not-allowed}
+.checkout-helper{font-size:12px;color:#aeb4bd;line-height:1.7}
+.paypal-payment-fields{padding:18px 19px;border:1px solid #77613b;background:linear-gradient(120deg,#272015,#151a21);border-radius:14px;margin:12px 0 18px}
+.paypal-payment-fields p{font-size:13px;line-height:1.6;color:#c9c3b8}
+.paypal-provider{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:space-between}
+.paypal-provider-logo{font-size:23px;font-style:italic;font-weight:900;letter-spacing:-.055em;color:#a9d0ff}
+.paypal-sandbox-label{font-size:10px;font-weight:750;letter-spacing:.6px;color:#f0d391;background:#3b2e19;padding:6px 9px;border-radius:30px}
+#paypal-status{color:#e1c388}
+.paypal-reconcile{border-top:1px solid #3b3934;padding-top:14px;margin-top:15px}
+.paypal-reconcile button{border:1px solid #565043!important;background:#22262d!important;color:#f0d9aa!important}
+.paypal-reconcile p{color:#e7c789;font-size:13px}
+
+/* v1.8.4 — account-aware VIP renewal and accessible disabled PayPal verification */
+.vip-renewal-note{background:linear-gradient(125deg,#2c2518,#1a1e25);border:1px solid #947743;border-radius:14px;padding:16px 20px;color:#e8d0a0;line-height:1.65;margin:0 0 20px}
+.paypal-reconcile button:disabled{opacity:.5;cursor:not-allowed}
+#client-account-tier{color:#e5c47e;font-weight:750}
+
+/* Confirmed renewals are displayed immediately in the customer summary. */
+.vip-renewal-applied{color:#d8bf7c;font-weight:600;font-size:.9rem;margin-top:.7rem}
+
+/* v1.8.7: grouped VIP periods; pending applications collapsed by default */
+.client-memberships{display:grid;gap:22px}
+.membership-group{min-width:0;background:#151b23;border:1px solid #313b48;border-radius:17px;padding:18px}
+.membership-group h4,.membership-group>summary{font-size:16px;font-weight:800;color:#f1d39c;margin:0 0 14px}
+.membership-group>summary{cursor:pointer;list-style:auto;margin-bottom:0}
+.membership-group[open]>summary{margin-bottom:14px}
+.membership-cards{display:grid;gap:10px}
+.client-memberships .membership-card{padding:18px 20px;border-radius:12px;background:#202832;border:1px solid #35404d;display:grid;gap:6px}
+.membership-card strong{color:#f6f2ea}
+.membership-status{font-size:12px;font-weight:750;color:#dfc38e}
+.client-memberships .membership-card p{padding:0;margin:0;color:#aeb6c3;background:none;border:0;font-size:13px}
+.client-memberships .membership-empty{padding:10px 0;margin:0;background:none;border:0;color:#adb6c1}
+
+/* v1.9.1 · Telegram module */
+.telegram-client-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+.telegram-client-card{border:1px solid #374353;border-radius:19px;background:linear-gradient(145deg,#18202a,#111821);padding:26px;min-width:0}
+.telegram-client-card.telegram-client-vip{border-color:#94743d;background:linear-gradient(145deg,#282217,#171c24)}
+.telegram-client-card h4{font-size:21px;margin:12px 0;color:#f5e9d4}
+.telegram-client-card p{color:#b6c0ce;line-height:1.65}
+.telegram-client-card .eyebrow{color:#dcba75;font-weight:800;font-size:10px;letter-spacing:1.6px}
+.telegram-client-card button,.telegram-action{display:inline-block;background:#dbc085;color:#201a13!important;border:0;border-radius:12px;font-weight:800;padding:12px 17px;text-decoration:none;margin:6px 8px 8px 0;cursor:pointer}
+.telegram-client-card button.secondary{background:#2b3340;color:#e3d5b6!important;border:1px solid #4c5360}
+.telegram-client-card button:disabled{opacity:.5;cursor:not-allowed}
+#telegramClientResult{overflow-wrap:anywhere;font-size:13px}
+@media(max-width:900px){.telegram-client-grid{grid-template-columns:1fr}}
+
+/* v1.9.2 · Secure Telegram account change */
+.telegram-change-help{font-size:12px;color:#c7af7c!important;max-width:46ch}
+.telegram-change-form{display:grid;gap:12px;padding:20px;margin-top:12px;border-radius:14px;border:1px solid #82704e;background:#121923}
+.telegram-change-form[hidden]{display:none!important}
+.telegram-change-form h5{margin:0;color:#f0d7a6;font-size:16px}
+.telegram-change-form label{display:grid;gap:8px;color:#f5e9d4;font-size:13px}
+.telegram-change-form input[type="password"]{width:100%;min-width:0;border-radius:10px;padding:12px;color:#f5f1e7;background:#11161e;border:1px solid #5e646f}
+.telegram-change-form .telegram-change-confirm{display:flex;align-items:flex-start;gap:12px;line-height:1.5}
+.telegram-change-form .telegram-change-confirm input{margin-top:3px;accent-color:#dbc085}
+.telegram-change-form button{margin:0;max-width:100%}
+
+/* v2.0 — Centro de notificaciones */
+.notice-preferences-card{background:#131923;border:1px solid rgba(214,179,110,.24);border-radius:18px;padding:clamp(18px,3vw,28px);margin-bottom:24px}
+.notice-preferences-card h4{font-size:1.12rem;margin:10px 0}
+.notice-preferences-card form{display:grid;gap:12px;margin-top:16px}
+.notice-preferences-card label{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:12px;background:#1c2430;border:1px solid #323a45;cursor:pointer}
+.notice-preferences-card input[type="checkbox"]{width:18px;height:18px;accent-color:#d6b36e;flex-shrink:0}
+.notice-preferences-card button{max-width:270px}
+.notice-preferences-card p[role="status"]{color:#d7c6a8;min-height:1.5em}
+
+/* v2.0.2 — hidden must win over navigation/layout display rules */
+#customer-area [hidden]{display:none!important}
+
+/* v2.1.5: structured market report, no sideways overflow */
+.fe-research-card{min-width:0;overflow-wrap:anywhere;display:grid;gap:12px}
+.fe-research-card h4{margin-bottom:0}
+.fe-betting-context{padding:14px 16px;border-radius:12px;background:#252219;border:1px solid #867047;color:#f6e3b7;display:grid;gap:7px;min-width:0}
+.fe-main-pick{display:grid;gap:5px}.fe-main-pick span{font-size:11px;letter-spacing:.075em;color:#cbbb95}.fe-main-pick strong{font-size:16px;line-height:1.5}
+.fe-pick-odds{font-size:12px;margin:0!important;color:#bfb9ae;line-height:1.5}
+.fe-goals-breakdown{border:1px solid #4e5661;border-radius:14px;padding:16px;background:#121820;min-width:0}
+.fe-goals-breakdown h5{font-size:15px;letter-spacing:0;margin:0 0 12px;color:#eecb88}
+.fe-goal-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.fe-goal-metric{border:1px solid #354356;border-radius:10px;background:#1d2631;padding:12px;display:grid;gap:5px;min-width:0}
+.fe-goal-label{font-size:11px;color:#bac6d3}.fe-goal-value{font-size:14px;color:#edd4a0;line-height:1.45;overflow-wrap:anywhere}
+.fe-goal-detail{font-size:10px;color:#aab5c5;line-height:1.45}
+.fe-goal-history,.fe-goal-probabilities{font-size:12px;color:#bfccd6;line-height:1.6;margin:12px 0 4px!important}
+.fe-goal-warning{display:block;font-size:11px;color:#dfbd84;line-height:1.6;margin-top:9px}
+.fe-full-research{border-top:1px solid #4b545e;padding-top:12px;min-width:0}
+.fe-full-research summary{cursor:pointer;font-weight:700;color:#e1c48c;line-height:1.5}
+.fe-full-research p{margin:10px 0 0!important;white-space:pre-line;overflow-wrap:anywhere;color:#cad2dc;line-height:1.7;font-size:13px}
+@media(max-width:600px){.fe-goal-metrics{grid-template-columns:1fr}.fe-research-card{padding:16px!important}.fe-goals-breakdown{padding:12px}}
+
+
+/* v2.1.8 — Kickoff clock, dark/gold cards, safe on narrow screens. */
+.fe-match-schedule{display:grid;gap:6px;min-width:0;max-width:100%;box-sizing:border-box;padding:13px 15px;margin:10px 0 13px;border:1px solid #655437;border-radius:12px;background:linear-gradient(120deg,#252117,#181e28);overflow-wrap:anywhere}
+.fe-match-label{font-weight:750;font-size:12px;letter-spacing:.05em;color:#d9bb7c}
+.fe-match-date{font-weight:700;font-size:14px;color:#f1e5cd;line-height:1.5}
+.fe-match-countdown{display:block;color:#eac677;font-weight:800;font-size:16px;line-height:1.45}
+.fe-match-countdown[data-match-phase="passed"]{color:#c5ccd5;font-size:13px}
+.fe-match-countdown[data-match-phase="soon"]{color:#a9deca}
+.fe-match-disclaimer{color:#a7afb9;font-size:10px;line-height:1.5}
+@media(max-width:600px){.fe-match-schedule{padding:11px 12px}.fe-match-date{font-size:13px}.fe-match-countdown{font-size:14px}}
+
+.fe-match-extra{font-size:11px;color:#c6ccd4;line-height:1.5;overflow-wrap:anywhere}
+
+/* v3.1.0 — Estudio avanzado responsive en tarjetas VIP */
+.fe-advanced-team{background:#17212c;border:1px solid #3d4b5b;border-radius:12px;padding:12px 14px;margin:12px 0;min-width:0;overflow-wrap:anywhere}
+.fe-advanced-team h6{margin:0 0 8px;color:#e8c787;letter-spacing:.07em;font-size:12px}
+.fe-advanced-team p{font-size:12px;color:#d5dfe7;line-height:1.6;margin:6px 0;overflow-wrap:anywhere}
+.fe-advanced-report{max-width:100%;min-width:0;overflow-wrap:anywhere}
+@media(max-width:600px){.fe-advanced-team{padding:11px 12px}}

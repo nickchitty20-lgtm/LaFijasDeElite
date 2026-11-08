@@ -1,0 +1,11 @@
+/* Fijas de Elite v0.7: subtle motion across all pages */
+:root{--motion-ease:cubic-bezier(.22,1,.36,1);--motion-fast:180ms;--motion-normal:320ms}
+html{scroll-behavior:smooth}button,a,input,select,textarea{ -webkit-tap-highlight-color:transparent }
+button,a,.plan,.benefit,.pick,.card,.stats article{transition:transform var(--motion-normal) var(--motion-ease),box-shadow var(--motion-normal) var(--motion-ease),border-color var(--motion-normal) ease,background-color var(--motion-fast) ease,opacity var(--motion-fast) ease}
+button:not(:disabled):hover{transform:translateY(-2px);filter:brightness(1.06);box-shadow:0 8px 22px rgba(213,170,85,.12)}button:not(:disabled):active{transform:translateY(0) scale(.985);box-shadow:none}button:disabled{cursor:wait;opacity:.62}
+a:hover{opacity:.86}a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid #d5aa55;outline-offset:3px}
+input,select,textarea{transition:border-color 200ms ease,box-shadow 200ms ease,background-color 200ms ease}input:hover,select:hover,textarea:hover{border-color:#887248}input:focus,select:focus,textarea:focus{border-color:#d5aa55;box-shadow:0 0 0 4px rgba(213,170,85,.12);outline:none}
+.card:hover,.stats article:hover{border-color:#6d5834}.stats article:hover{transform:translateY(-3px)}
+.ui-enter{animation:uiEnter .55s var(--motion-ease) both}.ui-appear{animation:uiEnter .46s var(--motion-ease) both}.ui-press{animation:uiPress .25s ease both}.ui-success{animation:uiSuccess .42s var(--motion-ease) both}
+@keyframes uiEnter{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}@keyframes uiPress{50%{transform:scale(.985)}}@keyframes uiSuccess{0%{filter:brightness(1.4)}100%{filter:brightness(1)}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto!important}*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}

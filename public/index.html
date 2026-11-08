@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0a0e12"><meta name="description" content="Fijas de Élite: análisis de fútbol, pronósticos transparentes y membresías VIP."><title>Fijas de Élite | Análisis de fútbol con criterio</title><link rel="stylesheet" href="/landing.css?v=3.3.1"><link rel="stylesheet" href="/performance.css?v=3.2.5"><link rel="stylesheet" href="/ui-motion.css?v=3.2.5"><link rel="stylesheet" href="/scroll-text.css?v=3.2.5"><link rel="stylesheet" href="/mobile-viewport.css?v=3.2.5"><link rel="stylesheet" href="/landing-auth-v327.css?v=3.2.7.1"></head>
+<body><div class="scroll-progress" aria-hidden="true"></div><div class="ambient"></div><header class="topbar"><a class="logo" href="/" aria-label="Fijas de Élite, inicio"><span class="logo-mark">FE</span><span>FIJAS DE <em>ÉLITE</em></span></a><nav aria-label="Navegación principal"><a href="#rendimiento">Resultados</a><a href="#beneficios">Beneficios</a><a href="#planes">Planes VIP</a><a href="#pronosticos">Pronósticos</a></nav><a class="nav-cta" href="/clientes.html" data-auth-open="login">Iniciar sesión <span>↗</span></a></header>
+<main><section class="hero wrap"><div class="hero-copy"><span class="eyebrow"><span class="pulse"></span> INTELIGENCIA PARA CADA PARTIDO</span><h1>El fútbol se vive.<br><span>Las decisiones</span><br>se analizan.</h1><p>Pronósticos de fútbol con análisis, contexto y seguimiento transparente. Accede a contenido gratuito y descubre una experiencia VIP diseñada para aficionados exigentes.</p><div class="actions"><a class="button gold" href="#planes">Explorar planes VIP <span>↗</span></a><a class="button ghost" href="#pronosticos">Ver pronósticos <span>→</span></a><a class="button ghost" id="telegramFreeChannelCta" target="_blank" rel="noopener noreferrer" hidden>📢 Canal GRATIS <span>↗</span></a></div><div class="trust"><span>✦ Análisis fundamentado</span><span>✦ Historial visible</span><span>✦ Sin promesas de acierto</span></div></div><div class="hero-visual" aria-hidden="true"><div class="orb orb-one"></div><div class="orb orb-two"></div><div class="stadium"><div class="stadium-top"><span>FE / MATCH INTELLIGENCE</span><span class="live-dot">● INSIGHTS</span></div><div class="pitch"><div class="midline"></div><div class="center-circle"></div><div class="box-left"></div><div class="box-right"></div><div class="spot spot-a"></div><div class="spot spot-b"></div><div class="spot spot-c"></div><div class="spot spot-d"></div><div class="ball">⚽</div></div><div class="stadium-bottom"><div><small>ANÁLISIS</small><strong>Datos + criterio</strong></div><div><small>ENFOQUE</small><strong>Transparencia</strong></div></div></div><div class="floating-tag">✦ FUTBOL · DATA · VISIÓN</div></div></section>
+<section class="wrap performance-spotlight" aria-label="Comparación del rendimiento de los pronósticos">
+ <div class="spotlight-intro"><span class="kicker">RESULTADOS EN LA PORTADA</span><h2>VIP frente a Gratis, <i>con resultados registrados.</i></h2><p>Compara ganadas, perdidas y aciertos. Incluye publicaciones retiradas y no utiliza las cifras de la demostración.</p></div>
+ <div class="spotlight-grid" id="performanceQuickCards" aria-live="polite"><div class="performance-empty">Cargando resultados del historial…</div></div>
+ <div class="spotlight-footer"><span id="performanceQuickSummary">Ganadas, perdidas y anuladas del historial publicado.</span><a href="#rendimiento">Ver historial y metodología →</a></div>
+</section>
+<section class="metrics wrap" aria-label="Nuestros principios"><div><strong>01</strong><span>Lectura del partido</span></div><div><strong>02</strong><span>Selecciones explicadas</span></div><div><strong>03</strong><span>Historial consultable</span></div></section>
+<section class="section wrap performance-section" id="rendimiento" aria-labelledby="performanceTitle">
+ <div class="section-heading"><span class="kicker">HISTORIAL PÚBLICO</span><h2 id="performanceTitle">Resultados con <i>transparencia.</i></h2><p>Ganados, perdidos, anulados y pendientes de las selecciones publicadas. Las cifras se calculan con nuestros registros, incluyendo las publicaciones retiradas.</p></div>
+ <div class="performance-controls">
+  <label>Período <select id="performancePeriod" aria-label="Período de resultados"><option value="all">Todo el historial</option><option value="30d">Últimos 30 días</option><option value="90d">Últimos 90 días</option></select></label>
+  <label>Categoría <select id="performanceVisibility" aria-label="Categoría de pronósticos"><option value="all">Gratis + VIP</option><option value="free">Gratis</option><option value="vip">VIP</option></select></label>
+ </div>
+ <div class="performance-cards" id="performanceStats" aria-live="polite"><p class="loading">Consultando resultados registrados…</p></div>
+ <div class="performance-comparison-heading"><div><span class="performance-comparison-eyebrow">COMPARATIVA DE CATEGORÍAS</span><h3>Pronósticos VIP <em>vs.</em> Gratis</h3></div><p id="performanceComparisonHint">Comparamos resultados registrados del mismo período. Ningún dato de demostración se incluye aquí.</p></div>
+ <div class="performance-splits" id="performanceBreakdown" aria-live="polite"></div>
+ <div class="performance-history"><div class="performance-history-top"><h3>Últimos resultados registrados</h3><span id="performanceUpdated">Actualizando…</span></div><div id="performanceRecent" aria-live="polite"><p class="loading">Cargando historial…</p></div></div>
+ <p class="performance-disclosure" id="performanceNote">Las cifras distinguen los cotejos automáticos de los registros manuales. Las victorias y derrotas históricas no garantizan resultados futuros.</p>
+ <details class="performance-method"><summary>Cómo calculamos y registramos los resultados</summary><div><p>La tasa de acierto es ganadas ÷ (ganadas + perdidas). Los pronósticos anulados y pendientes no entran en el porcentaje; las publicaciones retiradas sí permanecen en el historial.</p><p>Los cotejos automáticos utilizan registros deportivos públicos de terceros, no oficiales, que pueden llegar con retraso o contener errores. Los registros manuales los introduce nuestro equipo y no constituyen una certificación independiente. Las estadísticas no acreditan ganancias ni garantizan futuros aciertos.</p></div></details>
+</section>
+<section class="section wrap" id="beneficios"><div class="section-heading"><span class="kicker">NUESTRA FILOSOFÍA</span><h2>Más que una <i>simple fija.</i></h2><p>Información presentada con claridad para que evalúes cada pronóstico por tu cuenta.</p></div><div class="benefits"><article class="benefit"><span class="benefit-icon">⌁</span><h3>Análisis con contexto</h3><p>Mercado, cuota y razonamiento reunidos en un solo lugar, sin ruido innecesario.</p></article><article class="benefit"><span class="benefit-icon">◎</span><h3>Acceso ordenado</h3><p>Una plataforma web para consultar pronósticos y gestionar tu membresía.</p></article><article class="benefit"><span class="benefit-icon">↗</span><h3>Seguimiento transparente</h3><p>Publicaciones y resultados para revisar tanto los aciertos como los fallos.</p></article></div></section>
+<section class="section plans-section" id="planes"><div class="wrap"><div class="section-heading center"><span class="kicker">MEMBRESÍAS</span><h2>Tu acceso, <i>a tu ritmo.</i></h2><p>Elige la duración que mejor se adapte a ti. Todos los planes incluyen el mismo contenido VIP disponible.</p></div><div class="plan-grid" id="planGrid"><div class="loading">Cargando planes disponibles…</div></div><p class="footnote">Precios en soles (PEN). El acceso VIP se activa tras confirmar el pago. Por ahora, las solicitudes de pago son manuales; los pagos automáticos no están habilitados.</p></div></section>
+<section class="section wrap" id="pronosticos"><div class="section-heading"><span class="kicker">VISTA PREVIA</span><h2>Una mirada a los <i>pronósticos.</i></h2><p>Los pronósticos gratuitos requieren una cuenta. Los VIP se desbloquean con una membresía activa.</p></div><div class="picks" id="picks"><div class="loading">Cargando pronósticos…</div></div></section>
+<section class="wrap cta"><div><span class="kicker">ÚNETE A LA COMUNIDAD</span><h2>La próxima jugada empieza con <i>información.</i></h2><p>Explora nuestros planes, crea tu cuenta y sigue las novedades de Fijas de Élite.</p></div><a class="button gold" href="/clientes.html" data-auth-open="register">Crear mi cuenta <span>↗</span></a></section></main>
+<footer class="footer wrap"><div class="footer-top"><a class="logo" href="/"><span class="logo-mark">FE</span><span>FIJAS DE <em>ÉLITE</em></span></a><div><a href="#planes">Planes</a><a id="telegramFreeChannelFooter" target="_blank" rel="noopener noreferrer" hidden>Canal GRATIS</a><a id="telegramFreeGroupFooter" target="_blank" rel="noopener noreferrer" hidden>Grupo GRATIS</a><a href="/clientes.html" data-auth-open="login">Mi cuenta</a></div></div><p>Los pronósticos son análisis orientativos, no garantías de resultado ni de ganancias. Solo para mayores de edad; participa de forma responsable y respeta la normativa aplicable.</p><small>© <span id="year"></span> Fijas de Élite. Todos los derechos reservados.</small></footer>
+<!-- Acceso en portada: el panel privado permanece en /clientes.html DESPUÉS de autenticar. -->
+<div id="landingAuth" class="fe-auth-overlay" hidden>
+ <div class="fe-auth-backdrop" data-auth-close></div>
+ <section class="fe-auth-dialog" role="dialog" aria-modal="true" aria-labelledby="landingAuthTitle" aria-describedby="landingAuthIntro" tabindex="-1">
+  <button type="button" class="fe-auth-close" data-auth-close aria-label="Cerrar ventana de acceso">✕</button>
+  <div class="fe-auth-aside" aria-hidden="true">
+   <div class="fe-auth-aside-top"><span class="fe-auth-mini-mark">FE</span><span>FIJAS DE ÉLITE <small>PRIVATE ACCESS</small></span></div>
+   <div class="fe-auth-aside-core"><span class="fe-auth-aside-eyebrow">✦ TU ESPACIO DE ANÁLISIS</span><strong>El siguiente partido empieza aquí.</strong><p>Una sola cuenta para tus pronósticos, tu historial y tu membresía.</p></div>
+   <div class="fe-auth-mini-pitch"><span class="fe-auth-field-line"></span><span class="fe-auth-field-center"></span><span class="fe-auth-ball">⚽</span></div>
+   <div class="fe-auth-aside-foot"><span>◆ ACCESO SEGURO</span><span>EST. ÉLITE</span></div>
+  </div>
+  <div class="fe-auth-main">
+   <span class="fe-auth-kicker">ACCESO A TU CUENTA</span>
+   <h2 id="landingAuthTitle">Bienvenido a <em>Élite.</em></h2>
+   <p id="landingAuthIntro" class="fe-auth-subtitle">Inicia sesión o regístrate sin salir de la portada.</p>
+   <div class="fe-auth-context" id="landingAuthContext" hidden></div>
+   <div class="fe-auth-tabs" role="tablist" aria-label="Entrar o registrarse">
+    <button type="button" data-landing-view="login" role="tab" aria-selected="true">Iniciar sesión</button>
+    <button type="button" data-landing-view="register" role="tab" aria-selected="false">Registrarse</button>
+   </div>
+   <div class="fe-auth-view" data-landing-panel="login">
+    <form id="landingSignin" novalidate>
+     <label>Correo electrónico <input name="email" type="email" autocomplete="email" placeholder="tucorreo@ejemplo.com" required maxlength="254"></label>
+     <label>Contraseña <input name="password" type="password" autocomplete="current-password" placeholder="Tu contraseña" required></label>
+     <div class="fe-auth-form-options"><button class="fe-auth-text-button" type="button" data-landing-view="forgot">¿Olvidaste tu contraseña?</button></div>
+     <button class="fe-auth-submit" type="submit">Iniciar sesión <span>→</span></button>
+     <p class="fe-auth-msg" id="landingLoginMsg" role="status" aria-live="polite"></p>
+    </form>
+   </div>
+   <div class="fe-auth-view" data-landing-panel="register" hidden>
+    <form id="landingRegister" novalidate>
+     <label>Tu nombre <input name="display_name" autocomplete="name" placeholder="¿Cómo te llamamos?" minlength="2" maxlength="120" required></label>
+     <label>Correo electrónico <input name="email" type="email" autocomplete="email" placeholder="tucorreo@ejemplo.com" maxlength="254" required></label>
+     <label>Contraseña <input name="password" type="password" autocomplete="new-password" placeholder="Mínimo 12 caracteres" minlength="12" maxlength="128" required></label>
+     <button class="fe-auth-submit" type="submit">Crear cuenta gratis <span>→</span></button>
+     <p class="fe-auth-msg" id="landingRegisterMsg" role="status" aria-live="polite"></p>
+    </form>
+   </div>
+   <div class="fe-auth-view" data-landing-panel="forgot" hidden>
+    <h3>Recupera tu acceso</h3><p class="fe-auth-hint">Te enviaremos un enlace para crear una nueva contraseña.</p>
+    <form id="landingForgot" novalidate><label>Correo electrónico <input name="email" type="email" autocomplete="email" required maxlength="254"></label><button class="fe-auth-submit" type="submit">Enviar enlace <span>→</span></button><p class="fe-auth-msg" id="landingForgotMsg" role="status" aria-live="polite"></p></form>
+    <button type="button" class="fe-auth-text-button" data-landing-view="login">← Volver a iniciar sesión</button>
+   </div>
+   <p class="fe-auth-legal">Solo para mayores de edad. Tu acceso y tus pagos se validan de forma segura en el servidor.</p>
+  </div>
+ </section>
+</div>
+<script src="/match-schedule.js?v=3.3.2" defer></script><script src="/landing.js?v=3.3.2" defer></script><script src="/landing-auth-v327.js?v=3.2.7.2" defer></script><script src="/motion.js?v=3.2.5" defer></script><script src="/ui-motion.js?v=3.2.5" defer></script><script src="/scroll-text.js?v=3.2.5" defer></script></body></html>
