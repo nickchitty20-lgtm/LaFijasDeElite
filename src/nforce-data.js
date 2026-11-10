@@ -5,40 +5,71 @@
 import crypto from 'node:crypto';
 
 export const NFORCE_PROVIDER='nforce-openfootball';
+// Strict competition allowlist. The importer attempts only predefined paths.
+// Missing files in a given season are reported as unavailable, never invented.
+// Leagues without a current file can still contribute prior-season history.
 export const LEAGUES=Object.freeze([
  {code:'en.1',name:'Premier League',zone:'Europe/London'},
+ {code:'en.2',name:'Championship',zone:'Europe/London'},
+ {code:'en.3',name:'League One',zone:'Europe/London'},
+ {code:'en.4',name:'League Two',zone:'Europe/London'},
  {code:'es.1',name:'LaLiga',zone:'Europe/Madrid'},
+ {code:'es.2',name:'Segunda División',zone:'Europe/Madrid'},
  {code:'de.1',name:'Bundesliga',zone:'Europe/Berlin'},
+ {code:'de.2',name:'2. Bundesliga',zone:'Europe/Berlin'},
  {code:'it.1',name:'Serie A',zone:'Europe/Rome'},
+ {code:'it.2',name:'Serie B',zone:'Europe/Rome'},
  {code:'fr.1',name:'Ligue 1',zone:'Europe/Paris'},
+ {code:'fr.2',name:'Ligue 2',zone:'Europe/Paris'},
+ {code:'nl.1',name:'Eredivisie',zone:'Europe/Amsterdam'},
+ {code:'pt.1',name:'Primeira Liga',zone:'Europe/Lisbon'},
+ {code:'sco.1',name:'Premiership escocesa',zone:'Europe/London'},
+ {code:'be.1',name:'Primera División belga',zone:'Europe/Brussels'},
+ {code:'at.1',name:'Bundesliga austríaca',zone:'Europe/Vienna'},
+ {code:'tr.1',name:'Süper Lig',zone:'Europe/Istanbul'},
+ {code:'gr.1',name:'Super League griega',zone:'Europe/Athens'},
+ {code:'br.1',name:'Brasileirão Série A',zone:'America/Sao_Paulo',calendarYear:true},
 ]);
 export function seasonForDate(date=new Date()){
  const y=date.getUTCFullYear();return (date.getUTCMonth()>=6?y:y-1);
 }
 export function allowedDatasets(date=new Date()){
- const start=seasonForDate(date);
- return [start-1,start].flatMap(year=>LEAGUES.map(l=>({
-  ...l,season:`${year}-${String((year+1)%100).padStart(2,'0')}`,
-  path:`${year}-${String((year+1)%100).padStart(2,'0')}/${l.code}.json`
- })));
+ const start=seasonForDate(date),year=date.getUTCFullYear();
+ return LEAGUES.flatMap(l=>{
+  const seasons=l.calendarYear?[year-1,year].map(y=>String(y)):
+   [start-1,start].map(y=>`${y}-${String((y+1)%100).padStart(2,'0')}`);
+  return seasons.map(season=>({...l,season,path:`${season}/${l.code}.json`}));
+ });
 }
-const formatParts=(instant,zone)=>Object.fromEntries(new Intl.DateTimeFormat('en-GB',{
- timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'
-}).formatToParts(new Date(instant)).map(p=>[p.type,p.value]));
+const timeFormatters=new Map();
+const formatParts=(instant,zone)=>{
+ let fmt=timeFormatters.get(zone);
+ if(!fmt){fmt=new Intl.DateTimeFormat('en-GB',{
+  timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'
+ });timeFormatters.set(zone,fmt);}
+ return Object.fromEntries(fmt.formatToParts(new Date(instant)).map(p=>[p.type,p.value]));
+};
 // Interpret local match time in its LEAGUE timezone, accounting for DST.
 export function zonedKickoff(date,time,zone){
  if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(time||''))return null;
  const [y,m,d]=date.split('-').map(Number),[hh,mm]=time.split(':').map(Number);
  const nominal=Date.UTC(y,m-1,d,hh,mm);
  if(new Date(nominal).toISOString().slice(0,10)!==date)return null;
- // Search candidate offsets (UTC-2 to UTC+4) in 15-minute steps.
- // Invalid/nonexistent DST wall times are rejected. Ambiguous times take earliest.
+ // Obtain the timezone offset on either side of possible DST changes.
+ // Unlike fixed European offsets, this works for South America and Asia.
+ const offsets=new Set();
+ for(const probe of [nominal-86400000,nominal,nominal+86400000]){
+  const p=formatParts(probe,zone);
+  const wall=Date.UTC(+p.year,+p.month-1,+p.day,+p.hour,+p.minute);
+  offsets.add(wall-Math.floor(probe/60000)*60000);
+ }
  const candidates=[];
- for(let minutes=-120;minutes<=240;minutes+=15){
-  const ms=nominal-minutes*60000;
-  const p=formatParts(ms,zone);
+ for(const offset of offsets){
+  const ms=nominal-offset,p=formatParts(ms,zone);
   if(`${p.year}-${p.month}-${p.day}`===date&&`${p.hour}:${p.minute}`===time)candidates.push(ms);
  }
+ // Ambiguous DST local times resolve to the earliest instant; nonexistent
+ // wall times cannot be assigned a fictional kickoff.
  return candidates.length?new Date(Math.min(...candidates)):null;
 }
 const clean=(x,max=120)=>String(x??'').replace(/[\r\n\t]/g,' ').replace(/\s+/g,' ').trim().slice(0,max);

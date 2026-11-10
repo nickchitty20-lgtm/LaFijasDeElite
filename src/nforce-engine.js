@@ -1,6 +1,6 @@
 import {publicAnalysisText} from './public-branding.js';
 import {freeTelegramDestination} from './telegram-public.js';
-import {allowedDatasets,fetchOpenFootball,NFORCE_PROVIDER} from './nforce-data.js';
+import {allowedDatasets,fetchOpenFootball,LEAGUES,NFORCE_PROVIDER} from './nforce-data.js';
 import {estimateMatch,modelReadiness,makeCandidate,walkForwardBacktest,fulltime,MODEL_VERSION,VIP_RISK_POLICY} from './nforce-model.js';
 import {canAutoPublishCandidate} from './football-publication-policy.js';
 import {evaluateVipEvidence,VIP_POLICY} from './nforce-vip-gate.js';
@@ -17,10 +17,11 @@ const reportLimited=e=>{try{return typeof e==='string'?JSON.parse(e):e||{};}catc
 const owner=req=>req.admin?.role==='owner';
 export const IMPORT_INTERVAL_HOURS=2;
 export const SCAN_INTERVAL_MINUTES=60;
-// Only analyze upcoming fixtures in the next 72 hours (at least 1h before kickoff).
-// A short horizon prioritizes near-term information; it cannot guarantee that
-// the stored historical data or team news is current.
-export const NFORCE_SCAN_LOOKAHEAD_DAYS=3;
+// 72 hours by default. Owners may choose 3..21 days to PREPARE draft picks
+// during calendar gaps. All drafts remain subject to normal approval, fresh
+// schedule checks and the same statistical safeguards before publication.
+const requestedScanDays=Number(process.env.NFORCE_SCAN_DAYS||3);
+export const NFORCE_SCAN_LOOKAHEAD_DAYS=Number.isInteger(requestedScanDays)&&requestedScanDays>=3&&requestedScanDays<=21?requestedScanDays:3;
 export const NFORCE_SCAN_FIXTURE_LIMIT=240;
 
 export function importDecision(last,now=Date.now(),hours=IMPORT_INTERVAL_HOURS){
@@ -54,40 +55,58 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
    // Manual refresh allowed only every 30 minutes and cannot bypass SSRF allowlist.
    if(force&&last&&now().getTime()-asUtc(last.started_at).getTime()<30*60000)return {cooldown:true,message:'Actualización máxima una vez cada 30 minutos'};
    const [created]=await conn.execute("INSERT INTO nforce_import_runs (status,started_at) VALUES ('running',UTC_TIMESTAMP())");
-   const id=created.insertId,errors=[];let imported=0,sources=0,scheduled=0,completed=0;
-   for(const dataset of allowedDatasets(now())){
-    try{
-     const records=await fetchDataset(dataset);
-     if(!Array.isArray(records)||!records.length)throw Error('Sin registros válidos');
-     sources++;
-     // Idempotent upsert: never overwrite a recorded FT score with missing data.
-     const cols=['id','source_key','competition','league','season','round_name','home_team','away_team','match_date','kickoff','scheduled_time_known','home_goals','away_goals','source_path'];
-     for(let index=0;index<records.length;index+=80){
-      const part=records.slice(index,index+80);
-      const vals=part.flatMap(m=>[m.id,m.source_key,m.competition,m.league,m.season,m.round,m.home,m.away,m.date,m.kickoff?sqlUtc(m.kickoff):null,Number(m.scheduled_time_known),m.home_goals,m.away_goals,m.source_path]);
-      const qs=part.map(()=>`(${cols.map(()=>'?').join(',')})`).join(',');
-      await conn.execute(`INSERT INTO nforce_matches (${cols.join(',')}) VALUES ${qs} ON DUPLICATE KEY UPDATE
-       round_name=VALUES(round_name),league=VALUES(league),match_date=VALUES(match_date),kickoff=VALUES(kickoff),
-       scheduled_time_known=VALUES(scheduled_time_known),home_goals=COALESCE(VALUES(home_goals),home_goals),
-       away_goals=COALESCE(VALUES(away_goals),away_goals),source_checked_at=UTC_TIMESTAMP()`,vals);
+   const id=created.insertId,errors=[];let imported=0,sources=0,scheduled=0,completed=0,missing=0;
+   const importedCompetitions=new Set(),missingCompetitions=new Set();
+   const datasets=allowedDatasets(now());
+   // Download in small parallel batches so missing optional league files don't
+   // cause long serial waits; serialize SQL writes on this connection.
+   for(let batchStart=0;batchStart<datasets.length;batchStart+=5){
+    const batch=datasets.slice(batchStart,batchStart+5);
+    const results=await Promise.all(batch.map(async dataset=>{
+     try{return {dataset,records:await fetchDataset(dataset)}}
+     catch(error){return {dataset,error}}
+    }));
+    for(const {dataset,records,error} of results){
+     if(error){
+      if(/HTTP 404\b/.test(safeError(error))){missing++;missingCompetitions.add(dataset.code);}
+      else errors.push(`${dataset.path}: ${safeError(error)}`);
+      continue;
      }
-     imported+=records.length;scheduled+=records.filter(x=>x.kickoff&&x.home_goals===null).length;
-     completed+=records.filter(x=>x.home_goals!==null).length;
-    }catch(e){errors.push(`${dataset.path}: ${safeError(e)}`);}
+     if(!Array.isArray(records)||!records.length){missing++;missingCompetitions.add(dataset.code);continue;}
+     try{
+      // Idempotent upsert: never overwrite a recorded FT score with missing data.
+      const cols=['id','source_key','competition','league','season','round_name','home_team','away_team','match_date','kickoff','scheduled_time_known','home_goals','away_goals','source_path'];
+      for(let index=0;index<records.length;index+=80){
+       const part=records.slice(index,index+80);
+       const vals=part.flatMap(m=>[m.id,m.source_key,m.competition,m.league,m.season,m.round,m.home,m.away,m.date,m.kickoff?sqlUtc(m.kickoff):null,Number(m.scheduled_time_known),m.home_goals,m.away_goals,m.source_path]);
+       const qs=part.map(()=>`(${cols.map(()=>'?').join(',')})`).join(',');
+       await conn.execute(`INSERT INTO nforce_matches (${cols.join(',')}) VALUES ${qs} ON DUPLICATE KEY UPDATE
+        round_name=VALUES(round_name),league=VALUES(league),match_date=VALUES(match_date),kickoff=VALUES(kickoff),
+        scheduled_time_known=VALUES(scheduled_time_known),home_goals=COALESCE(VALUES(home_goals),home_goals),
+        away_goals=COALESCE(VALUES(away_goals),away_goals),source_checked_at=UTC_TIMESTAMP()`,vals);
+      }
+      sources++;importedCompetitions.add(dataset.code);
+      imported+=records.length;scheduled+=records.filter(x=>x.kickoff&&x.home_goals===null).length;
+      completed+=records.filter(x=>x.home_goals!==null).length;
+     }catch(e){errors.push(`${dataset.path}: ${safeError(e)}`);}
+    }
    }
    const status=sources?'completed':'failed';
    await conn.execute('UPDATE nforce_import_runs SET status=?,finished_at=UTC_TIMESTAMP(),sources=?,records=?,scheduled=?,completed_results=?,errors_json=? WHERE id=?',
     [status,sources,imported,scheduled,completed,JSON.stringify(errors).slice(0,3900),id]);
    lastImportReport={ok:sources>0,status,sources,records:imported,scheduled,completed,failed_sources:errors.length,errors:errors.slice(0,5),
-    warning:errors.length?'Importación parcial: verifica las fuentes que fallaron.':'Los archivos pueden contener calendarios desactualizados; verifica horarios antes de apostar.'};
+    competitions_configured:LEAGUES.length,competitions_imported:importedCompetitions.size,
+    leagues_imported:LEAGUES.filter(l=>importedCompetitions.has(l.code)).map(l=>l.name),
+    datasets_missing:missing,leagues_with_missing_seasons:[...missingCompetitions],
+    warning:errors.length?'Importación parcial: algunas consultas fallaron.':missing?'Algunas competiciones aún no tienen archivos disponibles para todas las temporadas; no se inventan partidos.':'Los calendarios pueden estar desactualizados; verifica horarios antes de publicar.'};
    if(!sources)lastError='Fallaron las consultas de resultados deportivos';
    return lastImportReport;
   });}finally{importing=false;}
  }
  async function loadMatches(){
   // bounded season set; no API requests per match.
-  const [rows]=await db.query('SELECT m.id,m.source_key,m.competition,m.league,m.season,m.round_name AS `round`,m.home_team AS home,m.away_team AS away,COALESCE(DATE(s.kickoff),m.match_date) AS date_label,COALESCE(s.kickoff,m.kickoff) AS kickoff,(m.scheduled_time_known OR s.kickoff IS NOT NULL) AS scheduled_time_known,m.home_goals,m.away_goals,m.source_path,m.source_checked_at,s.status AS live_status,s.checked_at AS schedule_verified_at FROM nforce_matches m LEFT JOIN nforce_fixture_schedules s ON s.nforce_match_id=m.id AND s.checked_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 12 HOUR) WHERE m.match_date>=DATE_SUB(UTC_DATE(),INTERVAL 560 DAY) ORDER BY m.match_date ASC LIMIT 6500');
-  return rows.map(r=>({...r,date:r.date_label instanceof Date?r.date_label.toISOString().slice(0,10):String(r.date_label).slice(0,10),
+  const [rows]=await db.query('SELECT m.id,m.source_key,m.competition,m.league,m.season,m.round_name AS `round`,m.home_team AS home,m.away_team AS away,COALESCE(DATE(s.kickoff),m.match_date) AS date_label,COALESCE(s.kickoff,m.kickoff) AS kickoff,(m.scheduled_time_known OR s.kickoff IS NOT NULL) AS scheduled_time_known,m.home_goals,m.away_goals,m.source_path,m.source_checked_at,s.status AS live_status,s.checked_at AS schedule_verified_at FROM nforce_matches m LEFT JOIN nforce_fixture_schedules s ON s.nforce_match_id=m.id AND s.checked_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 12 HOUR) WHERE m.match_date>=DATE_SUB(UTC_DATE(),INTERVAL 560 DAY) ORDER BY m.match_date DESC LIMIT 20000');
+  return rows.reverse().map(r=>({...r,date:r.date_label instanceof Date?r.date_label.toISOString().slice(0,10):String(r.date_label).slice(0,10),
    kickoff:r.kickoff?asUtc(r.kickoff).toISOString():null,scheduled_time_known:Boolean(r.scheduled_time_known),
    home_goals:r.home_goals==null?null:Number(r.home_goals),away_goals:r.away_goals==null?null:Number(r.away_goals)}));
  }
@@ -157,7 +176,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
      fixtures_without_time:all.filter(x=>x.home_goals===null&&!x.scheduled_time_known&&x.date>=now().toISOString().slice(0,10)).length,
      note_on_quality:'El indicador de calidad de muestra NO representa el porcentaje real de aciertos.',
      note:drafts?`${drafts} propuestas nuevas guardadas; revísalas antes de aprobar.`:future.length===0?
-      'Sin encuentros con hora conocida en las próximas 72 horas. Revisa la importación y los horarios sin confirmar.':
+      'Sin encuentros con hora conocida en la ventana de análisis. Revisa la importación, las ligas disponibles y los horarios sin confirmar.':
       alreadyPresent?`${alreadyPresent} propuestas elegibles ya registradas (pendientes: ${existingByStatus.draft}, descartadas: ${existingByStatus.discarded}, publicadas: ${existingByStatus.published}); no se regeneran duplicados.`:
       'No hay propuestas nuevas: el historial es insuficiente o los filtros han rechazado los mercados.'};
     return lastScanReport;
@@ -371,7 +390,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     future_with_known_time:future.length,
     future_without_known_time:all.filter(m=>m.home_goals===null&&!m.scheduled_time_known&&m.date>=now().toISOString().slice(0,10)).length,
     reason:inWindow.length?`Partidos con hora dentro de los próximos ${NFORCE_SCAN_LOOKAHEAD_DAYS} días: ${eligible.length} de ${inWindow.length} con modelo estadístico suficiente. Estos no son necesariamente propuestas nuevas.`:
-      'No hay partidos futuros con hora confirmada en la ventana de 72 horas; importa datos y comprueba el calendario.',
+      `No hay partidos futuros con hora confirmada en los próximos ${NFORCE_SCAN_LOOKAHEAD_DAYS} días; importa datos y comprueba el calendario.`,
     source:'Resultados históricos almacenados en MySQL; motor estadístico propio'});
   }catch(e){res.status(500).json({error:safeError(e)});}
  });
