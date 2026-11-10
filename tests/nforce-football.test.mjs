@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {allowedDatasets,seasonForDate,zonedKickoff,normalizeOpenFootball,stableFixtureId,fetchOpenFootball} from '../src/nforce-data.js';
+import {LEAGUES,allowedDatasets,seasonForDate,zonedKickoff,normalizeOpenFootball,stableFixtureId,fetchOpenFootball} from '../src/nforce-data.js';
 import {estimateMatch,makeCandidate,walkForwardBacktest,scoreDistribution,MODEL_VERSION,poisson,modelReadiness,fulltime,fixtureTimestamp,lowScoreFactor,selectMarket,selectedMarketWon} from '../src/nforce-model.js';
 import {canAutoPublishCandidate} from '../src/football-publication-policy.js';
 import {publishedFootballDetails} from '../src/football-report.js';
@@ -26,7 +26,15 @@ test('Dataset OpenFootball CC0: allowlist estricta, temporadas correctas',()=>{
  const paths=allowedDatasets(new Date('2026-11-06')).map(s=>s.path);
  assert.ok(paths.includes('2026-27/en.1.json'));
  assert.ok(paths.includes('2025-26/es.1.json'));
- assert.equal(paths.length,10);
+ assert.equal(LEAGUES.length,20);
+ assert.equal(paths.length,40);
+ assert.ok(paths.includes('2026-27/en.2.json'));
+ assert.ok(paths.includes('2026-27/nl.1.json'));
+ assert.ok(paths.includes('2026-27/pt.1.json'));
+ assert.ok(paths.includes('2026/br.1.json'));
+ assert.ok(paths.includes('2025/br.1.json'));
+ assert.ok(!paths.includes('2026-27/br.1.json'));
+ assert.equal(new Set(paths).size,paths.length);
 });
 test('Horas Europe/London: verano BST, invierno GMT y DST inexistente',()=>{
  assert.equal(zonedKickoff('2026-07-10','20:00','Europe/London').toISOString(),'2026-07-10T19:00:00.000Z');
@@ -34,6 +42,10 @@ test('Horas Europe/London: verano BST, invierno GMT y DST inexistente',()=>{
  assert.equal(zonedKickoff('2026-03-29','01:30','Europe/London'),null);
  assert.equal(zonedKickoff('2026-02-30','20:00','Europe/London'),null);
  assert.equal(zonedKickoff('2026-11-10','24:00','Europe/London'),null);
+ assert.equal(zonedKickoff('2026-11-10','20:00','America/Sao_Paulo').toISOString(),'2026-11-10T23:00:00.000Z');
+ assert.equal(zonedKickoff('2026-11-10','20:00','Asia/Tokyo').toISOString(),'2026-11-10T11:00:00.000Z');
+ assert.equal(zonedKickoff('2026-03-29','02:30','Europe/Berlin'),null);
+ assert.equal(zonedKickoff('2026-03-29','03:30','Europe/Berlin').toISOString(),'2026-03-29T01:30:00.000Z');
 });
 test('Resultados FT solamente; no inventa scores ni horarios',()=>{
  const matches=normalizeOpenFootball({matches:[

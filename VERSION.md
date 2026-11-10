@@ -1,3 +1,9 @@
+# 3.3.7 — N-FORCE 20 ligas y cobertura internacional
+
+Amplía la lista de 5 a 20 competiciones compatibles, añade calendario anual para Brasil, corrige zonas horarias no europeas, amplía la consulta histórica y hace el rango de escaneo configurable de 3 a 21 días (3 por defecto). Los archivos no disponibles se omiten e informan; no generan partidos inventados. Mantiene el modelo conservador 1.5, filtros VIP, MySQL, Telegram y aprobación manual.
+
+---
+
 # Fijas de Élite v3.3.6 — Pendientes coherentes y filtro VIP conservador
 
 - **Comparativa corregida**: «Pendientes» cuenta directamente pronósticos publicados activos con `outcome=pending` y `archived_at IS NULL`. Los pendientes retirados dejan de inflar el indicador; sus victorias o derrotas históricas sí se conservan. El API informa `retired_unsettled` para auditar las diferencias.

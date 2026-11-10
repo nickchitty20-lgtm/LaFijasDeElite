@@ -1,3 +1,16 @@
+# Fijas de Élite v3.3.7 — Cobertura multiliga
+
+- N-FORCE permite **20 ligas** configuradas, frente a cinco antes: Premier League, Championship, League One, League Two, LaLiga, Segunda División, Bundesliga, 2. Bundesliga, Serie A, Serie B, Ligue 1, Ligue 2, Eredivisie, Primeira Liga, Premiership escocesa, primera de Bélgica, Bundesliga de Austria, Süper Lig, Super League de Grecia y Brasileirão Série A. **Configuradas no significa que todas tengan resultados y horarios disponibles para la temporada actual.** El importador omite archivos inexistentes, informa ausencias y no inventa partidos.
+- Temporadas de Brasil adaptadas al año natural (2025, 2026), y horarios convertidos correctamente a UTC incluso fuera de Europa y en cambios de horario de verano.
+- Descargas por lotes pequeños para impedir bloqueos prolongados por archivos inexistentes. Informe de cantidad de ligas importadas y temporadas sin datos en el administrador.
+- Consulta histórica de hasta 20.000 encuentros recientes (antes 6.500), ordenados para evitar descartar accidentalmente datos del calendario actual al añadir más competiciones.
+- El análisis continúa en **72 horas de forma predeterminada**. Si lo deseas, configura `NFORCE_SCAN_DAYS=14` en Railway (admite enteros de 3 a 21) para preparar borradores más anticipados. Esos pronósticos deben volver a comprobarse al acercarse el inicio; el dato de calendario no equivale a verificación reciente. No se habilita la publicación automática ni se disminuyen filtros de calidad o VIP.
+- No se requieren migraciones de MySQL. Se conservan sesiones, historial, pagos, suscripciones y Telegram.
+- Pasos: desplegar, verificar `/health` versión 3.3.7, pulsar **Importar datos** y esperar a que termine (la cobertura ampliada puede tardar más), **Validar modelo** y **Analizar ahora**. Consultar el diagnóstico para saber cuántas ligas y encuentros realmente se importaron.
+- El código se ha probado localmente con datos simulados; **no se han comprobado la disponibilidad en Railway ni el historial o acierto reales**. Una mayor cantidad de ligas no garantiza más fijas ni mejores resultados.
+
+---
+
 # Fijas de Élite v3.3.6 — Pendientes coherentes y filtro VIP conservador
 
 - **Comparativa corregida**: «Pendientes» cuenta directamente pronósticos publicados activos con `outcome=pending` y `archived_at IS NULL`. Los pendientes retirados dejan de inflar el indicador; sus victorias o derrotas históricas sí se conservan. El API informa `retired_unsettled` para auditar las diferencias.
