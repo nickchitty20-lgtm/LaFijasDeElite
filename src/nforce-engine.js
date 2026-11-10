@@ -135,12 +135,16 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     let models=0,drafts=0,underMin=0,rejected=0,alreadyPresent=0,updatedDrafts=0;
     const existingByStatus={draft:0,discarded:0,published:0,other:0};
     const examples=[];const missingReasons={};const filteredExamples=[];
+    const marketCounts={};const categoryCounts={free:0,vip:0};const vipRejections={};
     for(const m of future){
      const model=estimateMatch(m,usable,Date.parse(m.kickoff));
      if(!model){underMin++;const why=modelReadiness(m,usable,Date.parse(m.kickoff));missingReasons[why.reason]=(missingReasons[why.reason]||0)+1;if(examples.length<4)examples.push(`${m.home} vs ${m.away}: ${why.reason} (liga ${why.sample?.league||0}, local ${why.sample?.home||0}, visita ${why.sample?.away||0})`);continue;}
      models++;
-     const candidate=makeCandidate(m,model);
+     const marketDiagnostics={};const candidate=makeCandidate(m,model,marketDiagnostics);
+     for(const [reason,total] of Object.entries(marketDiagnostics.vip_rejections||{}))vipRejections[reason]=(vipRejections[reason]||0)+total;
      if(!candidate){rejected++;if(filteredExamples.length<5)filteredExamples.push(`${m.home} vs ${m.away}: 1X2 ${model.confidence}% · >1.5 ${model.totals.over15}% · BTTS ${model.totals.btts}% · calidad ${model.quality}/100`);continue;}
+     categoryCounts[candidate.visibility]++;
+     const marketKey=JSON.parse(candidate.evidence_json).pick.key;marketCounts[marketKey]=(marketCounts[marketKey]||0)+1;
      const [r]=await conn.execute(`INSERT IGNORE INTO football_candidates
       (provider,fixture_id,visibility,home_team,away_team,league,kickoff,market,selection,provider_probability,odds,analysis,evidence_json,status)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'draft')`,[
@@ -175,6 +179,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
      next_fixture_beyond_window:nextBeyondWindow?{match:`${nextBeyondWindow.home} vs ${nextBeyondWindow.away}`,kickoff:nextBeyondWindow.kickoff}:null,
      modeled:models,drafts_created:drafts,already_present:alreadyPresent,existing_by_status:existingByStatus,
      updated_existing_drafts:updatedDrafts,eligible:drafts+alreadyPresent,
+     eligible_by_category:categoryCounts,eligible_by_market:marketCounts,vip_rejections_by_market_reason:vipRejections,
      insufficient_history:underMin,insufficient_reasons:missingReasons,below_filters:rejected,rejection_examples:examples,filter_examples:filteredExamples,
      fixtures_without_time:all.filter(x=>x.home_goals===null&&!x.scheduled_time_known&&x.date>=now().toISOString().slice(0,10)).length,
      note_on_quality:'El indicador de calidad de muestra NO representa el porcentaje real de aciertos.',

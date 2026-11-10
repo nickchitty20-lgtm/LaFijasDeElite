@@ -1,4 +1,4 @@
-# Fijas de Élite v3.3.9 — Diagnóstico de horarios y cobertura
+# Fijas de Élite v3.4.0 — Selección multimerkado GRATIS y diagnóstico VIP
 
 Esta versión **no fuerza fijas sin calendario confirmado**: añade análisis visible para detectar por qué N-FORCE no encuentra propuestas incluso con 14 días.
 
@@ -8,7 +8,7 @@ Esta versión **no fuerza fijas sin calendario confirmado**: añade análisis vi
 - El diagnóstico se recalcula al abrir el panel, incluso tras reiniciar Railway; no depende de que el último escaneo siga en memoria.
 - No altera MySQL, pronósticos publicados, pagos, usuarios, Telegram, permisos ni criterios VIP. No cambia la ventana existente configurada mediante NFORCE_SCAN_DAYS.
 
-Para investigar un cero de propuestas: despliega, comprueba `/health` = `3.3.9`, ejecuta **Importar datos** y luego **Analizar ahora**. En el panel, revisa **Calendario: diagnóstico**, **Fechas dentro del rango sin hora utilizable**, **Horarios utilizables dentro del rango**, **Ligas cargadas** y **Ligas con verificación independiente**.
+Para revisar el diagnóstico de mercados GRATIS/VIP: ejecuta Importar datos → Validar modelo → Analizar ahora. Los borradores anteriores se actualizan, sin alterar los pronósticos publicados. Para investigar un cero de propuestas: despliega, comprueba `/health` = `3.4.0`, ejecuta **Importar datos** y luego **Analizar ahora**. En el panel, revisa **Calendario: diagnóstico**, **Fechas dentro del rango sin hora utilizable**, **Horarios utilizables dentro del rango**, **Ligas cargadas** y **Ligas con verificación independiente**.
 
 La fuente abierta puede retrasarse en comunicar horarios; no es un sistema de datos en vivo garantizados.
 

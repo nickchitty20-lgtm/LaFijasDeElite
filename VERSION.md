@@ -1,3 +1,15 @@
+# 3.4.0 — Selección GRATIS multimerkado y diagnóstico de filtros VIP
+
+- El motor ahora puede generar propuestas GRATIS de goles, ambos marcan y doble oportunidad, además de 1X2. NO hay cuotas fabricadas ni garantía de acierto.
+- Los mercados alternativos GRATIS necesitan historial suficiente, diferencia frente a frecuencia de liga, consistencia con los goles proyectados y escenarios de sensibilidad estables. Una alta probabilidad aislada NO es suficiente.
+- El panel informa clasificación GRATIS/VIP y mercado de las propuestas elegibles, además de rechazos VIP **por mercado evaluado**. Estos contadores no representan partidos ni rentabilidad.
+- Los filtros de publicación VIP y backtesting se mantienen. No se convierten propuestas GRATIS en VIP para aumentar cifras.
+- Modelo `nforce-poisson-1.6` por cambio de política de selección. Importar datos, Validar modelo y Analizar ahora; los borradores previos se recalculan durante el nuevo escaneo (los descartados/publicados quedan intactos). Para la publicación manual se mantiene la comprobación de calendario actualizado.
+- Sin migraciones de MySQL; no cambia pagos, usuarios, Telegram ni pronósticos publicados.
+- Las pruebas locales no validan acierto, calibración ni rentabilidad en vivo. Revisar el rendimiento fuera de muestra antes de anunciar mejoras.
+
+---
+
 # 3.3.9 — Diagnóstico de calendario y verificación de horarios
 
 - Distingue por liga partidos con fecha pero sin hora, con hora, y excluidos por estado.

@@ -6,7 +6,7 @@ import {fitOpponentRatings,opponentAdjustedGoals} from './nforce-strength.js';
 const DAY=86400000;
 const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
 const round=(x,n=1)=>Number(x.toFixed(n));
-export const MODEL_VERSION='nforce-poisson-1.5';
+export const MODEL_VERSION='nforce-poisson-1.6';
 export const MODEL_SETTINGS=Object.freeze({lookbackDays:540,teamGames:30,leagueGames:250,minTeam:7,minLeague:36,freshDays:90,rho:-0.07});
 
 export function fulltime(row){
@@ -195,7 +195,7 @@ export function vipRiskAssessment(option,model){
  const estimated=Number(option.probability),baseline=Number(option.baseline);
  const detail={nominal:round(nominal),worst_scenario:round(minScenario),previous_model:round(old),
   model_gap:round(modelGap),stress_drop:round(nominal-minScenario)};
- if(!Number.isFinite(estimated)||!Number.isFinite(baseline)||Math.abs(nominal-estimated)>2.2)
+ if(option.baseline==null||!Number.isFinite(estimated)||!Number.isFinite(baseline)||Math.abs(nominal-estimated)>2.2)
   return {...fail('inconsistent_probability'),...detail};
  if(estimated<risk.minNominal[option.key]||estimated-baseline<risk.minBaselineEdge)
   return {...fail('weak_nominal_edge'),...detail};
@@ -204,42 +204,91 @@ export function vipRiskAssessment(option,model){
   return {...fail('fragile_prediction'),...detail};
  return {approved:true,code:'robust',...detail};
 }
-/** Select VIP only after complete recent history and probability sensitivity.
- * A model may issue no VIP at all. No outcome is guaranteed.
+/** FREE can include other markets. A large nominal chance alone never qualifies:
+ * require sufficiently complete history, a meaningful difference from the
+ * historical league frequency, consistent goal probabilities and stable
+ * sensitivity scenarios. These are heuristics, NOT proof of positive value.
  */
-export function selectMarket(match,model){
+export const FREE_MARKET_POLICY=Object.freeze({minQuality:68,minTeam:14,minLeague:90,
+ minLeagueLift:9,maxStressDrop:17,maxModelGap:12,
+ minNominal:Object.freeze({over15:72,over25:65,under25:65,bttsYes:64,bttsNo:64,'1X':76,'X2':76,'12':78})});
+function freeMarketAssessment(option,model){
+ const fail=code=>({approved:false,code});
+ const risk=FREE_MARKET_POLICY,s=model?.sample||{};
+ if(!Object.hasOwn(risk.minNominal,option.key))return fail('unsupported_free_market');
+ if(Number(model.quality)<risk.minQuality||Number(s.home)<risk.minTeam||
+    Number(s.away)<risk.minTeam||Number(s.league)<risk.minLeague)return fail('free_history');
+ const nominal=Number(option.probability),baseline=option.baseline;
+ if(baseline==null||!Number.isFinite(Number(baseline))||Number(baseline)<0||Number(baseline)>100||
+    !Number.isFinite(nominal)||nominal<risk.minNominal[option.key]||nominal>99.9||
+    nominal-Number(baseline)<risk.minLeagueLift)return fail('free_insufficient_edge');
+ const h=Number(model.lambda?.home),a=Number(model.lambda?.away);
+ const oh=Number(model.previous_lambda?.home),oa=Number(model.previous_lambda?.away);
+ if(![h,a,oh,oa].every(x=>Number.isFinite(x)&&x>=0.3&&x<=3.6))return fail('free_missing_sensitivity');
+ const evaluate=(x,y)=>marketScore(option.key,scoreDistribution(x,y),null);
+ const calculated=evaluate(h,a),prior=evaluate(oh,oa);
+ const worst=Math.min(calculated,prior,evaluate(h*0.9,a*1.1),evaluate(h*1.1,a*0.9));
+ if(Math.abs(calculated-nominal)>2.2)return fail('free_inconsistent_probability');
+ if(calculated-worst>risk.maxStressDrop||Math.abs(calculated-prior)>risk.maxModelGap||
+    worst<risk.minNominal[option.key]-10)return fail('free_fragile');
+ return {approved:true,code:'free_screened',worst_scenario:round(worst),
+  nominal:round(calculated),league_lift:round(nominal-Number(baseline))};
+}
+/** Select exactly one prediction per fixture; never manufacture a VIP.
+ * An optional diagnostics object gathers rejection *counts per market*, not
+ * evidence of future success or inferred bookmaker value.
+ */
+export function selectMarket(match,model,diagnostics=null){
  if(!model||!model.probabilities||!model.totals||!model.sample)return null;
  const p=model.probabilities,t=model.totals,b=model.leagueBaseline||{};
  const quality=Number(model.quality),home=String(match.home),away=String(match.away);
  const options=[
-  {key:'1x2',market:'Resultado final 1X2',selection:model.selected==='home'?home:model.selected==='away'?away:'Empate',probability:Number(model.confidence),baseline:Number(b[model.selected]),margin:Number(model.margin)},
-  {key:'over15',market:'Total goles',selection:'Más de 1.5',probability:Number(t.over15),baseline:Number(b.over15)},
-  {key:'over25',market:'Total goles',selection:'Más de 2.5',probability:Number(t.over25),baseline:Number(b.over25)},
-  {key:'under25',market:'Total goles',selection:'Menos de 2.5',probability:Number(t.under25),baseline:Number(b.under25)},
-  {key:'bttsYes',market:'Ambos marcan',selection:'Sí',probability:Number(t.btts),baseline:Number(b.btts)},
-  {key:'bttsNo',market:'Ambos marcan',selection:'No',probability:round(100-Number(t.btts)),baseline:Number(b.noBtts)},
-  {key:'1X',market:'Doble oportunidad',selection:'1X',probability:round(Number(p.home)+Number(p.draw)),baseline:Number(b.oneX)},
-  {key:'X2',market:'Doble oportunidad',selection:'X2',probability:round(Number(p.away)+Number(p.draw)),baseline:Number(b.xTwo)},
-  {key:'12',market:'Doble oportunidad',selection:'12',probability:round(Number(p.home)+Number(p.away)),baseline:Number(b.oneTwo)}
+  {key:'1x2',market:'Resultado final 1X2',selection:model.selected==='home'?home:model.selected==='away'?away:'Empate',probability:Number(model.confidence),baseline:b[model.selected]==null?null:Number(b[model.selected]),margin:Number(model.margin)},
+  {key:'over15',market:'Total goles',selection:'Más de 1.5',probability:Number(t.over15),baseline:b.over15==null?null:Number(b.over15)},
+  {key:'over25',market:'Total goles',selection:'Más de 2.5',probability:Number(t.over25),baseline:b.over25==null?null:Number(b.over25)},
+  {key:'under25',market:'Total goles',selection:'Menos de 2.5',probability:Number(t.under25),baseline:b.under25==null?null:Number(b.under25)},
+  {key:'bttsYes',market:'Ambos marcan',selection:'Sí',probability:Number(t.btts),baseline:b.btts==null?null:Number(b.btts)},
+  {key:'bttsNo',market:'Ambos marcan',selection:'No',probability:round(100-Number(t.btts)),baseline:b.noBtts==null?null:Number(b.noBtts)},
+  {key:'1X',market:'Doble oportunidad',selection:'1X',probability:round(Number(p.home)+Number(p.draw)),baseline:b.oneX==null?null:Number(b.oneX)},
+  {key:'X2',market:'Doble oportunidad',selection:'X2',probability:round(Number(p.away)+Number(p.draw)),baseline:b.xTwo==null?null:Number(b.xTwo)},
+  {key:'12',market:'Doble oportunidad',selection:'12',probability:round(Number(p.home)+Number(p.away)),baseline:b.oneTwo==null?null:Number(b.oneTwo)}
  ];
- const eligible=options.filter(o=>o.key!=='1x2'||o.margin>=12).map(o=>({...o,robustness:vipRiskAssessment(o,model)}))
-  .filter(o=>o.robustness.approved);
+ const eligible=[];
+ for(const option of options){
+  const result=option.key==='1x2'&&option.margin<12?{approved:false,code:'vip_1x2_margin'}:vipRiskAssessment(option,model);
+  if(result.approved)eligible.push({...option,robustness:result});
+  else if(diagnostics){
+   diagnostics.vip_rejections??={};
+   diagnostics.vip_rejections[result.code]=(diagnostics.vip_rejections[result.code]||0)+1;
+  }
+ }
  if(eligible.length){
-  // Prefer the conservative scenario advantage, not the highest headline %.
   eligible.sort((x,y)=>(y.robustness.worst_scenario-y.baseline)-(x.robustness.worst_scenario-x.baseline)||
    y.robustness.worst_scenario-x.robustness.worst_scenario);
-  const chosen=eligible[0];return {...chosen,visibility:'vip',advantage:round(chosen.probability-chosen.baseline)};
+  const chosen=eligible[0];
+  return {...chosen,visibility:'vip',advantage:round(chosen.probability-chosen.baseline)};
  }
+ const free=[];
+ const base=options[0];
  if(Number.isFinite(model.confidence)&&model.confidence>=40&&model.confidence<68&&Number(model.margin)>=6&&quality>=45){
-  return {key:'1x2',market:'Resultado final 1X2',selection:options[0].selection,probability:Number(model.confidence),
-   baseline:Number.isFinite(options[0].baseline)?options[0].baseline:null,advantage:null,margin:model.margin,visibility:'free'};
+  free.push({...base,visibility:'free',advantage:null,free_reason:'basic_1x2'});
  }
- return null;
+ for(const option of options.slice(1)){
+  const screened=freeMarketAssessment(option,model);
+  if(screened.approved)free.push({...option,visibility:'free',
+   advantage:round(option.probability-option.baseline),free_screen:screened,free_reason:'multimarket_screen'});
+ }
+ // Prefer a substantial improvement on historical league frequency, not the
+ // market with the most eye-catching headline percentage. Default 1X2 still
+ // applies when no alternative has credible supporting information.
+ free.sort((x,y)=>((y.advantage??0)+y.probability*0.06)-((x.advantage??0)+x.probability*0.06));
+ if(diagnostics)diagnostics.free_eligible_markets=free.length;
+ return free[0]||null;
 }
 
-export function makeCandidate(match,model){
+export function makeCandidate(match,model,diagnostics=null){
  if(!model||!match?.scheduled_time_known||!match.kickoff||!Number.isFinite(Date.parse(match.kickoff)))return null;
- const selected=selectMarket(match,model);if(!selected)return null;
+ const selected=selectMarket(match,model,diagnostics);if(!selected)return null;
  const fmt=n=>Number.isFinite(Number(n))?`${Number(n).toFixed(1)}%`:'no disponible';
  const analysis=[`N-FORCE · Modelo estadístico ${MODEL_VERSION}. Probabilidades estimadas SIN CALIBRAR; datos históricos de encuentros.`,
  `Partido: ${match.home} vs ${match.away}; ${match.league}; ${match.kickoff} UTC. Confirma el horario del encuentro antes de publicar.`,
@@ -247,12 +296,13 @@ export function makeCandidate(match,model){
  `1X2 estimado: local ${fmt(model.probabilities.home)}, empate ${fmt(model.probabilities.draw)}, visitante ${fmt(model.probabilities.away)}. Diferencia frente al segundo escenario 1X2: ${fmt(model.margin)}.`,
  `El modelo considera fuerza de los rivales, forma temporal y rendimiento local/visitante cuando hay historial suficiente. Estos ajustes no garantizan mayor acierto.`,
  ...(selected.visibility==='vip'?[`Prueba de sensibilidad (escenarios, NO intervalo de confianza): peor escenario ${fmt(selected.robustness.worst_scenario)}; discrepancia de modelos ${fmt(selected.robustness.model_gap)}. El mercado aún debe superar el backtesting vigente.`]:[]),
+ ...(selected.free_screen?[`Cribado GRATIS multimerkado (NO demuestra ventaja frente a cuotas): frecuencia histórica de liga ${fmt(selected.baseline)}; peor escenario de sensibilidad ${fmt(selected.free_screen.worst_scenario)}. Validación retrospectiva pendiente.`]:[]),
  `Goles proyectados: ${match.home} ${model.lambda.home}, ${match.away} ${model.lambda.away}. Más de 1.5: ${fmt(model.totals.over15)}, más de 2.5: ${fmt(model.totals.over25)}, menos de 2.5: ${fmt(model.totals.under25)}, ambos marcan: ${fmt(model.totals.btts)}.`,
  `Marcador meramente orientativo: ${model.score} (${fmt(model.score_probability)}). No representa una apuesta recomendada ni un resultado seguro.`,
  `Calidad de muestra: ${model.quality}/100 (NO mide precisión). Partidos previos: local ${model.sample.home}, visitante ${model.sample.away}, competición ${model.sample.league}.`,
  `Riesgos: sin datos verificados de lesiones ni alineaciones; posibles cambios de plantilla, horarios reprogramados y variabilidad deportiva. Sin cuotas verificadas ni rentabilidad demostrada.${selected.visibility==='free'?' Esta propuesta gratuita tiene alta incertidumbre.':''}`].join('\n\n');
  const evidence={source:'OpenFootball football.json (CC0-1.0)',model,margin:model.margin,evidence_count:2,
-  pick:{key:selected.key,market:selected.market,selection:selected.selection,probability:selected.probability,baseline:selected.baseline,advantage:selected.advantage,robustness:selected.robustness||null},
+  pick:{key:selected.key,market:selected.market,selection:selected.selection,probability:selected.probability,baseline:selected.baseline,advantage:selected.advantage,robustness:selected.robustness||null,free_screen:selected.free_screen||null},
   match_context:{round:match.round||'',country:'',venue:'',city:''},
   goals:{home:match.home,away:match.away,illustrative_score:model.score,
    illustrative_margin:Math.abs(Number(model.score.split('-')[0])-Number(model.score.split('-')[1])),model_based:true},
