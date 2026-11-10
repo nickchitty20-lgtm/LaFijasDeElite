@@ -1,3 +1,22 @@
+# 3.3.9 — Diagnóstico de calendario y verificación de horarios
+
+- Distingue por liga partidos con fecha pero sin hora, con hora, y excluidos por estado.
+- Permite comprobar si la ventana de 14 días está vacía por la importación o por el calendario.
+- Indica que la verificación independiente de horarios solo tiene cinco ligas mapeadas; no equivale a las 20 configuradas.
+- No inventa horas ni relaja filtros ni cambia predicciones publicadas. No requiere migraciones.
+
+---
+
+# 3.3.8 — Ventana predeterminada de 14 días y diagnóstico de ligas
+
+- Ventana de análisis por defecto ampliada de 72 horas a 14 días; configurable 3–21 días.
+- La API de estado y el panel muestran la cantidad persistente de ligas realmente presentes en MySQL, separada de las 20 configuradas en código.
+- El análisis se mantiene seguro y manual; no se relajan los filtros para fabricar fijas.
+- Si hay un valor anterior `NFORCE_SCAN_DAYS=3` en Railway, ese ajuste sigue teniendo prioridad y debe actualizarse.
+- Para cargar las ligas nuevas, primero ejecutar la importación y comprobar finalización; luego analizar.
+
+---
+
 # 3.3.7 — N-FORCE 20 ligas y cobertura internacional
 
 Amplía la lista de 5 a 20 competiciones compatibles, añade calendario anual para Brasil, corrige zonas horarias no europeas, amplía la consulta histórica y hace el rango de escaneo configurable de 3 a 21 días (3 por defecto). Los archivos no disponibles se omiten e informan; no generan partidos inventados. Mantiene el modelo conservador 1.5, filtros VIP, MySQL, Telegram y aprobación manual.

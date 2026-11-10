@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 let currentAdminRole='';
-const ADMIN_PANEL_BUILD='3.3.7';
+const ADMIN_PANEL_BUILD='3.3.9';
 // Diagnose a partial/old Railway deployment instead of silently rendering stale UI.
 async function checkAdminBuild(){
  const label=$('adminBuildVersion'),status=$('adminBuildStatus');
@@ -583,7 +583,7 @@ async function loadFootballEngine(){
   const stats=[
    ['Motor de análisis',status.engine?'N-FORCE':(status.configured?'Motor clásico':'Sin configurar')],
    ...(status.engine?[['Cotejo automático de resultados',status.settlement?.working?'Comprobando…':status.settlement?.last?`${status.settlement.last.settled} actualizados · ${status.settlement.last.won} ganados · ${status.settlement.last.lost} perdidos · ${status.settlement.last.void} anulados`:'Pendiente del siguiente control'],['Sin cotejar: sin FT / mercado desconocido',status.settlement?.last?`${status.settlement.last.invalid_source} / ${status.settlement.last.unsupported}`:'—']]:[]),
-   ...(status.engine?[['Partidos importados',status.total_matches||0],['Resultados históricos',status.complete_matches||0],['Última importación',status.source_import?`${status.source_import.status} · ${status.source_import.sources} registros de competición · ${status.source_import.records} partidos`:'Pendiente'],['Ligas con datos importados',status.last_import_report?.competitions_imported!=null?`${status.last_import_report.competitions_imported} de ${status.last_import_report.competitions_configured} configuradas`:'Consulta una nueva importación'],['Temporadas aún sin datos',status.last_import_report?.datasets_missing??'—'],['Backtesting',status.backtest?`${status.backtest.evaluated} evaluados · ${status.backtest.accuracy??'—'}% precisión observada${status.backtest.validated?'':' (muestra insuficiente, antigua o de otra versión)'}`:'Aún sin validar'],
+   ...(status.engine?[['Partidos importados',status.total_matches||0],['Resultados históricos',status.complete_matches||0],['Última importación',status.source_import?`${status.source_import.status} · ${status.source_import.sources} registros de competición · ${status.source_import.records} partidos`:'Pendiente'],['Ligas cargadas en MySQL',status.loaded_competitions!=null?`${status.loaded_competitions} de ${status.configured_competitions||20} configuradas`:'No disponible'],['Ligas con verificación de horarios independiente',status.live_schedule_supported_competitions!=null?`${status.live_schedule_supported_competitions} de ${status.configured_competitions||20} (según cobertura del sincronizador)`:'No disponible'],['Ligas de la última importación',status.last_import_report?.competitions_imported!=null?`${status.last_import_report.competitions_imported} con datos en la última importación`:'Ejecuta «Importar datos» para comprobar la cobertura'],['Temporadas aún sin datos',status.last_import_report?.datasets_missing??'—'],['Backtesting',status.backtest?`${status.backtest.evaluated} evaluados · ${status.backtest.accuracy??'—'}% precisión observada${status.backtest.validated?'':' (muestra insuficiente, antigua o de otra versión)'}`:'Aún sin validar'],
    ['Resultados retrospectivos gratis / VIP',status.backtest?.segments?`Gratis: ${status.backtest.segments.free?.evaluated||0} pruebas · ${status.backtest.segments.free?.accuracy??'—'}% | VIP: ${status.backtest.segments.vip?.evaluated||0} pruebas · ${status.backtest.segments.vip?.accuracy??'—'}%`:'Pendiente de backtesting'],
    ['Evaluación por mercado',status.backtest?.by_market?Object.entries(status.backtest.by_market).map(([market,v])=>`${market}: ${v.evaluated} pruebas · ${v.accuracy}%`).join(' | ')||'Sin selecciones históricas validadas':'Pendiente'],
    ['Comparación con el motor anterior (Brier)',status.backtest?.comparison_previous?.paired_evaluated?
@@ -604,6 +604,12 @@ async function loadFootballEngine(){
    ['Motivos de historial insuficiente',status.last_scan_report?.insufficient_reasons?JSON.stringify(status.last_scan_report.insufficient_reasons):'Pendiente de un escaneo reciente'],
    ['Propuestas existentes / borradores actualizados',status.last_scan_report?`${status.last_scan_report.already_present||0} / ${status.last_scan_report.updated_existing_drafts||0}`:'Pendiente de escaneo'],
    ['Partidos futuros sin hora exacta',status.last_scan_report?.fixtures_without_time??'Pendiente de un escaneo reciente'],
+   ['Calendario: diagnóstico',status.calendar_diagnostic?.diagnosis||'Sin diagnóstico'],
+   ['Encuentros con fecha pero sin hora en la ventana',status.calendar_diagnostic?.date_only_in_window??'—'],
+   ['Horarios utilizables dentro de la ventana',status.calendar_diagnostic?.known_time_in_window??'—'],
+   ['Horarios excluidos por estado del partido',status.calendar_diagnostic?.known_time_blocked_status??'—'],
+   ['Próximo encuentro con hora',status.calendar_diagnostic?.next_known?`${status.calendar_diagnostic.next_known.league} · ${status.calendar_diagnostic.next_known.match} · ${new Date(status.calendar_diagnostic.next_known.kickoff).toLocaleString('es-PE',{timeZone:'America/Lima'})}`:'No aparece en la base de datos'],
+   ['Ligas con encuentros futuros',status.calendar_diagnostic?.leagues_with_future??'—'],
    ['Motivo de cero publicaciones',status.last_publish_report?.reason||'Mira el estado y los filtros; puede que no existan candidatos válidos'],
    ['Candidatos sin canal / sin requisitos',status.last_publish_report?`${status.last_publish_report.missing_channel||0} / ${status.last_publish_report.blocked_by_filters||0}`:'Sin comprobación'],
    ['Última publicación automática',status.last_publish_report?`${status.last_publish_report.published} publicadas · ${status.last_publish_report.failed} fallos`:'Aún sin ejecución'],
@@ -764,6 +770,16 @@ function showFootballScanReport(r){
   if(r.already_present!=null)line('Propuestas elegibles ya registradas',r.already_present);
   if(r.existing_by_status)line('Ya registradas (pendientes / descartadas / publicadas)',`${r.existing_by_status.draft||0} / ${r.existing_by_status.discarded||0} / ${r.existing_by_status.published||0}`);
   if(r.fixtures_without_time!=null)line('Partidos futuros sin hora exacta',r.fixtures_without_time);
+  if(r.calendar_diagnostic){
+   const d=r.calendar_diagnostic;
+   line('Diagnóstico de calendario',d.diagnosis);
+   line('Fechas dentro del rango sin hora utilizable',d.date_only_in_window);
+   line('Horarios válidos dentro del rango',d.known_time_in_window);
+   line('Horarios apartados por estado',d.known_time_blocked_status);
+   line('Partidos futuros con hora (todos los días)',d.future_known_time);
+   for(const league of d.per_league.filter(x=>x.date_only_in_window||x.known_time_in_window||x.known_time_blocked_status).slice(0,10))
+    line(league.league,`${league.known_time_in_window} con hora · ${league.date_only_in_window} sin hora · ${league.known_time_blocked_status} por estado`);
+  }
   if(r.next_fixture_beyond_window)line('Siguiente fuera de la ventana',`${r.next_fixture_beyond_window.match} · ${new Date(r.next_fixture_beyond_window.kickoff).toLocaleString('es-PE')}`);
   if(r.updated_existing_drafts!=null)line('Borradores actualizados con el nuevo modelo',r.updated_existing_drafts);
   if(r.eligible!=null)line('Propuestas elegibles (nuevas + existentes)',r.eligible);

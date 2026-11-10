@@ -1,3 +1,29 @@
+# Fijas de Élite v3.3.9 — Diagnóstico de horarios y cobertura
+
+Esta versión **no fuerza fijas sin calendario confirmado**: añade análisis visible para detectar por qué N-FORCE no encuentra propuestas incluso con 14 días.
+
+- Desglosa encuentros futuros con fecha pero sin hora, horarios utilizables, horarios descartados por estado del encuentro y partidos futuros con hora fuera del rango.
+- Muestra qué ligas tienen encuentros próximos, así como el próximo partido con hora **importada**.
+- Expone la diferencia entre las 20 ligas configuradas y las 5 ligas mapeadas para verificación adicional de horarios. Una liga sin esa verificación aún puede analizarse si la fuente original incluye una hora utilizable.
+- El diagnóstico se recalcula al abrir el panel, incluso tras reiniciar Railway; no depende de que el último escaneo siga en memoria.
+- No altera MySQL, pronósticos publicados, pagos, usuarios, Telegram, permisos ni criterios VIP. No cambia la ventana existente configurada mediante NFORCE_SCAN_DAYS.
+
+Para investigar un cero de propuestas: despliega, comprueba `/health` = `3.3.9`, ejecuta **Importar datos** y luego **Analizar ahora**. En el panel, revisa **Calendario: diagnóstico**, **Fechas dentro del rango sin hora utilizable**, **Horarios utilizables dentro del rango**, **Ligas cargadas** y **Ligas con verificación independiente**.
+
+La fuente abierta puede retrasarse en comunicar horarios; no es un sistema de datos en vivo garantizados.
+
+---
+
+# Fijas de Élite v3.3.8 — Corrección de ventana y diagnóstico de cobertura
+
+- **Corrección:** el motor ahora busca partidos de los próximos **14 días por defecto** (antes 3); `NFORCE_SCAN_DAYS` sigue aceptando entre 3 y 21 días. No cambia los umbrales de probabilidad ni permite publicación automática.
+- **Diagnóstico persistente:** el panel muestra cuántas de las 20 ligas configuradas tienen partidos almacenados en MySQL, incluso después de reiniciar Railway. Además, distingue la cobertura de la última importación.
+- **Importante:** agregar una liga a la configuración no es suficiente. Es necesario ejecutar **Importar datos**, esperar a que la importación termine, y después **Analizar ahora**. El botón Analizar no descarga archivos nuevos.
+- **Advertencia:** algunos calendarios tienen horarios pendientes o datos incompletos; el motor no inventa encuentros ni marcadores. Las propuestas para partidos lejanos deben volver a comprobarse antes de publicarse.
+- Despliega esta versión, confirma `/health` v3.3.8, comprueba **Ventana de búsqueda: 14 días** y **Ligas cargadas en MySQL**. Si Railway conserva `NFORCE_SCAN_DAYS=3` como variable, cámbiala a 14 o elimínala para usar el nuevo valor por defecto.
+
+---
+
 # Fijas de Élite v3.3.7 — Cobertura multiliga
 
 - N-FORCE permite **20 ligas** configuradas, frente a cinco antes: Premier League, Championship, League One, League Two, LaLiga, Segunda División, Bundesliga, 2. Bundesliga, Serie A, Serie B, Ligue 1, Ligue 2, Eredivisie, Primeira Liga, Premiership escocesa, primera de Bélgica, Bundesliga de Austria, Süper Lig, Super League de Grecia y Brasileirão Série A. **Configuradas no significa que todas tengan resultados y horarios disponibles para la temporada actual.** El importador omite archivos inexistentes, informa ausencias y no inventa partidos.
