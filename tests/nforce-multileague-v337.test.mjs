@@ -34,7 +34,7 @@ test('Any non-allowlisted path rejected before issuing HTTP requests',async()=>{
 
 test('Longer scan horizon is opt-in and bounded without changing publication criteria',()=>{
  const script="import {NFORCE_SCAN_LOOKAHEAD_DAYS as d} from './src/nforce-engine.js';console.log(d)";
- for(const [value,days] of [['14','14'],['21','21'],['22','3'],['-1','3'],['hello','3']]){
+ for(const [value,days] of [['14','14'],['3','3'],['21','21'],['22','14'],['-1','14'],['hello','14']]){
   const out=execFileSync(process.execPath,['--input-type=module','-e',script],{cwd:new URL('..',import.meta.url).pathname,
     env:{...process.env,NFORCE_SCAN_DAYS:value},encoding:'utf8'}).trim();
   assert.equal(out,days);

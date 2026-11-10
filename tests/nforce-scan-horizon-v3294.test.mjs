@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import {NFORCE_SCAN_LOOKAHEAD_DAYS,NFORCE_SCAN_FIXTURE_LIMIT} from '../src/nforce-engine.js';
 import {readFileSync} from 'node:fs';
 
-// Keep a strict 72-hour horizon, without lowering VIP evidence requirements.
-test('N-FORCE scans no further than 3 days without widening VIP thresholds',()=>{
- assert.equal(NFORCE_SCAN_LOOKAHEAD_DAYS,3);
+// Scan ahead for the next fixtures during calendar breaks, without lowering VIP evidence requirements.
+test('N-FORCE default window is 14 days without widening VIP thresholds',()=>{
+ assert.equal(NFORCE_SCAN_LOOKAHEAD_DAYS,14);
  assert.equal(NFORCE_SCAN_FIXTURE_LIMIT,240);
  const engine=readFileSync(new URL('../src/nforce-engine.js',import.meta.url),'utf8');
  assert.match(engine,/NFORCE_SCAN_LOOKAHEAD_DAYS\*DAY/);

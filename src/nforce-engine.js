@@ -1,12 +1,14 @@
 import {publicAnalysisText} from './public-branding.js';
 import {freeTelegramDestination} from './telegram-public.js';
 import {allowedDatasets,fetchOpenFootball,LEAGUES,NFORCE_PROVIDER} from './nforce-data.js';
+import {diagnoseNforceCalendar} from './nforce-calendar-health.js';
 import {estimateMatch,modelReadiness,makeCandidate,walkForwardBacktest,fulltime,MODEL_VERSION,VIP_RISK_POLICY} from './nforce-model.js';
 import {canAutoPublishCandidate} from './football-publication-policy.js';
 import {evaluateVipEvidence,VIP_POLICY} from './nforce-vip-gate.js';
 import {sendPredictionToTelegram} from './telegram-bridge.js';
 import {publishedFootballDetails} from './football-report.js';
 import {createNforceSettlement} from './nforce-settlement.js';
+import {LIVE_VERIFICATION_LEAGUES} from './live-schedule.js';
 
 const DAY=86400000;
 const asUtc=x=>x instanceof Date?x:new Date(String(x||'').replace(' ','T')+(String(x||'').match(/Z|[+-]\d\d:\d\d$/)?'':'Z'));
@@ -17,11 +19,11 @@ const reportLimited=e=>{try{return typeof e==='string'?JSON.parse(e):e||{};}catc
 const owner=req=>req.admin?.role==='owner';
 export const IMPORT_INTERVAL_HOURS=2;
 export const SCAN_INTERVAL_MINUTES=60;
-// 72 hours by default. Owners may choose 3..21 days to PREPARE draft picks
-// during calendar gaps. All drafts remain subject to normal approval, fresh
+// 14 days by default to bridge international breaks. Owners may choose 3..21 days
+// to PREPARE draft picks during calendar gaps. All drafts remain subject to normal approval, fresh
 // schedule checks and the same statistical safeguards before publication.
-const requestedScanDays=Number(process.env.NFORCE_SCAN_DAYS||3);
-export const NFORCE_SCAN_LOOKAHEAD_DAYS=Number.isInteger(requestedScanDays)&&requestedScanDays>=3&&requestedScanDays<=21?requestedScanDays:3;
+const requestedScanDays=Number(process.env.NFORCE_SCAN_DAYS??14);
+export const NFORCE_SCAN_LOOKAHEAD_DAYS=Number.isInteger(requestedScanDays)&&requestedScanDays>=3&&requestedScanDays<=21?requestedScanDays:14;
 export const NFORCE_SCAN_FIXTURE_LIMIT=240;
 
 export function importDecision(last,now=Date.now(),hours=IMPORT_INTERVAL_HOURS){
@@ -123,6 +125,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
    try{
     const all=await loadMatches(),time=now().getTime();
     const usable=all.filter(x=>fulltime(x));
+    const calendar_diagnostic=diagnoseNforceCalendar(all,{now:now(),days:NFORCE_SCAN_LOOKAHEAD_DAYS});
     const horizon=time+NFORCE_SCAN_LOOKAHEAD_DAYS*DAY;
     const futureWithTimes=all.filter(x=>x.scheduled_time_known&&x.kickoff&&x.home_goals===null&&(!x.live_status||x.live_status==='NS')&&Date.parse(x.kickoff)>time+60*60000)
      .sort((a,b)=>Date.parse(a.kickoff)-Date.parse(b.kickoff));
@@ -166,7 +169,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     await conn.execute('UPDATE nforce_scans SET status=?,finished_at=UTC_TIMESTAMP(),upcoming=?,modeled=?,drafts=?,insufficient=?,filtered=? WHERE id=?',
      ['completed',future.length,models,drafts,underMin,rejected,id]);
     lastError='';lastScanReport={ok:true,mode:manual?'manual':'scheduled',
-     lookahead_days:NFORCE_SCAN_LOOKAHEAD_DAYS,fixture_limit:NFORCE_SCAN_FIXTURE_LIMIT,
+     lookahead_days:NFORCE_SCAN_LOOKAHEAD_DAYS,fixture_limit:NFORCE_SCAN_FIXTURE_LIMIT,calendar_diagnostic,
      fixtures_with_known_time:futureWithTimes.length,fixtures_in_window:future.length,examined:future.length,
      fixtures_truncated:Math.max(0,withinWindow.length-future.length),
      next_fixture_beyond_window:nextBeyondWindow?{match:`${nextBeyondWindow.home} vs ${nextBeyondWindow.away}`,kickoff:nextBeyondWindow.kickoff}:null,
@@ -176,7 +179,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
      fixtures_without_time:all.filter(x=>x.home_goals===null&&!x.scheduled_time_known&&x.date>=now().toISOString().slice(0,10)).length,
      note_on_quality:'El indicador de calidad de muestra NO representa el porcentaje real de aciertos.',
      note:drafts?`${drafts} propuestas nuevas guardadas; revísalas antes de aprobar.`:future.length===0?
-      'Sin encuentros con hora conocida en la ventana de análisis. Revisa la importación, las ligas disponibles y los horarios sin confirmar.':
+      `Sin encuentros listos. ${calendar_diagnostic.diagnosis}`:
       alreadyPresent?`${alreadyPresent} propuestas elegibles ya registradas (pendientes: ${existingByStatus.draft}, descartadas: ${existingByStatus.discarded}, publicadas: ${existingByStatus.published}); no se regeneran duplicados.`:
       'No hay propuestas nuevas: el historial es insuficiente o los filtros han rechazado los mercados.'};
     return lastScanReport;
@@ -334,13 +337,15 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     (SELECT COUNT(*) FROM football_candidates c JOIN predictions p ON p.id=c.prediction_id WHERE c.provider='nforce-openfootball' AND p.outcome='won') AS won,
     (SELECT COUNT(*) FROM football_candidates c JOIN predictions p ON p.id=c.prediction_id WHERE c.provider='nforce-openfootball' AND p.outcome='lost') AS lost,
     (SELECT COUNT(*) FROM nforce_matches) AS total_matches,
+    (SELECT COUNT(DISTINCT competition) FROM nforce_matches) AS loaded_competitions,
     (SELECT COUNT(*) FROM nforce_matches WHERE home_goals IS NOT NULL) AS complete_matches`);
    const [[latest]]=await db.query('SELECT status,initiated_by,started_at,finished_at,error_message,upcoming AS examined,drafts AS drafts_created,insufficient AS without_prediction,filtered AS below_filters FROM nforce_scans ORDER BY id DESC LIMIT 1');
    const [[lastImport]]=await db.query('SELECT status,started_at,finished_at,sources,records,scheduled,completed_results,errors_json FROM nforce_import_runs ORDER BY id DESC LIMIT 1');
    const [[lastBacktest]]=await db.query('SELECT created_at,evaluated,accuracy,brier,metrics_json FROM nforce_backtests ORDER BY id DESC LIMIT 1');
    const validation=reportLimited(lastBacktest?.metrics_json);const decided=Number(stats.won||0)+Number(stats.lost||0);
    const retry=importDecision(lastImport,now().getTime());
-   res.json({engine:'N-FORCE',model_version:MODEL_VERSION,configured:true,auto_import:process.env.FOOTBALL_AUTO_IMPORT!=='false',
+   const calendar_diagnostic=diagnoseNforceCalendar(await loadMatches(),{now:now(),days:NFORCE_SCAN_LOOKAHEAD_DAYS});
+   res.json({calendar_diagnostic,engine:'N-FORCE',model_version:MODEL_VERSION,configured:true,auto_import:process.env.FOOTBALL_AUTO_IMPORT!=='false',
     scan_lookahead_days:NFORCE_SCAN_LOOKAHEAD_DAYS,scan_fixture_limit:NFORCE_SCAN_FIXTURE_LIMIT,
     auto_scan:process.env.FOOTBALL_AUTO_SCAN==='true',auto_publish:process.env.FOOTBALL_AUTO_PUBLISH==='true'&&process.env.NFORCE_LIVE_RELEASE_ACK==='true',
     free_public_full:true,telegram_free_ready:!!(process.env.TELEGRAM_BOT_TOKEN&&freeTelegramDestination(process.env)),telegram_vip_ready:!!(process.env.TELEGRAM_BOT_TOKEN&&process.env.TELEGRAM_VIP_CHAT_ID),
@@ -348,6 +353,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     latest:latest||null,scanning,importing,publishing,last_error:lastError,last_import_report:lastImportReport,last_scan_report:lastScanReport,
     vip_policy:VIP_POLICY,vip_risk_policy:VIP_RISK_POLICY,last_publish_report:lastPublishReport,last_scheduler_message:lastSchedulerMessage,scheduled_retry_at:latest?new Date(asUtc(latest.started_at).getTime()+SCAN_INTERVAL_MINUTES*60000).toISOString():null,
     scheduled_retry_reason:'Control local cada hora',manual_scan:{available:!scanning,remaining:'Ilimitados con pausa de 5 min',daily_limit:'—'},
+    configured_competitions:LEAGUES.length,live_schedule_supported_competitions:LIVE_VERIFICATION_LEAGUES.length,loaded_competitions:Number(stats.loaded_competitions||0),
     total_matches:Number(stats.total_matches||0),complete_matches:Number(stats.complete_matches||0),source_import:lastImport||null,next_import_at:retry.next,
     settlement:settlement.getStatus(),
     backtest:lastBacktest?{evaluated:lastBacktest.evaluated,accuracy:lastBacktest.accuracy,brier:lastBacktest.brier,validated:Number(lastBacktest.evaluated)>=40&&validation.model===MODEL_VERSION&&now().getTime()-asUtc(lastBacktest.created_at).getTime()<=8*DAY,

@@ -11,6 +11,7 @@ const asUtc=v=>v instanceof Date?v:new Date(String(v??'').replace(' ','T')+(Stri
 const sqlUtc=v=>asUtc(v).toISOString().slice(0,19).replace('T',' ');
 const matchDateUTC=v=>{const d=asUtc(v);return Number.isFinite(d.getTime())?d.toISOString().slice(0,10):null;};
 const providerLeague=Object.freeze({39:'en.1',140:'es.1',78:'de.1',135:'it.1',61:'fr.1'});
+export const LIVE_VERIFICATION_LEAGUES=Object.freeze(Object.values(providerLeague));
 const STATUS=new Set(['NS','TBD','1H','HT','2H','ET','BT','P','FT','AET','PEN','PST','CANC','ABD','SUSP','INT','AWD','WO','LIVE']);
 const sourceFreshMs=90*MINUTE;
 const safeErr=e=>String(e?.message||e).replace(/(sk_live_|sk_test_|pk_live_|pk_test_)[^\s]+/g,'[redacted]').slice(0,160);
