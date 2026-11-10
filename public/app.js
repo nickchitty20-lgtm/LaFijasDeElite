@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 let currentAdminRole='';
-const ADMIN_PANEL_BUILD='3.3.9';
+const ADMIN_PANEL_BUILD='3.4.0';
 // Diagnose a partial/old Railway deployment instead of silently rendering stale UI.
 async function checkAdminBuild(){
  const label=$('adminBuildVersion'),status=$('adminBuildStatus');
@@ -783,6 +783,15 @@ function showFootballScanReport(r){
   if(r.next_fixture_beyond_window)line('Siguiente fuera de la ventana',`${r.next_fixture_beyond_window.match} · ${new Date(r.next_fixture_beyond_window.kickoff).toLocaleString('es-PE')}`);
   if(r.updated_existing_drafts!=null)line('Borradores actualizados con el nuevo modelo',r.updated_existing_drafts);
   if(r.eligible!=null)line('Propuestas elegibles (nuevas + existentes)',r.eligible);
+  if(r.eligible_by_category)line('Clasificación de propuestas (GRATIS / VIP)',`${r.eligible_by_category.free||0} / ${r.eligible_by_category.vip||0}`);
+  if(r.eligible_by_market){
+   const names={'1x2':'1X2',over15:'Más de 1.5',over25:'Más de 2.5',under25:'Menos de 2.5',bttsYes:'Ambos marcan Sí',bttsNo:'Ambos marcan No','1X':'Doble oportunidad 1X','X2':'Doble oportunidad X2','12':'Doble oportunidad 12'};
+   line('Propuestas por mercado',Object.entries(r.eligible_by_market).map(([key,value])=>`${names[key]||key}: ${value}`).join(' · ')||'Ninguna');
+  }
+  if(r.vip_rejections_by_market_reason){
+   const reasons={invalid_market:'Mercado no admitido',vip_1x2_margin:'Margen 1X2 insuficiente',insufficient_recent_evidence:'Historial reciente insuficiente',missing_goal_sensitivity:'Datos insuficientes para sensibilidad',inconsistent_probability:'Probabilidad inconsistente',weak_nominal_edge:'Probabilidad o diferencia histórica insuficiente',fragile_prediction:'Predicción poco estable'};
+   line('Filtros VIP (rechazos por mercado evaluado)',Object.entries(r.vip_rejections_by_market_reason).map(([key,value])=>`${reasons[key]||key}: ${value}`).join(' · ')||'Ninguno');
+  }
   if(r.recently_skipped!=null)line('Partidos pausados temporalmente (ahorro API)',r.recently_skipped);
   line('Datos insuficientes',r.insufficient_history??r.without_prediction??0);
   line('Rechazados por filtros',r.below_filters);
