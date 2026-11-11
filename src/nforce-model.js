@@ -1,5 +1,6 @@
 import {fitOpponentRatings,opponentAdjustedGoals} from './nforce-strength.js';
 import {isNationalCompetition} from './nforce-internationals.js';
+import {trainAiForecastModels} from './nforce-ml.js';
 /** N-FORCE probability engine, v1.2. Historical scores only.
  * Raw model probabilities are NOT calibrated or guaranteed profitable.
  * Walk-forward testing never trains on fixtures at/after the prediction time.
@@ -385,6 +386,7 @@ export function walkForwardBacktest(matches,{maxGames=300,now=new Date()}={}){
  const cut=[...clubCut,...nationalCut].sort((a,b)=>fixtureTimestamp(a)-fixtureTimestamp(b));
  let evaluated=0,correct=0,brier=0,logloss=0,goalsEvaluated=0,goalsCorrect=0,goalsBrier=0;
  let previousBrier=0,previousEvaluated=0;
+ const aiTrainingRows=[];
  const perLeague={},calibration={},by_market={},segments={vip:{evaluated:0,correct:0},free:{evaluated:0,correct:0}};
  const emptyContext=()=>({evaluated:0,correct:0,by_market:{},segments:{vip:{evaluated:0,correct:0},free:{evaluated:0,correct:0}}});
  const by_context={club:emptyContext(),national:emptyContext()};
@@ -408,6 +410,7 @@ export function walkForwardBacktest(matches,{maxGames=300,now=new Date()}={}){
   const probs=forecast.probabilities,wasCorrect=forecast.selected===actual,actualP=clamp(probs[actual]/100,0.000001,1);
   const context=by_context[isNationalCompetition(m.competition)?'national':'club'];
   context.evaluated++;context.correct+=Number(wasCorrect);
+  aiTrainingRows.push({context:isNationalCompetition(m.competition)?'national':'club',forecast,actual,kickoff:t});
   evaluated++;correct+=Number(wasCorrect);logloss-=Math.log(actualP);
   brier+=['home','draw','away'].reduce((sum,k)=>sum+(probs[k]/100-(k===actual?1:0))**2,0);
   if(forecast.previous_lambda){
@@ -445,7 +448,7 @@ export function walkForwardBacktest(matches,{maxGames=300,now=new Date()}={}){
   brier:evaluated?round(brier/evaluated,4):null,logloss:evaluated?round(logloss/evaluated,4):null,
   over25_accuracy:goalsEvaluated?round(100*goalsCorrect/goalsEvaluated):null,
   over25_brier:goalsEvaluated?round(goalsBrier/goalsEvaluated,4):null,
-  per_league:perLeague,segments,by_market,by_context,calibration,validated:evaluated>=40,
+  per_league:perLeague,segments,by_market,by_context,calibration,ai_models:trainAiForecastModels(aiTrainingRows),validated:evaluated>=40,
   comparison_previous:{previous_model:'nforce-poisson-1.3',paired_evaluated:previousEvaluated,
    previous_brier:previousEvaluated?round(previousBrier/previousEvaluated,4):null,
    current_brier:previousEvaluated?round(brier/previousEvaluated,4):null,

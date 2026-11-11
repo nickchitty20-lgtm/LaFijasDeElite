@@ -156,6 +156,14 @@ export async function initializeDatabase() {
       ['footballdata',process.env.FOOTBALL_DATA_ORG_ENABLED==='true'?1:0]);
     await connection.execute('INSERT IGNORE INTO nforce_source_settings(source_id,enabled) VALUES (?,?)',
       ['apisportswide',process.env.FOOTBALL_WIDE_DISCOVERY==='true'?1:0]);
+    // Optional one-per-day private VIP analytical bulletin. No official pick status.
+    await connection.execute('INSERT IGNORE INTO nforce_source_settings(source_id,enabled) VALUES (?,0)',['vipradar']);
+    await connection.query(`CREATE TABLE IF NOT EXISTS nforce_vip_radar_dispatches (
+      dispatch_day DATE NOT NULL PRIMARY KEY,
+      status ENUM('reserved','sent','failed') NOT NULL DEFAULT 'reserved',
+      sent_at DATETIME NULL,
+      telegram_message_id BIGINT NULL
+    ) ENGINE=InnoDB`);
     await connection.query(`CREATE TABLE IF NOT EXISTS nforce_wide_calendar_requests (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
       requested_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

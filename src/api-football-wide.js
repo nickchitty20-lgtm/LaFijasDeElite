@@ -1,6 +1,6 @@
 /** Optional API-Football fixtures discovery for all known N-FORCE competitions.
  * One request per import at most; the free tier queries tomorrow only.
- * A paid extended plan permits a 21-day range, without league-by-league calls.
+ * A paid extended plan permits a 30-day range, without league-by-league calls.
  * Discovery is not proof of a CURRENT NS state when a pick is published.
  */
 import {footballApi} from './football-analysis.js';
@@ -14,7 +14,7 @@ const leagueNames=new Map([...LEAGUES,...NATIONAL_COMPETITIONS].map(c=>[c.code,c
 const utcDay=ms=>new Date(ms).toISOString().slice(0,10);
 const sqlUtc=iso=>new Date(iso).toISOString().slice(0,19).replace('T',' ');
 export const WIDE_SUPPORTED_COMPETITIONS=Object.freeze([...new Set(Object.values(PROVIDER_LEAGUES))]);
-export const WIDE_LOOKAHEAD_DAYS=21;
+export const WIDE_LOOKAHEAD_DAYS=30;
 
 export function normalizeWideFixture(raw,{now=new Date(),days=WIDE_LOOKAHEAD_DAYS}={}){
  const fixture=normalizeScheduleFixture(raw);
@@ -67,7 +67,7 @@ export async function importWideCalendar({conn,enabled=false,now=new Date(),env=
  report.discovered=response.events.length;
  const [locals]=await conn.query(`SELECT id,source_key,competition,home_team,away_team,match_date,kickoff,scheduled_time_known
    FROM nforce_matches WHERE match_date>=DATE_SUB(UTC_DATE(),INTERVAL 1 DAY)
-   AND match_date<=DATE_ADD(UTC_DATE(),INTERVAL 24 DAY) AND home_goals IS NULL LIMIT 5000`);
+   AND match_date<=DATE_ADD(UTC_DATE(),INTERVAL 33 DAY) AND home_goals IS NULL LIMIT 5000`);
  const result=reconcileFootballDataFixtures([...new Map(response.events.map(e=>[e.source_key,e])).values()],locals);
  report.ambiguous=result.ambiguous.length;
  for(const {event,local} of result.matches){

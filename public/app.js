@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 let currentAdminRole='';
-const ADMIN_PANEL_BUILD='3.6.9';
+const ADMIN_PANEL_BUILD='3.7.1';
 // Diagnose a partial/old Railway deployment instead of silently rendering stale UI.
 async function checkAdminBuild(){
  const label=$('adminBuildVersion'),status=$('adminBuildStatus');
@@ -718,6 +718,7 @@ async function loadFootballEngine(){
  if(!summary||currentAdminRole!=='owner')return;
  try{
   const [status,result]=await Promise.all([api('/api/admin/football/status'),api('/api/admin/football/candidates')]);
+  const radarAuto=$('footballVipRadarAuto');if(radarAuto)radarAuto.checked=Boolean(status.vip_radar?.enabled);
   const syncLabel=$('liveScheduleStatus');
   if(syncLabel)api('/api/admin/schedules/status').then(s=>{
    const time=s.latest_verified?window.FijasMatchSchedule?.formatDate(s.latest_verified):null;
@@ -1082,7 +1083,7 @@ $('footballScanButton')?.addEventListener('click',async()=>{
  const btn=$('footballScanButton');btn.disabled=true;
  const msg=$('footballEngineMsg');msg.textContent='Iniciando análisis estadístico de los partidos guardados…';
  try{
-  const days=Number($('footballScanDays')?.value||21);
+  const days=Number($('footballScanDays')?.value||30);
   const start=await api('/api/admin/football/scan',{method:'POST',body:JSON.stringify({days})});
   if(start.accepted){
    msg.textContent='Escaneo en curso; actualizaremos esta pantalla cuando termine.';
@@ -1124,6 +1125,80 @@ $('footballBacktestButton')?.addEventListener('click',async()=>{
   label.textContent=`Backtesting 1X2: ${r.evaluated} partidos · ${r.accuracy??'—'}% aciertos observados · Brier ${r.brier??'—'} · ${r.validated?'Muestra general alcanzada':'Muestra general insuficiente'}. ${byMarket?'Mercados: '+byMarket+'.':'Sin selecciones por mercado validadas.'} ${byGroup?byGroup+'. ':''}${comparison} No garantiza resultados futuros.`;
   await loadFootballEngine();
  }catch(e){label.textContent=e.message;}finally{button.disabled=false;}
+});
+
+// Owner-only informational VIP radar. Does not create football_candidates,
+// does not classify any match VIP, and cannot send to the public channel.
+async function renderVipRadar(){
+ const label=$('footballVipRadarStatus'),list=$('footballVipRadarList');
+ if(!label||!list)return;
+ label.textContent='Comprobando próximos encuentros con historial…';list.replaceChildren();
+ try{
+  const result=await api('/api/admin/football/vip-radar');
+  const auto=$('footballVipRadarAuto');if(auto)auto.checked=Boolean(result.enabled);
+  const last=result.last?.status?` · Último boletín: ${result.last.status}`:'';
+  label.textContent=`${result.eligible_total} partidos modelados entre 24 horas y 30 días · ${result.counts.without_history} sin historial suficiente${last}. No son pronósticos VIP aprobados.`;
+  for(const match of result.items||[]){
+   const card=document.createElement('div');card.className='football-ai-preview';
+   const head=document.createElement('strong');head.textContent=`${match.home} vs ${match.away}`;card.append(head);
+   const info=document.createElement('p');info.textContent=`${match.league} · ${new Date(match.kickoff).toLocaleString('es-PE',{timeZone:'America/Lima'})} (hora Perú) · Historial ${match.quality}/100`;card.append(info);
+   const p=match.probabilities;
+   const probs=document.createElement('p');probs.textContent=`Estimación 1 / X / 2: ${p.home}% / ${p.draw}% / ${p.away}%`;card.append(probs);
+   if(match.ai){const ai=document.createElement('p');ai.textContent=`Híbrido IA exploratorio 1 / X / 2: ${match.ai.hybrid.home}% / ${match.ai.hybrid.draw}% / ${match.ai.hybrid.away}%`;card.append(ai);}
+   const small=document.createElement('small');small.textContent='Análisis informativo · No constituye una apuesta VIP aprobada';card.append(small);
+   list.append(card);
+  }
+  if(!(result.items||[]).length){const empty=document.createElement('p');empty.textContent='No hay encuentros con modelo e inicio fiable desde 24 horas. Importa más calendario e historial.';list.append(empty);}
+ }catch(error){label.textContent='Radar VIP: '+error.message;}
+}
+$('footballVipRadarPreview')?.addEventListener('click',renderVipRadar);
+$('footballVipRadarSend')?.addEventListener('click',async()=>{
+ const btn=$('footballVipRadarSend'),label=$('footballVipRadarStatus');
+ if(!confirm('¿Enviar un boletín informativo al canal VIP? No es una selección VIP validada y solo puede enviarse una vez al día.'))return;
+ btn.disabled=true;label.textContent='Revisando destino y preparando el boletín privado…';
+ try{const result=await api('/api/admin/football/vip-radar/send',{method:'POST',body:'{}'});
+  label.textContent=result.sent?`Boletín informativo enviado al canal VIP con ${result.items} partidos. No se ha publicado ninguna fija oficial.`:result.reason||'No se envió el boletín.';
+ }catch(error){label.textContent=error.message;}finally{btn.disabled=false;}
+});
+$('footballVipRadarAuto')?.addEventListener('change',async()=>{
+ const input=$('footballVipRadarAuto'),label=$('footballVipRadarStatus'),want=input.checked;
+ input.disabled=true;
+ try{const state=await api('/api/admin/football/vip-radar/settings',{method:'POST',body:JSON.stringify({enabled:want})});
+  label.textContent=state.enabled?'Boletín automático activado: máximo uno al día a partir de las 09:00 (Perú), si existen partidos con historial y horario.':'Boletín automático desactivado.';
+ }catch(error){input.checked=!want;label.textContent='No se pudo guardar: '+error.message;}finally{input.disabled=false;}
+});
+
+// Research-only machine learning preview: the server never uses this to
+// authorise GOLD/VIP or to auto-publish a candidate.
+$('footballAiForecastButton')?.addEventListener('click',async()=>{
+ const button=$('footballAiForecastButton'),notice=$('footballAiForecastStatus'),list=$('footballAiForecastList');
+ button.disabled=true;notice.textContent='Calculando pronósticos históricos y comparación con IA…';list.replaceChildren();
+ try{
+  const r=await api('/api/admin/football/ai-forecasts');
+  notice.textContent=r.message||'';
+  const row=(heading,value)=>{const p=document.createElement('p');const strong=document.createElement('strong');strong.textContent=heading+': ';p.append(strong,document.createTextNode(String(value??'—')));list.append(p);};
+  for(const [key,name] of [['club','Clubes'],['national','Selecciones']]){
+   const m=r.models?.[key];
+   row(`IA ${name}`,!m?'Sin entrenar (ejecuta backtest)':
+    `${m.status==='promising_holdout'?'Mejoró en la muestra retrospectiva':m.status==='no_improvement'?'No demostró mejora':'Historial insuficiente'} · ${m.available||0} partidos${m.holdout?` · prueba posterior ${m.holdout} partidos · Brier Poisson ${m.holdout_baseline_brier} / híbrido ${m.holdout_hybrid_brier}`:''}`);
+  }
+  row('Partidos con historial insuficiente',r.missing_history||0);
+  row('Partidos con modelo disponibles',r.forecasts?.length||0);
+  for(const f of (r.forecasts||[])){
+   const card=document.createElement('div');card.className='football-ai-preview';
+   const h=document.createElement('strong');h.textContent=f.match;card.append(h);
+   const p=document.createElement('p');p.textContent=`${f.competition} · ${f.kickoff?new Date(f.kickoff).toLocaleString('es-PE',{timeZone:'America/Lima'}):'Hora pendiente'} (hora Perú) · Calidad de historial ${f.quality}/100`;
+   card.append(p);
+   const o=document.createElement('p');o.textContent=`Poisson 1 / X / 2: ${f.poisson.home}% / ${f.poisson.draw}% / ${f.poisson.away}%`;card.append(o);
+   const score=document.createElement('p');score.textContent=`Marcador orientativo del modelo Poisson: ${f.illustrative_score||'—'} (no significa que vaya a ocurrir)`;card.append(score);
+   if(f.ai){const ai=document.createElement('p');ai.textContent=`IA 1 / X / 2: ${f.ai.ai.home}% / ${f.ai.ai.draw}% / ${f.ai.ai.away}% · Híbrido: ${f.ai.hybrid.home}% / ${f.ai.hybrid.draw}% / ${f.ai.hybrid.away}% · ${f.ai.status==='promising_holdout'?'Mejoró en prueba retrospectiva':'Sin mejora validada'}`;card.append(ai);}
+   else{const warning=document.createElement('p');warning.textContent='IA no entrenada para este tipo de fútbol; solo existe el modelo Poisson.';card.append(warning);}
+   const source=document.createElement('small');source.textContent=f.verified_live?'Estado NS verificado recientemente':'Horario/estado aún requieren verificación al publicar';card.append(source);
+   list.append(card);
+  }
+  if(!(r.forecasts||[]).length)row('Sin pronósticos mostrables','Importa encuentros y amplía el historial; los partidos sin modelo no producen predicciones IA.');
+  row('Seguridad','Herramienta experimental de análisis: no autoriza publicaciones ni garantiza aciertos.');
+ }catch(e){notice.textContent=e.message;}finally{button.disabled=false;}
 });
 
 // N-FORCE: reconcile only published fixture-linked predictions with trusted FT data.

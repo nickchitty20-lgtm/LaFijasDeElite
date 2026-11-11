@@ -19,6 +19,9 @@ import {readSecondarySource,saveSecondarySource,readFootballDataSource,saveFootb
 import {importFootballDataFixtures,FOOTBALL_DATA_COMPETITIONS} from './football-data-fixtures.js';
 import {readWideSource,saveWideSource} from './nforce-source-settings.js';
 import {importWideCalendar,WIDE_SUPPORTED_COMPETITIONS} from './api-football-wide.js';
+import {predictAiForecast,AI_MODEL_VERSION} from './nforce-ml.js';
+import {prepareVipRadar,vipRadarTelegramMessage,VIP_RADAR_MAX_DAYS} from './nforce-vip-radar.js';
+import {telegramApi,inspectFreeTelegramChannel} from './telegram-bridge.js';
 
 const DAY=86400000;
 const asUtc=x=>x instanceof Date?x:new Date(String(x||'').replace(' ','T')+(String(x||'').match(/Z|[+-]\d\d:\d\d$/)?'':'Z'));
@@ -29,12 +32,12 @@ const reportLimited=e=>{try{return typeof e==='string'?JSON.parse(e):e||{};}catc
 const owner=req=>req.admin?.role==='owner';
 export const IMPORT_INTERVAL_HOURS=2;
 export const SCAN_INTERVAL_MINUTES=60;
-// 21 days by default to bridge international breaks. Owners may choose 3..21 days
+// 30 days by default to allow a wider, advance view; actual coverage is provider-dependent. Owners may choose 3..30 days
 // to PREPARE draft picks during calendar gaps. All drafts remain subject to normal approval, fresh
 // schedule checks and the same statistical safeguards before publication.
-const requestedScanDays=Number(process.env.NFORCE_SCAN_DAYS??21);
-export const NFORCE_SCAN_LOOKAHEAD_DAYS=Number.isInteger(requestedScanDays)&&requestedScanDays>=3&&requestedScanDays<=21?requestedScanDays:21;
-export const NFORCE_SCAN_FIXTURE_LIMIT=240;
+const requestedScanDays=Number(process.env.NFORCE_SCAN_DAYS??30);
+export const NFORCE_SCAN_LOOKAHEAD_DAYS=Number.isInteger(requestedScanDays)&&requestedScanDays>=3&&requestedScanDays<=30?requestedScanDays:30;
+export const NFORCE_SCAN_FIXTURE_LIMIT=400;
 
 export function importDecision(last,now=Date.now(),hours=IMPORT_INTERVAL_HOURS){
  if(!last)return {due:true,next:null};
@@ -42,10 +45,11 @@ export function importDecision(last,now=Date.now(),hours=IMPORT_INTERVAL_HOURS){
  const next=started+interval;
  return {due:!Number.isFinite(next)||now>=next,next:Number.isFinite(next)?new Date(next).toISOString():null};
 }
-export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenFootball,fetchSecondary=importSecondaryFixtures,fetchFootballData=importFootballDataFixtures,fetchWide=importWideCalendar,sendTelegram=sendPredictionToTelegram,enqueueEvent=null,now=()=>new Date()}={}){
+export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenFootball,fetchSecondary=importSecondaryFixtures,fetchFootballData=importFootballDataFixtures,fetchWide=importWideCalendar,sendTelegram=sendPredictionToTelegram,sendRadarTelegram=async(chat,text,env)=>telegramApi('sendMessage',{chat_id:chat,text,parse_mode:'HTML',disable_web_page_preview:true,protect_content:true},env),enqueueEvent=null,now=()=>new Date()}={}){
  const settlement=createNforceSettlement({db,now});
- let importing=false,scanning=false,publishing=false,combinedRunning=false,interval=null;
+ let importing=false,scanning=false,publishing=false,combinedRunning=false,radarSending=false,interval=null;
  let lastScanReport=null,lastImportReport=null,lastPublishReport=null,lastSchedulerMessage='',lastError='';
+ let lastAutoRadarAttempt=0;
  const api=path=>`/api/admin/football/${path}`;
  async function withLock(name,callback){
   const conn=await db.getConnection();let acquired=false;
@@ -145,7 +149,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
    home_goals:r.home_goals==null?null:Number(r.home_goals),away_goals:r.away_goals==null?null:Number(r.away_goals)}));
  }
  async function scan({manual=false,days=NFORCE_SCAN_LOOKAHEAD_DAYS}={}){
-  if(!Number.isInteger(days)||days<3||days>21)throw Error('Ventana de búsqueda inválida (3–21 días)');
+  if(!Number.isInteger(days)||days<3||days>30)throw Error('Ventana de búsqueda inválida (3–30 días)');
   if(scanning)return {busy:true};scanning=true;
   try{return await withLock('fijas_nforce_scan',async conn=>{
    const [[last]]=await conn.query("SELECT status,started_at FROM nforce_scans ORDER BY id DESC LIMIT 1");
@@ -297,6 +301,56 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     [r.model,r.evaluated,r.accuracy,r.brier,r.logloss,JSON.stringify(r)]);
    return r;
   });
+ }
+
+ // VIP bulletin: additional subscriber value without pretending that a research
+ // probability has cleared the official candidate / backtest publication gate.
+ async function vipRadarPreview(){
+  const all=await loadMatches();
+  const [[backtest]]=await db.query('SELECT model_version,created_at,metrics_json FROM nforce_backtests ORDER BY id DESC LIMIT 1');
+  const valid=backtest?.model_version===MODEL_VERSION&&now().getTime()-asUtc(backtest.created_at).getTime()<8*DAY;
+  const models=valid?reportLimited(backtest.metrics_json).ai_models||{}:{};
+  const preview=prepareVipRadar(all,{now:now(),days:VIP_RADAR_MAX_DAYS,models,limit:5});
+  return {...preview,ai_validation_current:Boolean(valid),generated_at:now().toISOString()};
+ }
+ async function vipRadarEnabled(){
+  const [[row]]=await db.execute('SELECT enabled FROM nforce_source_settings WHERE source_id=? LIMIT 1',['vipradar']);
+  return Boolean(Number(row?.enabled));
+ }
+ async function vipRadarLast(){
+  const [[row]]=await db.query('SELECT dispatch_day,status,sent_at,telegram_message_id FROM nforce_vip_radar_dispatches ORDER BY dispatch_day DESC LIMIT 1');
+  return row||null;
+ }
+ async function dispatchVipRadar({manual=false}={}){
+  if(radarSending)return {sent:false,reason:'El radar ya se está enviando.'};
+  radarSending=true;
+  try{return await withLock('fijas_nforce_vip_radar',async conn=>{
+   if(!manual&&!await vipRadarEnabled())return {sent:false,reason:'Radar automático desactivado'};
+   if(!process.env.TELEGRAM_BOT_TOKEN||!process.env.TELEGRAM_VIP_CHAT_ID)
+    return {sent:false,reason:'Falta configurar el canal VIP o el bot de Telegram.'};
+   const target=String(process.env.TELEGRAM_VIP_CHAT_ID||'').trim(),publicId=String(freeTelegramDestination(process.env)||'').trim();
+   if(!/^-?\d{8,18}$/.test(target)||target===publicId||target===String(process.env.TELEGRAM_FREE_CHANNEL_CHAT_ID||''))
+    return {sent:false,reason:'El canal VIP debe ser un ID numérico distinto al canal oficial.'};
+   if(publicId.startsWith('@')){
+    const verified=await inspectFreeTelegramChannel(process.env);
+    if(!verified.ready||verified.chat_id===target)return {sent:false,reason:'No se pudo confirmar que el destino VIP sea distinto del oficial.'};
+   }
+   const report=await vipRadarPreview();
+   if(!report.items.length)return {sent:false,reason:'No existen partidos con historial suficiente y horario conocido entre 24 horas y 30 días.'};
+   const day=now().toISOString().slice(0,10);
+   // SQL unique day: one bulletin per day even across Railway replicas.
+   const [claim]=await conn.execute("INSERT IGNORE INTO nforce_vip_radar_dispatches(dispatch_day,status) VALUES (?, 'reserved')",[day]);
+   if(Number(claim.affectedRows)!==1)return {sent:false,reason:'Ya se intentó enviar el boletín de hoy; no se repetirá para evitar spam.'};
+   try{
+    const message=vipRadarTelegramMessage(report,{asOf:now()});
+    const sent=await sendRadarTelegram(target,message,process.env);
+    await conn.execute("UPDATE nforce_vip_radar_dispatches SET status='sent',sent_at=UTC_TIMESTAMP(),telegram_message_id=? WHERE dispatch_day=?",[sent?.message_id||null,day]);
+    return {sent:true,day,items:report.items.length,telegram_message_id:sent?.message_id||null,official_picks:false};
+   }catch(error){
+    await conn.execute("UPDATE nforce_vip_radar_dispatches SET status='failed' WHERE dispatch_day=?",[day]).catch(()=>{});
+    return {sent:false,reason:'Telegram no confirmó el envío: '+safeError(error)};
+   }
+  });}finally{radarSending=false;}
  }
  /** Refresh one pending proposal against the current model, without publishing it.
   * The owner must review the updated market/selection and explicitly approve later. */
@@ -497,7 +551,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     FROM nforce_matches m LEFT JOIN nforce_fixture_schedules s
       ON s.nforce_match_id=m.id AND s.checked_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 4 HOUR)
     WHERE m.home_goals IS NULL AND m.away_goals IS NULL
-      AND m.match_date BETWEEN UTC_DATE() AND DATE_ADD(UTC_DATE(),INTERVAL 21 DAY)
+      AND m.match_date BETWEEN UTC_DATE() AND DATE_ADD(UTC_DATE(),INTERVAL 30 DAY)
     ORDER BY COALESCE(m.kickoff,CONCAT(m.match_date,' 23:59:59')) ASC LIMIT 80`);
    res.json({total_returned:rows.length,limit:80,fixtures:rows.map(r=>({
     id:String(r.id),competition:r.competition,league:r.league,
@@ -509,6 +563,64 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     verified_status:r.verified_status||null,verified_at:r.verified_at||null
    }))});
   }catch(e){res.status(500).json({error:'No se pudo consultar el calendario importado: '+safeError(e)});}
+ });
+ // Owner-only ML comparison, separate from candidates and publication. Only
+ // trained historical models with a chronological holdout are labelled as AI.
+ app.get(api('ai-forecasts'),authenticate,async(req,res)=>{
+  if(!owner(req))return res.status(403).json({error:'Solo creador'});
+  try{
+   const [[saved]]=await db.query('SELECT model_version,created_at,metrics_json FROM nforce_backtests ORDER BY id DESC LIMIT 1');
+   const metrics=reportLimited(saved?.metrics_json);
+   const current=saved?.model_version===MODEL_VERSION&&
+    now().getTime()-asUtc(saved.created_at).getTime()<=8*DAY;
+   const models=current?(metrics.ai_models||{}):{};
+   const all=await loadMatches(),t=now().getTime(),historical=all.filter(fulltime);
+   const future=all.filter(m=>m.scheduled_time_known&&m.kickoff&&m.home_goals==null&&m.away_goals==null&&
+      (!m.live_status||m.live_status==='NS')&&Date.parse(m.kickoff)>t+24*3600000&&Date.parse(m.kickoff)<=t+VIP_RADAR_MAX_DAYS*DAY)
+    .sort((a,b)=>Date.parse(a.kickoff)-Date.parse(b.kickoff)).slice(0,160);
+   const predictions=[];let missingHistory=0;
+   for(const fixture of future){
+    const forecast=estimateMatch(fixture,historical,Date.parse(fixture.kickoff));
+    if(!forecast){missingHistory++;continue;}
+    const context=forecast.history_group==='selecciones'?'national':'club';
+    const learned=predictAiForecast(forecast,models[context]);
+    predictions.push({match:`${fixture.home} vs ${fixture.away}`,competition:fixture.league||fixture.competition,
+     kickoff:fixture.kickoff,context,quality:forecast.quality,illustrative_score:forecast.score,
+     poisson:forecast.probabilities,ai:learned,verified_live:Boolean(fixture.schedule_verified_at&&fixture.live_status==='NS')});
+    if(predictions.length>=30)break;
+   }
+   const safeModel=part=>part?{status:part.status,available:part.available,required:part.required,
+    training:part.training,holdout:part.holdout,holdout_baseline_brier:part.holdout_baseline_brier,
+    holdout_ai_brier:part.holdout_ai_brier,holdout_hybrid_brier:part.holdout_hybrid_brier,
+    holdout_delta:part.holdout_delta}:null;
+   res.json({version:AI_MODEL_VERSION,poisson_version:MODEL_VERSION,validated_backtest:current,
+    models:{club:safeModel(models.club),national:safeModel(models.national)},
+    future_examined:future.length,missing_history:missingHistory,forecasts:predictions,from_hours:24,lookahead_days:VIP_RADAR_MAX_DAYS,
+    publication_authorized:false,
+    message:!current||!metrics.ai_models?'Ejecuta Validar modelo (backtest) para entrenar la IA con resultados reales.':
+     'Predicciones exploratorias 1X2. Ni la IA ni el híbrido autorizan publicar sin los filtros habituales.'});
+  }catch(e){res.status(500).json({error:'No se pudo comparar la IA: '+safeError(e)});}
+ });
+
+ app.get(api('vip-radar'),authenticate,async(req,res)=>{
+  if(!owner(req))return res.status(403).json({error:'Solo creador'});
+  try{res.set('Cache-Control','no-store').json({...await vipRadarPreview(),enabled:await vipRadarEnabled(),last:await vipRadarLast()});}
+  catch(error){res.status(500).json({error:'Radar VIP: '+safeError(error)});}
+ });
+ app.post(api('vip-radar/settings'),authenticate,async(req,res)=>{
+  if(!owner(req))return res.status(403).json({error:'Solo creador'});
+  if(typeof req.body?.enabled!=='boolean')return res.status(400).json({error:'enabled debe ser booleano'});
+  try{
+   await db.execute(`INSERT INTO nforce_source_settings (source_id,enabled,updated_by,updated_at)
+    VALUES ('vipradar',?,?,UTC_TIMESTAMP()) ON DUPLICATE KEY UPDATE enabled=VALUES(enabled),updated_by=VALUES(updated_by),updated_at=UTC_TIMESTAMP()`,[req.body.enabled?1:0,req.admin.id]);
+   await db.execute("INSERT INTO audit_logs (actor_admin_id,action,entity_type,entity_id,details) VALUES (?,'nforce_vip_radar_settings','nforce_source_settings','vipradar',?)",[req.admin.id,JSON.stringify({enabled:req.body.enabled})]);
+   res.json({enabled:req.body.enabled});
+  }catch(error){res.status(500).json({error:'No se pudo guardar la preferencia: '+safeError(error)});}
+ });
+ app.post(api('vip-radar/send'),authenticate,async(req,res)=>{
+  if(!owner(req))return res.status(403).json({error:'Solo creador'});
+  try{res.json(await dispatchVipRadar({manual:true}));}
+  catch(error){res.status(500).json({error:'No fue posible enviar el radar: '+safeError(error)});}
  });
  // Read-only VIP diagnostics. Strictly for the owner; never approves or invents a pick.
  app.get(api('vip-diagnostic'),authenticate,async(req,res)=>{
@@ -561,7 +673,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     automatic_free_promoted_to_gold:true,gold_distribution_rollout:GOLD_ROLLOUT,free_public_full:true,telegram_free_ready:!!(process.env.TELEGRAM_BOT_TOKEN&&freeTelegramDestination(process.env)),telegram_vip_ready:!!(process.env.TELEGRAM_BOT_TOKEN&&process.env.TELEGRAM_VIP_CHAT_ID),
     drafts:Number(stats.drafts||0),published:Number(stats.published||0),won:Number(stats.won||0),lost:Number(stats.lost||0),accuracy:decided?Number((100*stats.won/decided).toFixed(1)):null,
     latest:latest||null,scanning,importing,publishing,last_error:lastError,last_import_report:lastImportReport,last_scan_report:lastScanReport,
-    vip_policy:VIP_POLICY,vip_risk_policy:VIP_RISK_POLICY,last_publish_report:lastPublishReport,last_scheduler_message:lastSchedulerMessage,scheduled_retry_at:latest?new Date(asUtc(latest.started_at).getTime()+SCAN_INTERVAL_MINUTES*60000).toISOString():null,
+    vip_policy:VIP_POLICY,vip_risk_policy:VIP_RISK_POLICY,vip_radar:{enabled:await vipRadarEnabled(),last:await vipRadarLast(),sending:radarSending},last_publish_report:lastPublishReport,last_scheduler_message:lastSchedulerMessage,scheduled_retry_at:latest?new Date(asUtc(latest.started_at).getTime()+SCAN_INTERVAL_MINUTES*60000).toISOString():null,
     scheduled_retry_reason:'Control local cada hora',manual_scan:{available:!scanning,remaining:'Ilimitados con pausa de 5 min',daily_limit:'—'},
     configured_competitions:LEAGUES.length+NATIONAL_COMPETITIONS.length,national_competitions_configured:NATIONAL_COMPETITIONS.length,live_schedule_supported_competitions:LIVE_VERIFICATION_LEAGUES.length,loaded_competitions:Number(stats.loaded_competitions||0),loaded_national_competitions:Number(stats.loaded_national_competitions||0),national_matches:Number(stats.national_matches||0),
     total_matches:Number(stats.total_matches||0),complete_matches:Number(stats.complete_matches||0),source_import:lastImport||null,next_import_at:retry.next,
@@ -717,7 +829,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
   if(!owner(req))return res.status(403).json({error:'Solo creador'});
   if(scanning)return res.status(409).json({error:'Escaneo en curso'});
   const days=Number(req.body?.days??NFORCE_SCAN_LOOKAHEAD_DAYS);
-  if(!Number.isInteger(days)||days<3||days>21)return res.status(400).json({error:'Selecciona 7, 14 o 21 días'});
+  if(!Number.isInteger(days)||days<3||days>30)return res.status(400).json({error:'Selecciona 7, 14, 21 o 30 días'});
   scan({manual:true,days}).catch(e=>{lastScanReport={ok:false,error:safeError(e)};});
   res.status(202).json({accepted:true,message:'Análisis local iniciado. Actualiza el panel para revisar las propuestas.'});
  });
@@ -764,6 +876,12 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
    if(r&&!r.cooldown)lastSchedulerMessage=r.ok?`Escaneo local: ${r.drafts_created} propuestas / ${r.examined} partidos.`:safeError(r.error||r.message);
   }
   if(process.env.FOOTBALL_AUTO_PUBLISH==='true')await publishPending().catch(e=>{lastError=safeError(e);});
+  // Once per UTC day after 14:00 (09:00 in Peru); opt-in persisted in MySQL.
+  // Never creates an official VIP pick; no message if there are no eligible matches.
+  if(now().getUTCHours()>=14&&now().getUTCHours()<23&&now().getTime()-lastAutoRadarAttempt>=2*3600000){
+   lastAutoRadarAttempt=now().getTime();
+   await dispatchVipRadar().catch(e=>{lastError='Radar VIP: '+safeError(e);});
+  }
  }
  function start(){if(interval)return;
   interval=setInterval(tick,15*60000);interval.unref?.();setImmediate(()=>tick().catch(e=>console.error('nforce scheduler:',safeError(e))));

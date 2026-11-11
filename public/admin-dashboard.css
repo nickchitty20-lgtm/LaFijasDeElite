@@ -224,3 +224,8 @@
 .gold-whitelist-admin-row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 14px;border:1px solid #354050;border-radius:10px;background:#1c232d}
 .gold-whitelist-admin-row strong{font-size:13px;color:#eee1c5;overflow-wrap:anywhere}
 .gold-whitelist-admin-row span{font-size:12px;color:#d7bc7c}
+
+/* IA de contraste: lectura compacta para panel en móvil. */
+.football-ai-preview {border:1px solid rgba(184,143,54,.25);border-radius:12px;padding:12px;margin:10px 0;background:rgba(20,26,34,.45);overflow-wrap:anywhere;}
+.football-ai-preview p{margin:6px 0;font-size:.9rem;line-height:1.5;}
+.football-ai-preview small{opacity:.78;}

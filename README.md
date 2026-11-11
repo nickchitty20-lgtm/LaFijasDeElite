@@ -1,3 +1,25 @@
+# Actualización v3.7.1 — Radar VIP y cobertura de 30 días
+
+La búsqueda manual cubre 7, 14, 21 o 30 días. El rastreo automático adopta 30 días por defecto, salvo si `NFORCE_SCAN_DAYS` continúa fijado a 21 en Railway (actualízala a 30). La Fuente IV necesita un plan de API compatible para consultar el rango completo: el plan gratuito solo consulta mañana en UTC.
+
+En **Análisis automático → Radar VIP** puedes revisar encuentros con inicio dentro de al menos 24 horas y enviar al canal VIP un boletín de investigación. Alternativamente, habilita **Boletín automático diario** para enviarlo a partir de las 09:00 en Perú, si hay partidos con historial suficiente. Nunca publica selecciones oficiales, no publica en el canal público, no reenvía dos veces en un mismo día y no crea pronósticos falsos si no encuentra encuentros. Necesita `TELEGRAM_BOT_TOKEN` y `TELEGRAM_VIP_CHAT_ID` válidos. Los requisitos oficiales VIP se mantienen.
+
+La **IA experimental** entrenada en v3.7.0 continúa como comparación, no como requisito ni autorización de publicación. Se conservan membresías y listas blancas. Una nueva tabla MySQL de boletines y una fila de configuración se crean automáticamente. El canal debe distinguir siempre boletines informativos de pronósticos VIP verificados.
+
+---
+
+# Fijas de Élite v3.7.0 — IA experimental para partidos próximos
+
+- **Predicción adicional con aprendizaje automático real (sin API externa):** clasificador multinomial (regresión logística regularizada) entrenado con resultados históricos importados. Combina como entradas probabilidades Poisson, goles esperados, forma y calidad del historial; nunca consulta resultados futuros para hacer el pronóstico de un partido.
+- **Validación cronológica:** el entrenamiento utiliza el 75% más antiguo y comprueba el 25% posterior sin utilizarlo para ajustar inicialmente el modelo. Se calcula Brier 1X2 de Poisson, IA e híbrido (30% IA), separados entre clubes y selecciones. Solo se marca como señal prometedora si el híbrido mejora el Brier del grupo en al menos 0.005, sin afirmar una tasa futura.
+- **Muestras mínimas honestas:** 100 partidos modelados de clubes o 60 de selecciones en el backtest de IA. Si faltan datos, el panel señala la insuficiencia y no inventa probabilidades de IA. Una vez comprobado el holdout, el modelo final puede entrenarse con todos los resultados anteriores disponibles para proyectar partidos futuros.
+- **Panel de propietario:** sección **Análisis automático → IA experimental · Probabilidades de partidos próximos** con botón para comparar los próximos 21 días, porcentajes 1/X/2 de Poisson, IA e híbrido, marcador meramente orientativo y estado del historial. Sin contraseña adicional, sin coste por API y sin claves nuevas.
+- **Prohibido promover de forma automática:** las probabilidades de IA son una herramienta de contraste y estudio; no sustituyen los picks de N-FORCE, no desbloquean VIP/GOLD ni alteran el criterio de backtesting/pagos/publicación. El modelo productivo sigue siendo `nforce-poisson-1.9` y la investigación se registra como `nforce-ml-0.1`.
+- **Operación:** desplegar v3.7.0, importar datos históricos, pulsar **Validar modelo (backtest)** para entrenar y guardar los parámetros en el JSON de la validación, luego **Calcular predicciones IA de los próximos 21 días**. Si no hay históricos suficientes, se mostrará la razón. No se borran datos ni cambian membresías, bot, calendario, MySQL o variables de Railway.
+- **Límites:** el aprendizaje automático no garantiza una predicción correcta, una cuota favorable ni ingresos. Su uso en publicación requeriría validaciones prospectivas adicionales con resultados de Railway. No se ha conectado a la base de datos o las APIs reales del usuario.
+
+---
+
 # Fijas de Élite v3.6.9 — VIP equilibrado y calendario amplio por API
 
 **Cambios principales**
