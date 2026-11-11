@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 let currentAdminRole='';
-const ADMIN_PANEL_BUILD='3.7.1';
+const ADMIN_PANEL_BUILD='3.7.2';
 // Diagnose a partial/old Railway deployment instead of silently rendering stale UI.
 async function checkAdminBuild(){
  const label=$('adminBuildVersion'),status=$('adminBuildStatus');
@@ -1129,29 +1129,61 @@ $('footballBacktestButton')?.addEventListener('click',async()=>{
 
 // Owner-only informational VIP radar. Does not create football_candidates,
 // does not classify any match VIP, and cannot send to the public channel.
+function renderNearTermScouting(report,container,notice){
+ if(!report)return;
+ if(notice)notice.textContent=`Próximos ${report.near_term?.days||7} días: ${report.near_term?.detected||0} encuentros detectados en MySQL, ${report.near_term?.eligible||0} aptos para análisis informativo y ${report.near_term?.observations_total||0} pendientes de revisión. ${report.near_term?.message||''}`;
+ if(!container)return;
+ container.replaceChildren();
+ for(const match of report.watchlist||[]){
+  const card=document.createElement('div');card.className='football-ai-preview';
+  const head=document.createElement('strong');head.textContent=`${match.home} vs. ${match.away}`;card.append(head);
+  const detail=document.createElement('p');
+  const when=match.kickoff?new Date(match.kickoff).toLocaleString('es-PE',{timeZone:'America/Lima'}):`${match.date||'Fecha pendiente'} (hora sin confirmar)`;
+  detail.textContent=`${match.league} · ${when} · ${match.reason_text||'Pendiente de revisión'}`;card.append(detail);
+  const note=document.createElement('small');note.textContent='En observación: no es una selección VIP ni se enviará como pronóstico aprobado.';card.append(note);
+  container.append(card);
+ }
+ if(!(report.watchlist||[]).length){
+  const info=document.createElement('p');info.textContent=report.near_term?.missing_calendar
+   ?'No se encontraron partidos para los próximos siete días en la base local. Comprueba el calendario y qué fuentes están habilitadas.'
+   :'No hay encuentros adicionales pendientes de revisión en los próximos siete días.';
+  container.append(info);
+ }
+}
 async function renderVipRadar(){
  const label=$('footballVipRadarStatus'),list=$('footballVipRadarList');
  if(!label||!list)return;
- label.textContent='Comprobando próximos encuentros con historial…';list.replaceChildren();
+ label.textContent='Comprobando los próximos siete días y la ventana de 30 días…';list.replaceChildren();
  try{
   const result=await api('/api/admin/football/vip-radar');
   const auto=$('footballVipRadarAuto');if(auto)auto.checked=Boolean(result.enabled);
   const last=result.last?.status?` · Último boletín: ${result.last.status}`:'';
-  label.textContent=`${result.eligible_total} partidos modelados entre 24 horas y 30 días · ${result.counts.without_history} sin historial suficiente${last}. No son pronósticos VIP aprobados.`;
+  const first=result.next_eligible_at?` · Primer modelo apto: ${new Date(result.next_eligible_at).toLocaleString('es-PE',{timeZone:'America/Lima'})} (Perú)`:' · No hay un primer modelo apto';
+  label.textContent=`${result.eligible_total} partidos modelados desde ${result.from_hours} horas hasta ${result.lookahead_days} días · ${result.counts.without_history} sin historial${first}${last}. No son VIP oficiales.`;
   for(const match of result.items||[]){
    const card=document.createElement('div');card.className='football-ai-preview';
    const head=document.createElement('strong');head.textContent=`${match.home} vs ${match.away}`;card.append(head);
-   const info=document.createElement('p');info.textContent=`${match.league} · ${new Date(match.kickoff).toLocaleString('es-PE',{timeZone:'America/Lima'})} (hora Perú) · Historial ${match.quality}/100`;card.append(info);
-   const p=match.probabilities;
-   const probs=document.createElement('p');probs.textContent=`Estimación 1 / X / 2: ${p.home}% / ${p.draw}% / ${p.away}%`;card.append(probs);
+   const info=document.createElement('p');info.textContent=`${match.league} · ${new Date(match.kickoff).toLocaleString('es-PE',{timeZone:'America/Lima'})} (hora Perú) · Calidad del historial ${match.quality}/100`;card.append(info);
+   const pp=match.probabilities;
+   const probs=document.createElement('p');probs.textContent=`Estimación 1 / X / 2: ${pp.home}% / ${pp.draw}% / ${pp.away}%`;card.append(probs);
    if(match.ai){const ai=document.createElement('p');ai.textContent=`Híbrido IA exploratorio 1 / X / 2: ${match.ai.hybrid.home}% / ${match.ai.hybrid.draw}% / ${match.ai.hybrid.away}%`;card.append(ai);}
    const small=document.createElement('small');small.textContent='Análisis informativo · No constituye una apuesta VIP aprobada';card.append(small);
    list.append(card);
   }
-  if(!(result.items||[]).length){const empty=document.createElement('p');empty.textContent='No hay encuentros con modelo e inicio fiable desde 24 horas. Importa más calendario e historial.';list.append(empty);}
+  if(!(result.items||[]).length){const empty=document.createElement('p');empty.textContent='No hay encuentros con modelo y horario fiable a partir de 2 horas. Mira el diagnóstico de siete días debajo.';list.append(empty);}
+  renderNearTermScouting(result,$('footballVipRadarWatchlist'),$('footballVipRadarNearStatus'));
  }catch(error){label.textContent='Radar VIP: '+error.message;}
 }
 $('footballVipRadarPreview')?.addEventListener('click',renderVipRadar);
+$('footballVipRadarRefresh')?.addEventListener('click',async()=>{
+ const btn=$('footballVipRadarRefresh'),label=$('footballVipRadarStatus');
+ btn.disabled=true;label.textContent='Solicitando importación y análisis de calendario; puede tardar y respeta el límite de consultas.';
+ try{
+  const result=await api('/api/admin/football/import-scan',{method:'POST',body:'{}'});
+  label.textContent=result.message||'Actualización iniciada. Vuelve a revisar el radar después de terminar la importación.';
+ }catch(err){label.textContent='No se pudo iniciar la actualización: '+err.message;}
+ finally{btn.disabled=false;}
+});
 $('footballVipRadarSend')?.addEventListener('click',async()=>{
  const btn=$('footballVipRadarSend'),label=$('footballVipRadarStatus');
  if(!confirm('¿Enviar un boletín informativo al canal VIP? No es una selección VIP validada y solo puede enviarse una vez al día.'))return;
@@ -1183,6 +1215,8 @@ $('footballAiForecastButton')?.addEventListener('click',async()=>{
     `${m.status==='promising_holdout'?'Mejoró en la muestra retrospectiva':m.status==='no_improvement'?'No demostró mejora':'Historial insuficiente'} · ${m.available||0} partidos${m.holdout?` · prueba posterior ${m.holdout} partidos · Brier Poisson ${m.holdout_baseline_brier} / híbrido ${m.holdout_hybrid_brier}`:''}`);
   }
   row('Partidos con historial insuficiente',r.missing_history||0);
+  row('Inicio de la búsqueda',`Desde ${r.from_hours||2} horas hasta ${r.lookahead_days||30} días`);
+  row('Calendario en próximos 7 días',`${r.near_term?.detected||0} detectados · ${r.near_term?.eligible||0} con modelo apto para Radar`);
   row('Partidos con modelo disponibles',r.forecasts?.length||0);
   for(const f of (r.forecasts||[])){
    const card=document.createElement('div');card.className='football-ai-preview';
@@ -1197,6 +1231,12 @@ $('footballAiForecastButton')?.addEventListener('click',async()=>{
    list.append(card);
   }
   if(!(r.forecasts||[]).length)row('Sin pronósticos mostrables','Importa encuentros y amplía el historial; los partidos sin modelo no producen predicciones IA.');
+  if((r.watchlist||[]).length){
+   row('Próximos encuentros que todavía no puede analizar la IA','Partidos detectados, pero no aprobados para una predicción con suficiente evidencia:');
+   for(const m of r.watchlist.slice(0,8))row(`${m.home} vs. ${m.away}`,`${m.date||'Fecha pendiente'} · ${m.reason_text}`);
+  }else if(r.near_term?.missing_calendar){
+   row('Cobertura de los próximos 7 días','La base MySQL no contiene partidos próximos detectados para ese período. Activa una fuente compatible e importa el calendario.');
+  }
   row('Seguridad','Herramienta experimental de análisis: no autoriza publicaciones ni garantiza aciertos.');
  }catch(e){notice.textContent=e.message;}finally{button.disabled=false;}
 });

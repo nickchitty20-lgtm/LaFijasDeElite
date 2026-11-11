@@ -7,7 +7,7 @@ export const NATIONAL_COMPETITIONS=Object.freeze([
  {code:'int.euro',name:'Eurocopa',years:[2024,2028],source:'euro',zone:'Europe/London'},
  {code:'int.friendly',name:'Amistosos internacionales',years:[2024,2025,2026],source:'internationals',slug:'friendly'},
  {code:'int.wcqual',name:'Eliminatorias mundialistas',years:[2024,2025,2026],source:'internationals',slug:'fifa_world_cup_qualification'},
- {code:'int.unl',name:'UEFA Nations League',years:[2024,2025],source:'internationals',slug:'uefa_nations_league'},
+ {code:'int.unl',name:'UEFA Nations League',years:[2024,2025,2026],source:'internationals',slug:'uefa_nations_league'},
  {code:'int.concnl',name:'CONCACAF Nations League',years:[2024,2025],source:'internationals',slug:'concacaf_nations_league'},
  {code:'int.copa',name:'Copa América',years:[2024],source:'internationals',slug:'copa_america'},
  {code:'int.afcon',name:'Copa Africana de Naciones',years:[2024,2025,2026],source:'internationals',slug:'african_cup_of_nations'},

@@ -1,3 +1,14 @@
+# Fijas de Élite v3.7.2 — Fechas próximas y diagnóstico de IA
+
+- El rango de investigación de la IA y del Radar VIP cambia de 24 h a **2 h** antes del inicio, hasta 30 días. No afecta las reglas de publicación.
+- El radar expone **near_term** y **watchlist** para los próximos siete días, con los motivos por los que un partido aún no puede modelarse. No se inventan horarios, resultados o probabilidades.
+- Se incluye 2026 entre los años que el importador intenta consultar para la UEFA Nations League; la disponibilidad del archivo queda sujeta al proveedor.
+- **Importación desde el panel:** botón en Radar VIP para ejecutar «Importar y analizar al terminar» y luego volver a revisar qué partidos de los próximos siete días tienen datos.
+- Mantiene el envío a Telegram únicamente para modelos suficientemente respaldados con hora conocida. Nunca envía la lista de observación ni falsea recomendaciones oficiales.
+- Nueva versión de interfaz y aplicación v3.7.2. Conserva `nforce-poisson-1.9` y `nforce-ml-0.1` sin requerir migración de MySQL ni backtest nuevo por versión.
+
+---
+
 # Fijas de Élite v3.7.1 — Cobertura de 30 días y boletín privado Radar VIP
 
 - **Más partidos programados:** escaneo de 7, 14, 21 o 30 días, por defecto 30; la Fuente IV con plan extendido puede consultar el rango completo en una petición. El plan gratuito de API-Football conserva su limitación de fecha; ninguna configuración del código aumenta la cuota del proveedor.

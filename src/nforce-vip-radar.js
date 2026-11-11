@@ -1,37 +1,87 @@
 /**
  * Private, informational VIP radar (never a published premium pick).
- * Only known scheduled kickoff, not-started fixture, ≥24h lead and a real
- * historical model are eligible. ML is displayed only if properly fitted.
- * No requirement on a bookmaker price, and no promise of a profitable bet.
+ * Discover and EXPLAIN the next seven days, including incomplete fixtures.
+ * Only fixtures with a known future kickoff, no disqualifying live state,
+ * sufficient real history and quality are eligible for a Telegram bulletin.
+ * The radar never bypasses the official VIP publication gate.
  */
-import {estimateMatch,fulltime} from './nforce-model.js';
+import {estimateMatch,modelReadiness,fulltime} from './nforce-model.js';
 import {predictAiForecast} from './nforce-ml.js';
 import {h} from './telegram-bridge.js';
 
-export const VIP_RADAR_MIN_LEAD_HOURS=24;
+// A 24-hour minimum hid tomorrow's real matches when the owner checked
+// the panel in the afternoon. Shorten only the NON-OFFICIAL scouting radar.
+export const VIP_RADAR_MIN_LEAD_HOURS=2;
 export const VIP_RADAR_MAX_DAYS=30;
+export const VIP_RADAR_NEAR_DAYS=7;
 export const VIP_RADAR_MIN_QUALITY=55;
 const DAY=86_400_000;
 const pct=n=>Number.isFinite(Number(n))?`${Number(n).toFixed(1)}%`:'—';
+const prettyReason=Object.freeze({
+ unknown_start:'Fecha conocida, pero falta confirmar la hora del partido',
+ too_close:'Partido a menos de 2 horas: no se envía al boletín',
+ without_history:'No hay historial suficiente para calcular un modelo',
+ league_history:'Faltan resultados históricos de la competición',
+ team_history:'Faltan partidos históricos de uno o ambos equipos',
+ stale_form:'El historial reciente no cumple el requisito del modelo',
+ invalid_fixture:'Datos del encuentro incompletos o inconsistentes',
+ low_quality:'Modelo calculado, pero la calidad del historial es insuficiente'
+});
+const validDay=x=>/^\d{4}-\d{2}-\d{2}$/.test(String(x||''))&&Number.isFinite(Date.parse(String(x)+'T00:00:00Z'));
 
-export function prepareVipRadar(matches,{now=new Date(),days=VIP_RADAR_MAX_DAYS,models={},limit=5}={}){
- const time=now.getTime(),historical=matches.filter(fulltime);
- const chosen=[],counts={future:0,unknown_start:0,within_window:0,without_history:0,low_quality:0,non_ns:0};
+export function prepareVipRadar(matches,{now=new Date(),days=VIP_RADAR_MAX_DAYS,models={},limit=8}={}){
+ const time=now.getTime(),historical=matches.filter(fulltime),today=now.toISOString().slice(0,10);
+ const cutoff=time+days*DAY,nearCutoff=time+VIP_RADAR_NEAR_DAYS*DAY;
+ const chosen=[],watch=[];
+ const counts={future:0,unknown_start:0,within_window:0,without_history:0,low_quality:0,non_ns:0,
+  too_close:0,near_term_detected:0,near_term_eligible:0,near_term_unknown_start:0,
+  near_term_without_history:0,near_term_low_quality:0};
+ function observe(fixture,reason,stamp,quality=null){
+  if(stamp>nearCutoff||stamp<time-DAY)return;
+  const date=validDay(fixture.date)?String(fixture.date):Number.isFinite(stamp)?new Date(stamp).toISOString().slice(0,10):null;
+  watch.push({fixture_id:String(fixture.id),home:String(fixture.home||''),away:String(fixture.away||''),
+   league:String(fixture.league||fixture.competition||''),date,
+   kickoff:fixture.scheduled_time_known&&Number.isFinite(Date.parse(String(fixture.kickoff||'')))?new Date(fixture.kickoff).toISOString():null,
+   status:'needs_review',reason,reason_text:prettyReason[reason]||prettyReason.without_history,
+   quality,official_vip:false,_stamp:stamp});
+ }
  for(const fixture of matches){
   if(fixture.home_goals!==null&&fixture.home_goals!==undefined||fixture.away_goals!==null&&fixture.away_goals!==undefined)continue;
-  const kickoff=Date.parse(String(fixture.kickoff||''));
   if(fixture.live_status&&fixture.live_status!=='NS'){counts.non_ns++;continue;}
-  if(!fixture.scheduled_time_known||!Number.isFinite(kickoff)){
-   if(String(fixture.date||'')>=now.toISOString().slice(0,10))counts.unknown_start++;
+  const kickoff=Date.parse(String(fixture.kickoff||''));
+  const known=Boolean(fixture.scheduled_time_known&&Number.isFinite(kickoff));
+  if(!known){
+   if(!validDay(fixture.date)||String(fixture.date)<today)continue;
+   const dateMs=Date.parse(fixture.date+'T12:00:00Z');
+   if(dateMs>cutoff+DAY)continue;
+   counts.unknown_start++;
+   if(dateMs<=nearCutoff){counts.near_term_detected++;counts.near_term_unknown_start++;observe(fixture,'unknown_start',dateMs);}
    continue;
   }
   if(kickoff<=time)continue;
   counts.future++;
-  if(kickoff<time+VIP_RADAR_MIN_LEAD_HOURS*3_600_000||kickoff>time+days*DAY)continue;
+  if(kickoff>cutoff)continue;
+  const near=kickoff<=nearCutoff;
+  if(near)counts.near_term_detected++;
+  if(kickoff<time+VIP_RADAR_MIN_LEAD_HOURS*3_600_000){
+   counts.too_close++;if(near)observe(fixture,'too_close',kickoff);continue;
+  }
   counts.within_window++;
   const forecast=estimateMatch(fixture,historical,kickoff);
-  if(!forecast){counts.without_history++;continue;}
-  if(forecast.quality<VIP_RADAR_MIN_QUALITY){counts.low_quality++;continue;}
+  if(!forecast){
+   counts.without_history++;
+   if(near){
+    counts.near_term_without_history++;
+    const readiness=modelReadiness(fixture,historical,kickoff);
+    const reason=prettyReason[readiness.reason]?readiness.reason:'without_history';
+    observe(fixture,reason,kickoff);
+   }
+   continue;
+  }
+  if(forecast.quality<VIP_RADAR_MIN_QUALITY){
+   counts.low_quality++;if(near){counts.near_term_low_quality++;observe(fixture,'low_quality',kickoff,forecast.quality);}
+   continue;
+  }
   const context=forecast.history_group==='selecciones'?'national':'club';
   const learned=predictAiForecast(forecast,models[context]);
   const mlOk=learned?.status==='promising_holdout';
@@ -41,15 +91,23 @@ export function prepareVipRadar(matches,{now=new Date(),days=VIP_RADAR_MAX_DAYS,
    probabilities:forecast.probabilities,
    ai:mlOk?{hybrid:learned.hybrid,holdout:learned.holdout,holdout_delta:learned.holdout_delta}:null,
    state:'analysis_only',official_vip:false});
+  if(near)counts.near_term_eligible++;
  }
- // Prioritise the next eligible day, then quality and validated AI evidence;
- // deterministic ordering allows the owner to compare subsequent runs.
  chosen.sort((a,b)=>{
   const dayA=a.kickoff.slice(0,10),dayB=b.kickoff.slice(0,10);
   if(dayA!==dayB)return dayA.localeCompare(dayB);
   return (b.quality+Number(Boolean(b.ai))*3)-(a.quality+Number(Boolean(a.ai))*3)||a.kickoff.localeCompare(b.kickoff);
  });
+ watch.sort((a,b)=>a._stamp-b._stamp||a.home.localeCompare(b.home));
+ const observations=watch.slice(0,12).map(({_stamp,...entry})=>entry);
  return {items:chosen.slice(0,Math.min(Math.max(1,Math.floor(limit)),10)),eligible_total:chosen.length,
+  watchlist:observations,near_term:{days:VIP_RADAR_NEAR_DAYS,detected:counts.near_term_detected,
+   eligible:counts.near_term_eligible,observations_total:watch.length,
+   missing_calendar:counts.near_term_detected===0,
+   message:counts.near_term_detected===0?'La base de datos no contiene partidos próximos en esta ventana. Revisa Fuentes deportivas y la cobertura de las APIs.':
+    counts.near_term_eligible===0?'Hay partidos próximos, pero ninguno supera por ahora los requisitos del Radar. Revisa las razones por encuentro.':
+    `${counts.near_term_eligible} encuentros próximos tienen modelo y hora conocida.`},
+  next_eligible_at:chosen[0]?.kickoff||null,
   counts,from_hours:VIP_RADAR_MIN_LEAD_HOURS,lookahead_days:days,
   official_vip_count:0,disclaimer:'Análisis previo exclusivo. No constituye una selección VIP validada ni una recomendación de apuesta.'};
 }

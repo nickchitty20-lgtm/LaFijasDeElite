@@ -1,3 +1,15 @@
+# Actualización v3.7.2 — IA y Radar VIP: revisión de los próximos 7 días
+
+- **Corrección del salto de fechas:** el módulo IA y el Radar informativo admiten partidos desde 2 horas antes del comienzo (antes se ocultaban todos los que estaban a menos de 24 h). Los pronósticos GOLD/VIP oficiales NO relajan sus comprobaciones.
+- **Diagnóstico por encuentro de los próximos siete días:** distingue calendario ausente de MySQL, encuentro sin hora fiable, historial insuficiente, calidad baja y partido demasiado próximo. Estos encuentros en observación nunca se publican ni se envían como VIP validados.
+- **Selecciones nacionales:** el importador también intenta los archivos de Nations League de 2026; si el archivo no existe o la fuente no tiene licencia/cobertura, el panel lo informa en importación. No inventa encuentros ni horarios.
+- **Acceso directo:** botón «Actualizar calendario y buscar partidos» dentro del Radar VIP; utiliza el importador y escáner existentes, con sus límites y pausas de seguridad. No obliga a configurar APIs nuevas.
+- **Vista IA:** muestra el rango real usado, un resumen de próximos siete días y ejemplos del motivo por el que no aparecen predicciones cercanas. Las probabilidades IA solo se muestran si existe entrenamiento y prueba retrospectiva; el modelo Poisson continúa siendo independiente.
+- **Sin cambios en pagos, VIP/GOLD, permisos, historial de clientes, MySQL o bot Telegram.** Reinicia Railway con el ZIP, importa datos, revisa **IA experimental** y **Radar VIP**; si los próximos siete días tienen 0 encuentros en MySQL, activa una API con cobertura real y vuelve a importar. El plan gratuito de algunas APIs devuelve muy pocos partidos.
+- Las pruebas locales simulan fuentes y base de datos: no acreditan cobertura real en Railway ni garantizan pronósticos nuevos.
+
+---
+
 # Actualización v3.7.1 — Radar VIP y cobertura de 30 días
 
 La búsqueda manual cubre 7, 14, 21 o 30 días. El rastreo automático adopta 30 días por defecto, salvo si `NFORCE_SCAN_DAYS` continúa fijado a 21 en Railway (actualízala a 30). La Fuente IV necesita un plan de API compatible para consultar el rango completo: el plan gratuito solo consulta mañana en UTC.

@@ -20,7 +20,7 @@ import {importFootballDataFixtures,FOOTBALL_DATA_COMPETITIONS} from './football-
 import {readWideSource,saveWideSource} from './nforce-source-settings.js';
 import {importWideCalendar,WIDE_SUPPORTED_COMPETITIONS} from './api-football-wide.js';
 import {predictAiForecast,AI_MODEL_VERSION} from './nforce-ml.js';
-import {prepareVipRadar,vipRadarTelegramMessage,VIP_RADAR_MAX_DAYS} from './nforce-vip-radar.js';
+import {prepareVipRadar,vipRadarTelegramMessage,VIP_RADAR_MIN_LEAD_HOURS,VIP_RADAR_MAX_DAYS} from './nforce-vip-radar.js';
 import {telegramApi,inspectFreeTelegramChannel} from './telegram-bridge.js';
 
 const DAY=86400000;
@@ -310,7 +310,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
   const [[backtest]]=await db.query('SELECT model_version,created_at,metrics_json FROM nforce_backtests ORDER BY id DESC LIMIT 1');
   const valid=backtest?.model_version===MODEL_VERSION&&now().getTime()-asUtc(backtest.created_at).getTime()<8*DAY;
   const models=valid?reportLimited(backtest.metrics_json).ai_models||{}:{};
-  const preview=prepareVipRadar(all,{now:now(),days:VIP_RADAR_MAX_DAYS,models,limit:5});
+  const preview=prepareVipRadar(all,{now:now(),days:VIP_RADAR_MAX_DAYS,models,limit:8});
   return {...preview,ai_validation_current:Boolean(valid),generated_at:now().toISOString()};
  }
  async function vipRadarEnabled(){
@@ -336,7 +336,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     if(!verified.ready||verified.chat_id===target)return {sent:false,reason:'No se pudo confirmar que el destino VIP sea distinto del oficial.'};
    }
    const report=await vipRadarPreview();
-   if(!report.items.length)return {sent:false,reason:'No existen partidos con historial suficiente y horario conocido entre 24 horas y 30 días.'};
+   if(!report.items.length)return {sent:false,reason:'No existen partidos con historial suficiente y horario conocido entre 2 horas y 30 días. Revisa el diagnóstico de próximos 7 días.'};
    const day=now().toISOString().slice(0,10);
    // SQL unique day: one bulletin per day even across Railway replicas.
    const [claim]=await conn.execute("INSERT IGNORE INTO nforce_vip_radar_dispatches(dispatch_day,status) VALUES (?, 'reserved')",[day]);
@@ -576,7 +576,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
    const models=current?(metrics.ai_models||{}):{};
    const all=await loadMatches(),t=now().getTime(),historical=all.filter(fulltime);
    const future=all.filter(m=>m.scheduled_time_known&&m.kickoff&&m.home_goals==null&&m.away_goals==null&&
-      (!m.live_status||m.live_status==='NS')&&Date.parse(m.kickoff)>t+24*3600000&&Date.parse(m.kickoff)<=t+VIP_RADAR_MAX_DAYS*DAY)
+      (!m.live_status||m.live_status==='NS')&&Date.parse(m.kickoff)>t+VIP_RADAR_MIN_LEAD_HOURS*3600000&&Date.parse(m.kickoff)<=t+VIP_RADAR_MAX_DAYS*DAY)
     .sort((a,b)=>Date.parse(a.kickoff)-Date.parse(b.kickoff)).slice(0,160);
    const predictions=[];let missingHistory=0;
    for(const fixture of future){
@@ -589,13 +589,15 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
      poisson:forecast.probabilities,ai:learned,verified_live:Boolean(fixture.schedule_verified_at&&fixture.live_status==='NS')});
     if(predictions.length>=30)break;
    }
+   const nearReport=prepareVipRadar(all,{now:now(),models,limit:8});
    const safeModel=part=>part?{status:part.status,available:part.available,required:part.required,
     training:part.training,holdout:part.holdout,holdout_baseline_brier:part.holdout_baseline_brier,
     holdout_ai_brier:part.holdout_ai_brier,holdout_hybrid_brier:part.holdout_hybrid_brier,
     holdout_delta:part.holdout_delta}:null;
    res.json({version:AI_MODEL_VERSION,poisson_version:MODEL_VERSION,validated_backtest:current,
     models:{club:safeModel(models.club),national:safeModel(models.national)},
-    future_examined:future.length,missing_history:missingHistory,forecasts:predictions,from_hours:24,lookahead_days:VIP_RADAR_MAX_DAYS,
+    future_examined:future.length,missing_history:missingHistory,forecasts:predictions,from_hours:VIP_RADAR_MIN_LEAD_HOURS,lookahead_days:VIP_RADAR_MAX_DAYS,
+    near_term:nearReport.near_term,watchlist:nearReport.watchlist,
     publication_authorized:false,
     message:!current||!metrics.ai_models?'Ejecuta Validar modelo (backtest) para entrenar la IA con resultados reales.':
      'Predicciones exploratorias 1X2. Ni la IA ni el híbrido autorizan publicar sin los filtros habituales.'});
