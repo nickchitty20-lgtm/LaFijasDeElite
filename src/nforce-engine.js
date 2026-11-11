@@ -2,7 +2,7 @@ import {publicAnalysisText} from './public-branding.js';
 import {freeTelegramDestination} from './telegram-public.js';
 import {allowedDatasets,nationalDatasets,NATIONAL_COMPETITIONS,fetchOpenFootball,LEAGUES,NFORCE_PROVIDER} from './nforce-data.js';
 import {diagnoseNforceCalendar} from './nforce-calendar-health.js';
-import {estimateMatch,modelReadiness,makeCandidate,walkForwardBacktest,fulltime,MODEL_VERSION,VIP_RISK_POLICY} from './nforce-model.js';
+import {estimateMatch,modelReadiness,makeCandidate,walkForwardBacktest,fulltime,MODEL_VERSION,MODEL_SETTINGS,VIP_RISK_POLICY,vipSampleGaps} from './nforce-model.js';
 import {canAutoPublishCandidate} from './football-publication-policy.js';
 import {evaluateVipEvidence,VIP_POLICY} from './nforce-vip-gate.js';
 import {summarizeVipDatabase} from './nforce-vip-diagnostic.js';
@@ -159,13 +159,32 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     const nextBeyondWindow=futureWithTimes.find(x=>Date.parse(x.kickoff)>=horizon);
     let models=0,drafts=0,underMin=0,rejected=0,alreadyPresent=0,updatedDrafts=0,reopenedOldDiscards=0;
     const existingByStatus={draft:0,discarded:0,published:0,other:0};
-    const examples=[];const missingReasons={};const filteredExamples=[];
+    const examples=[];const missingReasons={};const filteredExamples=[];const modelMissingExamples=[];
     const perCompetition={};const nearMisses=[];
     const marketCounts={};const categoryCounts={free:0,gold:0,vip:0};const vipRejections={};
+    const vipMissingByRequirement={};const vipMissingExamples=[];let vipGapFixtures=0;
     for(const m of future){
      const model=estimateMatch(m,usable,Date.parse(m.kickoff));
-     if(!model){underMin++;tallyCompetition(perCompetition,m,'insufficient');const why=modelReadiness(m,usable,Date.parse(m.kickoff));missingReasons[why.reason]=(missingReasons[why.reason]||0)+1;if(examples.length<4)examples.push(`${m.home} vs ${m.away}: ${why.reason} (liga ${why.sample?.league||0}, local ${why.sample?.home||0}, visita ${why.sample?.away||0})`);continue;}
+     if(!model){
+      underMin++;tallyCompetition(perCompetition,m,'insufficient');
+      const why=modelReadiness(m,usable,Date.parse(m.kickoff));
+      missingReasons[why.reason]=(missingReasons[why.reason]||0)+1;
+      if(examples.length<4)examples.push(`${m.home} vs ${m.away}: ${why.reason} (liga ${why.sample?.league||0}, local ${why.sample?.home||0}, visita ${why.sample?.away||0})`);
+      if(modelMissingExamples.length<12)modelMissingExamples.push({match:`${m.home} vs ${m.away}`,league:m.league,
+       reason:why.reason,sample:why.sample||null,required:{league:MODEL_SETTINGS.minLeague,home:MODEL_SETTINGS.minTeam,away:MODEL_SETTINGS.minTeam,
+        fresh_days:String(m.competition||'').startsWith('int.')?180:MODEL_SETTINGS.freshDays}});
+      continue;
+     }
      models++;
+     // Count missing evidence once per modeled fixture. VIP market rejection
+     // counters below are separate and can contain nine entries per fixture.
+     const missingVip=vipSampleGaps(model);
+     if(missingVip.length){
+      vipGapFixtures++;
+      for(const item of missingVip)vipMissingByRequirement[item.code]=(vipMissingByRequirement[item.code]||0)+1;
+      if(vipMissingExamples.length<10)vipMissingExamples.push({match:`${m.home} vs ${m.away}`,league:m.league,
+       kickoff:m.kickoff,missing:missingVip});
+     }
      const marketDiagnostics={};const candidate=classifyAutomaticCandidate(makeCandidate(m,model,marketDiagnostics));
      for(const [reason,total] of Object.entries(marketDiagnostics.vip_rejections||{}))vipRejections[reason]=(vipRejections[reason]||0)+total;
      if(!candidate){rejected++;tallyCompetition(perCompetition,m,'filtered');
@@ -248,7 +267,10 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
      near_misses:nearMisses,reopened_old_discards:reopenedOldDiscards,reopened_incompatible_discards:reopenedOldDiscards,already_present:alreadyPresent,existing_by_status:existingByStatus,
      updated_existing_drafts:updatedDrafts,eligible:drafts+reopenedOldDiscards+alreadyPresent,
      eligible_by_category:categoryCounts,eligible_by_market:marketCounts,vip_rejections_by_market_reason:vipRejections,
-     insufficient_history:underMin,insufficient_reasons:missingReasons,below_filters:rejected,rejection_examples:examples,filter_examples:filteredExamples,
+     vip_sample_gaps_by_requirement:vipMissingByRequirement,vip_sample_gap_examples:vipMissingExamples,
+     // Counts describe modeled fixtures, not nine markets per fixture.
+     vip_sample_gap_fixtures:vipGapFixtures,
+     insufficient_history:underMin,insufficient_reasons:missingReasons,model_missing_examples:modelMissingExamples,below_filters:rejected,rejection_examples:examples,filter_examples:filteredExamples,
      fixtures_without_time:all.filter(x=>x.home_goals===null&&!x.scheduled_time_known&&x.date>=now().toISOString().slice(0,10)).length,
      note_on_quality:'El indicador de calidad de muestra NO representa el porcentaje real de aciertos.',
      note:drafts||reopenedOldDiscards?`${drafts} propuestas nuevas y ${reopenedOldDiscards} descartadas en versiones anteriores recuperadas; revísalas antes de aprobar.`:future.length===0?

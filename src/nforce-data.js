@@ -35,11 +35,15 @@ export const LEAGUES=Object.freeze([
 export function seasonForDate(date=new Date()){
  const y=date.getUTCFullYear();return (date.getUTCMonth()>=6?y:y-1);
 }
+// Three season sets increase the genuinely available historical sample, not
+// predicted outcomes. All paths remain fixed and allowlisted by this function.
+export const HISTORICAL_SEASONS=3;
 export function allowedDatasets(date=new Date()){
  const start=seasonForDate(date),year=date.getUTCFullYear();
  return LEAGUES.flatMap(l=>{
-  const seasons=l.calendarYear?[year-1,year].map(y=>String(y)):
-   [start-1,start].map(y=>`${y}-${String((y+1)%100).padStart(2,'0')}`);
+  const years=Array.from({length:HISTORICAL_SEASONS},(_,i)=>(l.calendarYear?year:start)-(HISTORICAL_SEASONS-1-i));
+  const seasons=l.calendarYear?years.map(y=>String(y)):
+   years.map(y=>`${y}-${String((y+1)%100).padStart(2,'0')}`);
   return seasons.map(season=>({...l,season,path:`${season}/${l.code}.json`}));
  });
 }

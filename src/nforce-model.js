@@ -7,8 +7,8 @@ import {isNationalCompetition} from './nforce-internationals.js';
 const DAY=86400000;
 const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
 const round=(x,n=1)=>Number(x.toFixed(n));
-export const MODEL_VERSION='nforce-poisson-1.6';
-export const MODEL_SETTINGS=Object.freeze({lookbackDays:540,teamGames:30,leagueGames:250,minTeam:7,minLeague:36,freshDays:90,rho:-0.07});
+export const MODEL_VERSION='nforce-poisson-1.7';
+export const MODEL_SETTINGS=Object.freeze({lookbackDays:900,teamGames:30,leagueGames:250,minTeam:7,minLeague:36,freshDays:90,rho:-0.07});
 
 export function fulltime(row){
  if(!row||row.home_goals==null||row.away_goals==null||row.home_goals===''||row.away_goals==='')return false;
@@ -163,6 +163,36 @@ export const VIP_RISK_POLICY=Object.freeze({minTeam:20,minLeague:150,minVenue:6,
  maxFormAgeDays:28,minQuality:86,maxModelDisagreement:9,maxStressDrop:13,minStressed:76,
  minNominal:{'1x2':74,over15:82,over25:79,under25:79,bttsYes:79,bttsNo:79,'1X':86,'X2':86,'12':88},
  minBaselineEdge:8});
+/** Exact VIP sample prerequisites for one fixture, not market-level counts.
+ * Read only: identifies which requirements remain unfulfilled. Does NOT
+ * alter thresholds, scores, or publication authorization.
+ */
+export function vipSampleGaps(model){
+ const risk=VIP_RISK_POLICY,s=model?.sample||{};
+ const gaps=[];
+ const minimum=(code,label,raw,required)=>{
+  const value=raw==null||raw===''?null:Number(raw);
+  if(value===null||!Number.isFinite(value)||value<required)
+   gaps.push({code,label,current:Number.isFinite(value)?value:null,required});
+ };
+ const maximum=(code,label,raw,limit)=>{
+  const value=raw==null||raw===''?null:Number(raw);
+  if(value===null||!Number.isFinite(value)||value>limit)
+   gaps.push({code,label,current:Number.isFinite(value)?value:null,required:limit,comparison:'max'});
+ };
+ minimum('quality','Calidad de muestra',model?.quality,risk.minQuality);
+ minimum('home_matches','Partidos previos del local',s.home,risk.minTeam);
+ minimum('away_matches','Partidos previos del visitante',s.away,risk.minTeam);
+ minimum('league_matches','Partidos de competición',s.league,risk.minLeague);
+ minimum('home_venue','Partidos del local en casa',s.home_venue,risk.minVenue);
+ minimum('away_venue','Partidos del visitante fuera',s.away_venue,risk.minVenue);
+ minimum('home_effective','Muestra efectiva del local',s.home_effective,risk.minEffective);
+ minimum('away_effective','Muestra efectiva del visitante',s.away_effective,risk.minEffective);
+ maximum('home_form_days','Días desde último partido del local',s.age_home_days,risk.maxFormAgeDays);
+ maximum('away_form_days','Días desde último partido del visitante',s.age_away_days,risk.maxFormAgeDays);
+ if(model?.opponent_model?.active!==true)gaps.push({code:'opponent_model',label:'Ajuste de fuerza de rivales',current:null,required:'disponible'});
+ return gaps;
+}
 const marketScore=(key,grid,selected)=>{
  let score=0;
  for(const c of grid){const h=c.home,a=c.away;
@@ -178,13 +208,7 @@ export function vipRiskAssessment(option,model){
  const fail=(code)=>({approved:false,code});
  const sample=model?.sample||{},risk=VIP_RISK_POLICY;
  if(!model||!option||!Object.hasOwn(risk.minNominal,option.key))return fail('invalid_market');
- if(!Number.isFinite(Number(model.quality))||Number(model.quality)<risk.minQuality||
-  Number(sample.home)<risk.minTeam||Number(sample.away)<risk.minTeam||Number(sample.league)<risk.minLeague||
-  Number(sample.home_venue)<risk.minVenue||Number(sample.away_venue)<risk.minVenue||
-  Number(sample.home_effective)<risk.minEffective||Number(sample.away_effective)<risk.minEffective||
-  !Number.isFinite(Number(sample.age_home_days))||!Number.isFinite(Number(sample.age_away_days))||
-  Number(sample.age_home_days)>risk.maxFormAgeDays||Number(sample.age_away_days)>risk.maxFormAgeDays||
-  model.opponent_model?.active!==true)return fail('insufficient_recent_evidence');
+ if(vipSampleGaps(model).length)return fail('insufficient_recent_evidence');
  const lh=Number(model.lambda?.home),la=Number(model.lambda?.away);
  const oldH=Number(model.previous_lambda?.home),oldA=Number(model.previous_lambda?.away);
  if(![lh,la,oldH,oldA].every(v=>Number.isFinite(v)&&v>=0.3&&v<=3.6))return fail('missing_goal_sensitivity');

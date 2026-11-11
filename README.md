@@ -1,3 +1,13 @@
+# Fijas de Élite v3.6.7 — Más historial y auditoría detallada del filtro VIP
+
+- El importador histórico consulta **tres temporadas de clubes** (antes dos) para las 20 competiciones autorizadas. Los archivos inexistentes se informan como faltantes; no se crean resultados artificiales. Se mantienen las mismas fuentes y reglas de licencia.
+- El horizonte de análisis de clubes pasa de **540 a 900 días** para aprovechar resultados efectivamente importados, sin usar encuentros posteriores al inicio del partido analizado. La frescura exigida para crear un modelo sigue en 90 días y los umbrales específicos VIP permanecen intactos.
+- Modelo **nforce-poisson-1.7**: debido al mayor horizonte de entrenamiento, se debe ejecutar **Validar modelo (backtest)** de nuevo. Los borradores de un modelo anterior deben reanalizarse; jamás se publican por compatibilidad forzada.
+- En **Análisis automático → ¿Por qué todavía no aparece ninguna VIP?**, nuevo desglose por partido de muestra insuficiente: cantidad de partidos del equipo, partidos de liga, local en casa, visitante fuera, muestra efectiva, actualidad y calidad. Los contadores por partido se separan de los 9 mercados por encuentro.
+- Se mantiene el cálculo Bayesiano local/visitante existente para evitar sobreponderar muestras pequeñas. No se rebajaron umbrales, ni se inventó una mejora de acierto; importar tres temporadas puede tardar más y algunos archivos pueden no existir.
+- El flujo **Fuentes deportivas → Importar y analizar al terminar** importa primero el historial nuevo y después reevalúa borradores *activos* a través del escaneo existente. Los descartes manuales, las publicaciones y los pagos permanecen inalterados.
+- Actualiza mediante Railway, pulsa **Importar y analizar al terminar** y luego **Validar modelo (backtest)**. Consulta el diagnóstico VIP actualizado. La conexión real con MySQL y los proveedores debe confirmarse en Railway.
+
 # Fijas de Élite 3.6.6 — Diagnóstico de ausencia de VIP
 
 - Nueva sección **Análisis automático → ¿Por qué todavía no aparece ninguna VIP?** (solo propietario).

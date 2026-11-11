@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 let currentAdminRole='';
-const ADMIN_PANEL_BUILD='3.6.6';
+const ADMIN_PANEL_BUILD='3.6.7';
 // Diagnose a partial/old Railway deployment instead of silently rendering stale UI.
 async function checkAdminBuild(){
  const label=$('adminBuildVersion'),status=$('adminBuildStatus');
@@ -969,6 +969,18 @@ async function loadFootballVipAudit(){
   if(r.scan.available){
    add('Último escaneo: partidos / con modelo / VIP',`${r.scan.fixtures_in_window} / ${r.scan.modeled} / ${r.scan.eligible_vip}`);
    for(const reason of r.scan.rejection_by_market.slice(0,6))add(`Filtro VIP: ${reason.label}`,`${reason.count} mercados evaluados (no partidos únicos)`);
+   const names={quality:'Calidad',home_matches:'Historial local',away_matches:'Historial visitante',league_matches:'Historial de liga',home_venue:'Local en casa',away_venue:'Visitante fuera',home_effective:'Muestra efectiva local',away_effective:'Muestra efectiva visitante',home_form_days:'Actualidad local',away_form_days:'Actualidad visitante',opponent_model:'Ajuste de rivales'};
+   if(r.scan.sample_gap_fixtures) add('Partidos con requisitos VIP pendientes',`${r.scan.sample_gap_fixtures} partidos con modelo, no mercados`);
+   for(const gap of r.scan.sample_gaps_by_requirement||[])add(`Requisito VIP: ${names[gap.code]||gap.code}`,`${gap.count} partidos diferentes`);
+   const readiness={league_history:'No alcanza el historial de competición',team_history:'Falta historial de al menos un equipo',stale_form:'El último partido de un equipo es demasiado antiguo',invalid_fixture:'Datos del encuentro insuficientes'};
+   for(const item of (r.scan.model_missing_examples||[]).slice(0,10)){
+    const s=item.sample||{},q=item.required||{};
+    add(`Sin modelo: ${item.match}`,`${readiness[item.reason]||item.reason}. Historial local ${s.home??'—'}/${q.home??'—'}, visitante ${s.away??'—'}/${q.away??'—'}, competición ${s.league??'—'}/${q.league??'—'}. Para clubes, también se exige un partido reciente.`);
+   }
+   for(const item of (r.scan.sample_gap_examples||[]).slice(0,8)){
+    const deficits=(item.missing||[]).map(x=>`${x.label}: ${x.current==null?'sin dato':x.current} / ${x.comparison==='max'?'máximo ':'mínimo '}${x.required}`).join(' · ');
+    add(`Partido: ${item.match}`,deficits||'Sin carencias de muestra');
+   }
   }else add('Escaneo reciente',r.scan.reason);
   for(const [reason,count] of Object.entries(r.validation_reasons))add(`Validación: ${reason}`,`${count} borradores VIP`);
   for(const example of r.examples)add('Ejemplo bloqueado',`${example.match} · ${example.market}: ${example.reason}`);

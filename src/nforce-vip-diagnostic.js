@@ -38,9 +38,14 @@ export function summarizeVipScan(scan){
  return {available:true,fixtures_in_window:count(scan.fixtures_in_window),modeled:count(scan.modeled),
   eligible_vip:count(scan.eligible_by_category?.vip),eligible_gold:count(scan.eligible_by_category?.gold),
   insufficient_history:count(scan.insufficient_history),
+  model_missing_examples:Array.isArray(scan.model_missing_examples)?scan.model_missing_examples.slice(0,12):[],
   rejected:count(scan.below_filters),
   rejection_by_market:Object.entries(rejection).map(([code,total])=>({code,label:VIP_REJECTION_DESCRIPTIONS[code]||code,count:count(total)}))
     .sort((a,b)=>b.count-a.count),
+  sample_gap_fixtures:count(scan.vip_sample_gap_fixtures),
+  sample_gaps_by_requirement:Object.entries(scan.vip_sample_gaps_by_requirement||{})
+    .map(([code,total])=>({code,count:count(total)})).sort((a,b)=>b.count-a.count),
+  sample_gap_examples:Array.isArray(scan.vip_sample_gap_examples)?scan.vip_sample_gap_examples.slice(0,10):[],
   // Only models available for analysis can become VIP. Each model tests nine
   // markets, so do NOT add per-market rejection counts as unique matches.
   meaning:'Los rechazos por mercado pueden repetirse dentro de un mismo partido. No son apuestas ni resultados.'};
@@ -87,7 +92,7 @@ export function summarizeVipDatabase({rows=[],total={},validation=null,scan=null
   summary.next_step='Revisar el histórico por liga y equipo; ampliar calendario no crea historial.';
  }else if(scanData.eligible_vip===0){
   summary.diagnosis='Se calcularon modelos, pero ninguno alcanzó los filtros de riesgo VIP.';
-  summary.next_step='Revisar los rechazos por mercado. Mantener el filtro y esperar encuentros con mejor evidencia.';
+  summary.next_step='Consulta qué muestra falta a cada partido; importa histórico ampliado y reanaliza. No se rebajan los filtros VIP.';
  }else{
   summary.diagnosis='El escaneo identificó VIP, pero no hay borradores VIP actualmente activos: pueden estar publicados, descartados o haber cambiado al reanalizar.';
   summary.next_step='Revisar propuestas publicadas, descartadas y pendientes.';
