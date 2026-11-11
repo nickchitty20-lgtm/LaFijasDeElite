@@ -202,6 +202,8 @@ export async function maybeSendCommunityNotice(p,env=process.env,db,{channelUser
 }
 
 export async function sendPredictionToTelegram(p,env=process.env,{db=null}={}){
+ // GOLD full picks must NEVER be sent to the public channel by this generic route.
+ if(p?.visibility==='gold')return {state:'not_configured'};
  const publicChat=freeTelegramDestination(env);
  const vipChat=env.TELEGRAM_VIP_CHAT_ID;
  if(!env.TELEGRAM_BOT_TOKEN)return {state:'not_configured'};

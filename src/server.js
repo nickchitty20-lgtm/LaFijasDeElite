@@ -15,7 +15,8 @@ import {initializeDatabase} from './init-db.js';
 import {buildMembershipSummary} from './membership-summary.js';
 import {isBlacklisted,roleRank,blockedAccountResponse} from './account-policy.js';
 import {getVipEntitlement,getGoldEntitlement,effectiveVipSql} from './vip-access.js';
-import {queueGoldPrediction,installGoldDeliveryWorker} from './gold-telegram.js';
+import {installGoldDeliveryWorker} from './gold-telegram.js';
+import {publishGoldTelegram} from './gold-public-announcement.js';
 import {manualVipPeriod} from './manual-vip.js';
 import {evaluateMembershipArchive} from './membership-archive-policy.js';
 import {paypalReadiness,validatePaypalCapture,refundState,usdCents,captureIdFromRefund} from './paypal-rules.js';
@@ -33,7 +34,7 @@ import {publicAnalysisText} from './public-branding.js';
 import {publicPerformanceFilters,performanceWhere,summaryFromGroups,publicRecentResults} from './performance-stats.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
-const APP_VERSION = '3.5.3';
+const APP_VERSION = '3.5.4';
 const app = express();
 let telegramVipControl=null;
 let notificationControl=null;
@@ -277,8 +278,9 @@ app.get('/api/admin/telegram/gold-status',authenticate,async(req,res)=>{
  res.json({bot_configured:!!process.env.TELEGRAM_BOT_TOKEN,counts:Object.fromEntries(rows.map(x=>[x.status,Number(x.total)])),explanation:'Los mensajes interrumpidos o fallidos no se reenvían automáticamente para evitar duplicados.'});}
  catch(e){res.status(503).json({error:'No se pudo leer el estado GOLD'});}
 });
-// FREE picks and VIP previews go ONLY to the FREE channel; never to the discussion group.
-const sendTelegram=async(p,env,opts={})=>p.visibility==='gold'?queueGoldPrediction(opts.db,p.id):sendPredictionToTelegram(p,env,opts);
+// GOLD: private messages to paying members + minimal ad ONLY in official channel.
+// VIP and historical public posts keep their existing destinations.
+const sendTelegram=async(p,env,opts={})=>p.visibility==='gold'?publishGoldTelegram(p,env,opts):sendPredictionToTelegram(p,env,opts);
 const goldControl=installGoldDeliveryWorker({db});
 app.get('/api/admin/predictions',authenticate,async(req,res)=>{
  if(!allowedToPublish(req.admin))return res.status(403).json({error:'Sin permisos'});
@@ -1075,8 +1077,8 @@ telegramVipControl=installTelegramRoutes(app,{db,customerAuth,authenticate,limit
 notificationControl=installNotificationCenter(app,{db,customerAuth,limit:apiRateLimit({windowMs:15*60*1000,limit:15,standardHeaders:'draft-7',legacyHeaders:false})});
 // Default: independent local model. Legacy API-Football remains opt-in only.
 footballControl=process.env.FOOTBALL_ENGINE_MODE==='api'
- ?installFootballAutomation(app,{db,authenticate})
- :installNforceEngine(app,{db,authenticate,enqueueEvent:async(database,id,visibility)=>{
+ ?installFootballAutomation(app,{db,authenticate,sendTelegram})
+ :installNforceEngine(app,{db,authenticate,sendTelegram,enqueueEvent:async(database,id,visibility)=>{
    const {enqueuePredictionEvent}=await import('./notification-center.js');
    return enqueuePredictionEvent(database,id,visibility);
   }});

@@ -1,3 +1,18 @@
+# Fijas de Élite v3.5.4 — Publicidad GOLD en canal oficial
+
+A partir de esta versión, cuando se **publica un pronóstico GOLD nuevo**, el sistema guarda la publicación y realiza dos operaciones independientes:
+
+1. Encola el contenido GOLD completo **solo** para suscriptores GOLD y VIP con Telegram vinculado y membresía activa. Nunca se envía contenido GOLD completo al canal ni al grupo.
+2. Envía **un aviso promocional corto** al canal oficial de Telegram (el configurado mediante `TELEGRAM_FREE_CHANNEL_CHAT_ID` y `TELEGRAM_FREE_CHANNEL_URL`). El aviso no revela el encuentro, selección, cuota, análisis ni porcentaje estimado. Incluye el enlace de portada obtenido desde `PUBLIC_BASE_URL`.
+
+**El grupo comunitario no recibe avisos GOLD**. Los adelantos y avisos VIP mantienen su comportamiento anterior. Las fijas GOLD publicadas en versiones anteriores no se anuncian otra vez: no hay reenvío retroactivo.
+
+La tabla MySQL `telegram_gold_public_announcements` se crea al iniciar. Su clave por `prediction_id` evita avisos repetidos tras reinicios de Railway. Si Telegram devuelve un error después de reservar el envío, el registro queda para revisión manual y **no se reintenta automáticamente**, para evitar spam por respuestas ambiguas. Si el propietario retira el pronóstico, el sistema intenta borrar el anuncio registrado, según las limitaciones de la API de Telegram.
+
+**Configuración:** conserva el token del bot, el canal oficial y el dominio público. Para que el botón lleve a tu nuevo dominio cuando ya esté activo, usa `PUBLIC_BASE_URL=https://fijasdeelite.xyz`. No hay variables nuevas. Tras desplegar, comprueba `/health` v3.5.4, verifica permisos del bot en el canal y prueba publicando una fija GOLD nueva. Los pagos, planes y migraciones anteriores permanecen intactos.
+
+---
+
 # Fijas de Élite v3.4.1 — Reabrir descartadas de versiones anteriores
 
 Al ejecutar **Analizar ahora**, una propuesta N-FORCE descartada con un modelo estadístico o versión de la aplicación anterior puede volver a aparecer como **borrador** si el motor actual la selecciona de nuevo, el encuentro sigue siendo futuro y su ID no está ligado a una publicación. Nunca se recuperan descartes hechos en esta misma versión de la aplicación, pronósticos publicados o registros sin una versión anterior verificable. Los descartes antiguos sin sello de versión pueden recuperarse una vez; los nuevos quedan identificados por versión. Se guarda auditoría del cambio con las versiones previas/nuevas.

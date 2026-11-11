@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 let currentAdminRole='';
-const ADMIN_PANEL_BUILD='3.5.3';
+const ADMIN_PANEL_BUILD='3.5.4';
 // Diagnose a partial/old Railway deployment instead of silently rendering stale UI.
 async function checkAdminBuild(){
  const label=$('adminBuildVersion'),status=$('adminBuildStatus');

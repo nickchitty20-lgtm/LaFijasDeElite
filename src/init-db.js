@@ -435,6 +435,20 @@ export async function initializeDatabase() {
       FOREIGN KEY (prediction_id) REFERENCES predictions(id),
       FOREIGN KEY (user_id) REFERENCES users(id)
     ) ENGINE=InnoDB`);
+    // v3.5.4: one GOLD promotional announcement per new GOLD publication.
+    // This is separate from the individual private GOLD delivery ledger.
+    await connection.query(`CREATE TABLE IF NOT EXISTS telegram_gold_public_announcements (
+      prediction_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+      chat_id BIGINT NOT NULL,
+      state ENUM('reserved','sent','failed') NOT NULL DEFAULT 'reserved',
+      reserved_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      sent_at DATETIME NULL,
+      message_id BIGINT NULL,
+      removed_at DATETIME NULL,
+      removal_error VARCHAR(200) NULL,
+      FOREIGN KEY (prediction_id) REFERENCES predictions(id)
+    ) ENGINE=InnoDB`);
+
     // Planes iniciales: se insertan solo cuando no existe otro con el mismo nombre.
     // Nunca se modifican precios ni duraciones configurados por un administrador.
     const starterPlans = [

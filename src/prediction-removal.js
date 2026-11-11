@@ -29,11 +29,14 @@ export async function removePredictionTelegramMessages({db,predictionId,telegram
       WHERE prediction_id=? AND state='sent' AND telegram_message_id IS NOT NULL AND removed_at IS NULL`,[predictionId]);
   const [community]=await db.execute(`SELECT prediction_id,message_id,chat_id FROM telegram_community_announcements
       WHERE prediction_id=? AND state='sent' AND message_id IS NOT NULL AND removed_at IS NULL`,[predictionId]);
-  if(!messages.length)result.untracked=true; // Older versions did not save main post message IDs.
+  const [goldPublic]=await db.execute(`SELECT prediction_id,message_id,chat_id FROM telegram_gold_public_announcements
+      WHERE prediction_id=? AND state='sent' AND message_id IS NOT NULL AND removed_at IS NULL`,[predictionId]);
+  if(!messages.length&&!previews.length&&!community.length&&!goldPublic.length)result.untracked=true; // Older versions may have no Telegram message IDs.
   const items=[
     ...messages.map(m=>({kind:'main',id:m.id,chatId:String(m.chat_id),messageId:Number(m.message_id)})),
     ...previews.map(m=>({kind:'preview',id:m.prediction_id,chatId:String(m.chat_id||env.TELEGRAM_FREE_CHAT_ID||''),messageId:Number(m.telegram_message_id)})),
-    ...community.map(m=>({kind:'community',id:m.prediction_id,chatId:String(m.chat_id||''),messageId:Number(m.message_id)}))
+    ...community.map(m=>({kind:'community',id:m.prediction_id,chatId:String(m.chat_id||''),messageId:Number(m.message_id)})),
+    ...goldPublic.map(m=>({kind:'gold_public',id:m.prediction_id,chatId:String(m.chat_id||''),messageId:Number(m.message_id)}))
   ];
   for(const item of items){
     if(!/^-?\d{1,19}$/.test(item.chatId) || !Number.isSafeInteger(item.messageId) || item.messageId <= 0){
@@ -43,6 +46,7 @@ export async function removePredictionTelegramMessages({db,predictionId,telegram
       await telegramApi('deleteMessage',{chat_id:item.chatId,message_id:item.messageId},env);
       if(item.kind==='main')await db.execute('UPDATE telegram_prediction_messages SET removed_at=UTC_TIMESTAMP(),removal_error=NULL WHERE id=?',[item.id]);
       else if(item.kind==='preview')await db.execute('UPDATE telegram_vip_public_announcements SET removed_at=UTC_TIMESTAMP(),removal_error=NULL WHERE prediction_id=?',[item.id]);
+      else if(item.kind==='gold_public')await db.execute('UPDATE telegram_gold_public_announcements SET removed_at=UTC_TIMESTAMP(),removal_error=NULL WHERE prediction_id=?',[item.id]);
       else await db.execute('UPDATE telegram_community_announcements SET removed_at=UTC_TIMESTAMP(),removal_error=NULL WHERE prediction_id=?',[item.id]);
       result.removed++;
     }catch(error){
@@ -51,7 +55,8 @@ export async function removePredictionTelegramMessages({db,predictionId,telegram
       if(/message to delete not found/i.test(reason)){
         if(item.kind==='main')await db.execute('UPDATE telegram_prediction_messages SET removed_at=UTC_TIMESTAMP(),removal_error=NULL WHERE id=?',[item.id]);
         else if(item.kind==='preview')await db.execute('UPDATE telegram_vip_public_announcements SET removed_at=UTC_TIMESTAMP(),removal_error=NULL WHERE prediction_id=?',[item.id]);
-        else await db.execute('UPDATE telegram_community_announcements SET removed_at=UTC_TIMESTAMP(),removal_error=NULL WHERE prediction_id=?',[item.id]);
+        else if(item.kind==='gold_public')await db.execute('UPDATE telegram_gold_public_announcements SET removed_at=UTC_TIMESTAMP(),removal_error=NULL WHERE prediction_id=?',[item.id]);
+      else await db.execute('UPDATE telegram_community_announcements SET removed_at=UTC_TIMESTAMP(),removal_error=NULL WHERE prediction_id=?',[item.id]);
         result.removed++;continue;
       }
       result.failed++;
@@ -59,6 +64,7 @@ export async function removePredictionTelegramMessages({db,predictionId,telegram
       try{
         if(item.kind==='main')await db.execute('UPDATE telegram_prediction_messages SET removal_error=? WHERE id=?',[reason,item.id]);
         else if(item.kind==='preview')await db.execute('UPDATE telegram_vip_public_announcements SET removal_error=? WHERE prediction_id=?',[reason,item.id]);
+        else if(item.kind==='gold_public')await db.execute('UPDATE telegram_gold_public_announcements SET removal_error=? WHERE prediction_id=?',[reason,item.id]);
         else await db.execute('UPDATE telegram_community_announcements SET removal_error=? WHERE prediction_id=?',[reason,item.id]);
       }catch(error2){console.error('telegram removal status failed',error2.code||error2.message);}
     }
