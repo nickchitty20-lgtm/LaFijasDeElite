@@ -9,6 +9,9 @@ export async function initializeDatabase() {
     for (const statement of statements) {
       await connection.query(statement);
     }
+    // v3.5.1: keep every existing plan VIP; GOLD is an independent tier.
+    const [planCols]=await connection.query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='plans'");
+    if(!planCols.some(c=>c.COLUMN_NAME==='tier'))await connection.query("ALTER TABLE plans ADD COLUMN tier ENUM('gold','vip') NOT NULL DEFAULT 'vip'");
     const [cols] = await connection.query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='predictions'");
     const existing = new Set(cols.map(c=>c.COLUMN_NAME));
     const additions = {
@@ -21,6 +24,8 @@ export async function initializeDatabase() {
     for (const [name,definition] of Object.entries(additions)) {
       if (!existing.has(name)) await connection.query(`ALTER TABLE predictions ADD COLUMN ${name} ${definition}`);
     }
+    // Add GOLD without altering historical VIP publications.
+    await connection.query("ALTER TABLE predictions MODIFY COLUMN visibility ENUM('free','gold','vip') NOT NULL DEFAULT 'free'");
     const [userCols]=await connection.query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='users'");
     if(!userCols.some(c=>c.COLUMN_NAME==='password_hash')) await connection.query('ALTER TABLE users ADD COLUMN password_hash VARCHAR(255) NULL');
     // Safe, additive migration: preserve all existing customers, payments and VIP periods.
@@ -112,6 +117,7 @@ export async function initializeDatabase() {
       FOREIGN KEY (prediction_id) REFERENCES predictions(id)
     ) ENGINE=InnoDB`);
 
+    await connection.query("ALTER TABLE football_candidates MODIFY COLUMN visibility ENUM('free','gold','vip') NOT NULL");
     // v3.0.0: open-data local engine. Additive; NEVER deletes existing API-football
     // proposals, subscriptions, PayPal receipts or Telegram memberships.
     await connection.query(`CREATE TABLE IF NOT EXISTS nforce_matches (
@@ -410,6 +416,23 @@ export async function initializeDatabase() {
       FOREIGN KEY (prediction_id) REFERENCES predictions(id) ON DELETE CASCADE
     ) ENGINE=InnoDB`);
 
+    // Gold picks are queued only for linked paying GOLD/VIP customers.
+    // The worker treats interrupted sends as uncertain, never duplicates them.
+    await connection.query(`CREATE TABLE IF NOT EXISTS telegram_gold_deliveries (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      prediction_id BIGINT UNSIGNED NOT NULL,
+      user_id BIGINT UNSIGNED NOT NULL,
+      telegram_user_id BIGINT NOT NULL,
+      status ENUM('pending','sending','sent','failed','skipped') NOT NULL DEFAULT 'pending',
+      lease_id CHAR(36) NULL,
+      last_error VARCHAR(240) NULL,
+      sent_at DATETIME NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_gold_delivery(prediction_id,user_id),
+      INDEX idx_gold_queue(status,id),
+      FOREIGN KEY (prediction_id) REFERENCES predictions(id),
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    ) ENGINE=InnoDB`);
     // Planes iniciales: se insertan solo cuando no existe otro con el mismo nombre.
     // Nunca se modifican precios ni duraciones configurados por un administrador.
     const starterPlans = [
@@ -424,6 +447,9 @@ export async function initializeDatabase() {
         console.log(`Starter plan created: ${name}`);
       }
     }
+    // Existing prices remain untouched; create the agreed GOLD trial offering only once.
+    const [goldExisting]=await connection.execute("SELECT id FROM plans WHERE tier='gold' LIMIT 1");
+    if(!goldExisting.length)await connection.execute("INSERT INTO plans (name,duration_days,price_pen,tier,active) VALUES ('ÉLITE GOLD · 30 días',30,59.90,'gold',1)");
     console.log('Customer columns ready');
     console.log('Prediction columns ready');
     console.log(`Database schema ready (${statements.length} tables checked)`);

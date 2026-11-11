@@ -5,7 +5,7 @@
  * The feed is not an official match-result authority.
  */
 const PERIOD_DAYS = Object.freeze({all:null,'30d':30,'90d':90});
-const VISIBILITIES = new Set(['all','free','vip']);
+const VISIBILITIES = new Set(['all','free','gold','vip']);
 const OUTCOMES = new Set(['won','lost','void']);
 const safeNum = value => Math.max(0,Number(value)||0);
 
@@ -33,7 +33,7 @@ export function performanceWhere({period='all',visibility='all'}={}) {
 
 const zero=()=>({total:0,won:0,lost:0,void:0,pending:0,decided:0,archived:0,retired_unsettled:0,source_checked:0,manual_checked:0,accuracy:null});
 export function summaryFromGroups(rows=[]){
- const by={free:zero(),vip:zero()};
+ const by={free:zero(),gold:zero(),vip:zero()};
  for(const row of rows){
   if(!Object.hasOwn(by,row.visibility))continue;
   const group=by[row.visibility];
@@ -54,7 +54,7 @@ export function summaryFromGroups(rows=[]){
 }
 
 export function publicRecentResults(rows=[]){
- return rows.filter(r=>OUTCOMES.has(r.outcome)&&['free','vip'].includes(r.visibility)).slice(0,15).map(r=>({
+ return rows.filter(r=>OUTCOMES.has(r.outcome)&&['free','gold','vip'].includes(r.visibility)).slice(0,15).map(r=>({
   id:String(r.id),title:String(r.title||'Partido'),league:String(r.league||'Fútbol'),
   visibility:r.visibility,outcome:r.outcome,match_date:r.match_date||null,
   withdrawn:Boolean(r.archived_at),

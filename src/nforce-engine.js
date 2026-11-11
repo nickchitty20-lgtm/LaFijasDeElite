@@ -9,6 +9,7 @@ import {sendPredictionToTelegram} from './telegram-bridge.js';
 import {publishedFootballDetails} from './football-report.js';
 import {createNforceSettlement} from './nforce-settlement.js';
 import {LIVE_VERIFICATION_LEAGUES} from './live-schedule.js';
+import {candidateModelVersion,discardedInBuild,canReopenOldDiscard,CANDIDATE_REVIEW_BUILD} from './nforce-candidate-revival.js';
 
 const DAY=86400000;
 const asUtc=x=>x instanceof Date?x:new Date(String(x||'').replace(' ','T')+(String(x||'').match(/Z|[+-]\d\d:\d\d$/)?'':'Z'));
@@ -132,7 +133,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     const withinWindow=futureWithTimes.filter(x=>Date.parse(x.kickoff)<horizon);
     const future=withinWindow.slice(0,NFORCE_SCAN_FIXTURE_LIMIT);
     const nextBeyondWindow=futureWithTimes.find(x=>Date.parse(x.kickoff)>=horizon);
-    let models=0,drafts=0,underMin=0,rejected=0,alreadyPresent=0,updatedDrafts=0;
+    let models=0,drafts=0,underMin=0,rejected=0,alreadyPresent=0,updatedDrafts=0,reopenedOldDiscards=0;
     const existingByStatus={draft:0,discarded:0,published:0,other:0};
     const examples=[];const missingReasons={};const filteredExamples=[];
     const marketCounts={};const categoryCounts={free:0,vip:0};const vipRejections={};
@@ -151,22 +152,56 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
       candidate.provider,candidate.fixture_id,candidate.visibility,candidate.home_team,candidate.away_team,candidate.league,
       candidate.kickoff,candidate.market,candidate.selection,candidate.provider_probability,null,candidate.analysis,candidate.evidence_json]);
      if(!Number(r.affectedRows||0)){
-      alreadyPresent++;
-      // Count already-seen fixtures by actual persisted status, so an owner
-      // knows whether the scan was exhausted by drafts or by prior discards.
-      const [[registered]]=await conn.execute('SELECT status FROM football_candidates WHERE provider=? AND fixture_id=? LIMIT 1',
+      // Fixture IDs are unique across all candidate statuses. A previous
+      // discard is eligible to return only when *this scan* selects the fixture
+      // and its last discard predates this review build. Discards made in this
+      // build and anything linked to an actual publication remain untouched.
+      const [[registered]]=await conn.execute(`SELECT id,status,prediction_id,published_at,evidence_json
+       FROM football_candidates WHERE provider=? AND fixture_id=? LIMIT 1`,
        [candidate.provider,candidate.fixture_id]);
-      const storedStatus=String(registered?.status||'other');
-      existingByStatus[storedStatus in existingByStatus?storedStatus:'other']++;
-      // A v3.0 draft or rescheduled fixture must be refreshed before publishing.
-      // Never revive discarded proposals or mutate already-published picks.
-      const [updated]=await conn.execute(`UPDATE football_candidates SET visibility=?,home_team=?,away_team=?,league=?,kickoff=?,
-       market=?,selection=?,provider_probability=?,odds=NULL,analysis=?,evidence_json=?
-       WHERE provider=? AND fixture_id=? AND status='draft'`,[
-       candidate.visibility,candidate.home_team,candidate.away_team,candidate.league,candidate.kickoff,
-       candidate.market,candidate.selection,candidate.provider_probability,candidate.analysis,candidate.evidence_json,
-       candidate.provider,candidate.fixture_id]);
-      updatedDrafts+=Number(updated.affectedRows||0);
+      const oldVersion=candidateModelVersion(registered?.evidence_json);
+      const oldBuild=discardedInBuild(registered?.evidence_json);
+      if(canReopenOldDiscard(registered,MODEL_VERSION,CANDIDATE_REVIEW_BUILD)){
+       // Recheck status and old version in SQL: a concurrent owner action or
+       // publication must never be overridden by the background scan.
+       // Audit the transition in the same transaction for traceability.
+       await conn.beginTransaction();
+       try{
+        const [revived]=await conn.execute(`UPDATE football_candidates SET status='draft',visibility=?,home_team=?,away_team=?,league=?,kickoff=?,
+         market=?,selection=?,provider_probability=?,odds=NULL,analysis=?,evidence_json=?
+         WHERE provider=? AND fixture_id=? AND status='discarded'
+          AND prediction_id IS NULL AND published_at IS NULL
+          AND JSON_UNQUOTE(JSON_EXTRACT(evidence_json,'$.model.model'))=?
+          AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(evidence_json,'$.discarded_in_build')),'')=?`,[
+         candidate.visibility,candidate.home_team,candidate.away_team,candidate.league,candidate.kickoff,
+         candidate.market,candidate.selection,candidate.provider_probability,candidate.analysis,candidate.evidence_json,
+         candidate.provider,candidate.fixture_id,oldVersion,oldBuild||'']);
+        if(Number(revived.affectedRows||0)===1){
+         await conn.execute(`INSERT INTO audit_logs(actor_admin_id,action,entity_type,entity_id,details)
+          VALUES (NULL,'nforce_candidate_reopened_new_model','football_candidate',?,?)`,[
+          String(registered.id),JSON.stringify({previous_model:oldVersion,new_model:MODEL_VERSION,previous_build:oldBuild||'legacy_unstamped',new_build:CANDIDATE_REVIEW_BUILD,fixture_id:String(candidate.fixture_id)})]);
+         reopenedOldDiscards++;
+        }else{
+         alreadyPresent++;existingByStatus.discarded++;
+        }
+        await conn.commit();
+       }catch(e){await conn.rollback();throw e;}
+      }else{
+       alreadyPresent++;
+       const storedStatus=String(registered?.status||'other');
+       existingByStatus[storedStatus in existingByStatus?storedStatus:'other']++;
+       // Refresh drafts using the new model, but never overwrite published
+       // selections, or disregarded picks made with the current model.
+       if(storedStatus==='draft'){
+        const [updated]=await conn.execute(`UPDATE football_candidates SET visibility=?,home_team=?,away_team=?,league=?,kickoff=?,
+         market=?,selection=?,provider_probability=?,odds=NULL,analysis=?,evidence_json=?
+         WHERE provider=? AND fixture_id=? AND status='draft'`,[
+         candidate.visibility,candidate.home_team,candidate.away_team,candidate.league,candidate.kickoff,
+         candidate.market,candidate.selection,candidate.provider_probability,candidate.analysis,candidate.evidence_json,
+         candidate.provider,candidate.fixture_id]);
+        updatedDrafts+=Number(updated.affectedRows||0);
+       }
+      }
      }
      drafts+=Number(r.affectedRows||0);
     }
@@ -177,15 +212,15 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
      fixtures_with_known_time:futureWithTimes.length,fixtures_in_window:future.length,examined:future.length,
      fixtures_truncated:Math.max(0,withinWindow.length-future.length),
      next_fixture_beyond_window:nextBeyondWindow?{match:`${nextBeyondWindow.home} vs ${nextBeyondWindow.away}`,kickoff:nextBeyondWindow.kickoff}:null,
-     modeled:models,drafts_created:drafts,already_present:alreadyPresent,existing_by_status:existingByStatus,
-     updated_existing_drafts:updatedDrafts,eligible:drafts+alreadyPresent,
+     modeled:models,drafts_created:drafts,reopened_old_discards:reopenedOldDiscards,already_present:alreadyPresent,existing_by_status:existingByStatus,
+     updated_existing_drafts:updatedDrafts,eligible:drafts+reopenedOldDiscards+alreadyPresent,
      eligible_by_category:categoryCounts,eligible_by_market:marketCounts,vip_rejections_by_market_reason:vipRejections,
      insufficient_history:underMin,insufficient_reasons:missingReasons,below_filters:rejected,rejection_examples:examples,filter_examples:filteredExamples,
      fixtures_without_time:all.filter(x=>x.home_goals===null&&!x.scheduled_time_known&&x.date>=now().toISOString().slice(0,10)).length,
      note_on_quality:'El indicador de calidad de muestra NO representa el porcentaje real de aciertos.',
-     note:drafts?`${drafts} propuestas nuevas guardadas; revísalas antes de aprobar.`:future.length===0?
+     note:drafts||reopenedOldDiscards?`${drafts} propuestas nuevas y ${reopenedOldDiscards} descartadas en versiones anteriores recuperadas; revísalas antes de aprobar.`:future.length===0?
       `Sin encuentros listos. ${calendar_diagnostic.diagnosis}`:
-      alreadyPresent?`${alreadyPresent} propuestas elegibles ya registradas (pendientes: ${existingByStatus.draft}, descartadas: ${existingByStatus.discarded}, publicadas: ${existingByStatus.published}); no se regeneran duplicados.`:
+      alreadyPresent?`${alreadyPresent} propuestas elegibles ya registradas (pendientes: ${existingByStatus.draft}, descartadas: ${existingByStatus.discarded}, publicadas: ${existingByStatus.published}); los descartes de esta versión siguen descartados.`:
       'No hay propuestas nuevas: el historial es insuficiente o los filtros han rechazado los mercados.'};
     return lastScanReport;
    }catch(e){lastError=safeError(e);await conn.execute('UPDATE nforce_scans SET status=?,finished_at=UTC_TIMESTAMP(),error_message=? WHERE id=?',['failed',lastError,id]);throw e;}
@@ -424,7 +459,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
  app.post(api('candidates/:id/discard'),authenticate,async(req,res)=>{
   if(!owner(req))return res.status(403).json({error:'Solo creador'});
   if(!validId(req.params.id))return res.status(400).json({error:'ID inválido'});
-  try{const [r]=await db.execute("UPDATE football_candidates SET status='discarded' WHERE provider=? AND id=? AND status='draft'",[NFORCE_PROVIDER,req.params.id]);
+  try{const [r]=await db.execute("UPDATE football_candidates SET status='discarded',evidence_json=JSON_SET(evidence_json,'$.discarded_in_build',?) WHERE provider=? AND id=? AND status='draft'",[CANDIDATE_REVIEW_BUILD,NFORCE_PROVIDER,req.params.id]);
    if(!r.affectedRows)return res.status(409).json({error:'No se puede descartar esta propuesta'});
    await db.execute("INSERT INTO audit_logs(actor_admin_id,action,entity_type,entity_id) VALUES (?,'football_candidate_discarded','football_candidate',?)",[req.admin.id,req.params.id]);
    res.json({ok:true});

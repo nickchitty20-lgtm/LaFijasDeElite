@@ -19,6 +19,7 @@ export async function enqueueVipActivation(conn,userId,membershipId){
   [`membership:${membershipId}`,`♛ Tu membresía VIP fue activada o renovada. Consulta su fecha de vencimiento en ${baseUrl()}`,userId]);
 }
 export async function enqueuePredictionEvent(db,predictionId,visibility){
+ if(visibility==='gold')return; // The dedicated GOLD outbox delivers the actual selection, not a public alert.
  await db.execute(`INSERT IGNORE INTO telegram_notice_events(prediction_id,visibility) VALUES (?,?)`,[predictionId,visibility]);
 }
 export function installNotificationCenter(app,{db,customerAuth,limit}){

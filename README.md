@@ -1,3 +1,9 @@
+# Fijas de Élite v3.4.1 — Reabrir descartadas de versiones anteriores
+
+Al ejecutar **Analizar ahora**, una propuesta N-FORCE descartada con un modelo estadístico o versión de la aplicación anterior puede volver a aparecer como **borrador** si el motor actual la selecciona de nuevo, el encuentro sigue siendo futuro y su ID no está ligado a una publicación. Nunca se recuperan descartes hechos en esta misma versión de la aplicación, pronósticos publicados o registros sin una versión anterior verificable. Los descartes antiguos sin sello de versión pueden recuperarse una vez; los nuevos quedan identificados por versión. Se guarda auditoría del cambio con las versiones previas/nuevas.
+
+El panel informa cuántos descartes antiguos se recuperaron. La reaparición no publica nada automáticamente: requiere revisión y aprobación con las mismas verificaciones de calendario y backtesting. Los filtros VIP no cambian; no hay pronósticos seguros ni garantía de VIP. Sin cambios de esquema ni de variables de Railway.
+
 # Fijas de Élite v3.4.0 — Selección multimerkado GRATIS y diagnóstico VIP
 
 Esta versión **no fuerza fijas sin calendario confirmado**: añade análisis visible para detectar por qué N-FORCE no encuentra propuestas incluso con 14 días.
@@ -1115,3 +1121,21 @@ Las lesiones y alineaciones NO se importan; si no existen datos, se indica su au
 ## Cambios v3.3.1 — Hora de inicio de los pronósticos
 
 En Panel → Pronósticos → Últimos pronósticos, cada ficha publicada muestra fecha, hora de inicio del encuentro (hora de Perú), y un aviso si la hora prevista ya pasó. Este aviso no afirma que el partido haya terminado ni actualiza automáticamente un resultado. La portada también muestra el horario del encuentro en los adelantos, sin exponer la selección de los VIP bloqueados. No requiere cambios de MySQL ni variables de entorno.
+
+### Presentación de membresías v3.5.0 (historial)
+En v3.5.0 GOLD se mostró solo como prelanzamiento. **Esta limitación quedó sustituida por v3.5.1**, que habilita la compra GOLD, el acceso vinculado y el envío privado del bot. No se requiere un canal GOLD. Las tasas públicas de acierto solo se destacan cuando hay al menos 30 resultados decididos por categoría.
+
+
+## ÉLITE GOLD por mensaje privado (v3.5.1)
+
+GOLD es una membresía pagada, independiente de VIP, con un precio inicial de S/59.90 por 30 días que se puede administrar en el panel. Todos los planes anteriores de MySQL siguen siendo VIP.
+
+- Cuando el dueño **publica manualmente** un pronóstico GOLD desde Panel > Pronósticos, se guarda en la web y se crea una fila de entrega por cliente con GOLD o VIP activo y Telegram vinculado.
+- El bot solo envía la selección GOLD al privado del usuario autorizado, **nunca al grupo o canal GRATIS**. Los pronósticos VIP se mantienen en el canal VIP.
+- El bot de Telegram **no puede escribirle** a quien no lo haya iniciado: el cliente debe entrar en Clientes > Telegram > Vincular, abrir el enlace y pulsar Iniciar en Telegram.
+- Los envíos se hacen en lotes; el acceso y vínculo se revalidan justo antes de enviarlos. Tras un fallo ambiguo, no se reintenta para evitar duplicados; el dueño ve el diagnóstico en Panel > Telegram > GOLD.
+- Las compras GOLD pueden solicitarse usando los flujos de pago actuales. La membresía solo se activa cuando el pago se verifica en el servidor. Los pagos VIP se mantienen independientes.
+- Si la membresía expira, no se envían nuevas selecciones. VIP recibe GOLD también. Las selecciones GOLD se consultan desde el panel del cliente solo con permisos GOLD/VIP.
+- Por ahora la **generación automática de candidatos GOLD desde N-FORCE está pendiente**. El dueño clasifica y aprueba manualmente GOLD; no se reetiquetan predicciones anteriores.
+
+**Prueba segura:** configura Telegram, vincula una cuenta de prueba, activa el plan GOLD por un pago de prueba verificado, publica manualmente una selección GOLD futura y comprueba el chat privado de Telegram. No hace falta añadir un canal GOLD.

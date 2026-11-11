@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import {sha256,safeTelegramId,telegramApi,telegramLinkStart,telegramWebhookSecretValid} from './telegram-bridge.js';
 import {canApproveJoinRequest} from './telegram-invite-policy.js';
-import {effectiveVipSql,getVipEntitlement} from './vip-access.js';
+import {effectiveVipSql,getVipEntitlement,getGoldEntitlement} from './vip-access.js';
 import {rank0ActionMatchesStatus,rank0DesiredAction} from './telegram-rank0-policy.js';
 import {shouldPreserveDetachedMember,shouldReleaseDetachedReservation,canBeginNewTelegramLink,shouldPreserveOwnerMember,ownerForceCanProceed} from './telegram-detach-policy.js';
 
@@ -253,6 +253,7 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
    const [[link]]=await db.execute('SELECT telegram_user_id,telegram_username,is_member,linked_at,link_status FROM telegram_links WHERE user_id=?',[req.customer.id]);
    const entitlement=await getVipEntitlement(db,req.customer.id);
    const vip=entitlement.hasVip;
+   const gold=(await getGoldEntitlement(db,req.customer.id)).hasGold;
    const [[change]]=await db.execute(`SELECT status,
      GREATEST(0,CEIL(TIMESTAMPDIFF(SECOND,UTC_TIMESTAMP(),cooldown_until)/60)) AS cooldown_minutes,
      GREATEST(0,CEIL(TIMESTAMPDIFF(SECOND,UTC_TIMESTAMP(),DATE_ADD(last_issue_at,INTERVAL 30 MINUTE))/60)) AS reissue_minutes,
@@ -260,7 +261,7 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
      FROM telegram_change_state WHERE user_id=?`,[req.customer.id]);
    res.json({configured:telegramEnabled(),linked:Boolean(link)&&link.link_status==='active',detached_pending:link?.link_status==='detached',telegram_username:link?.link_status==='active'?link.telegram_username:null,
     telegram_user_id:link?.telegram_user_id?String(link.telegram_user_id):null,
-    is_member:link?.link_status==='active'&&(!change||change.status!=='awaiting_new')?Boolean(link?.is_member):false,has_vip:vip,
+    is_member:link?.link_status==='active'&&(!change||change.status!=='awaiting_new')?Boolean(link?.is_member):false,has_vip:vip,has_gold:gold,gold_private_dm:gold && link?.link_status==='active',
     staff_vip:entitlement.staff,access_reason:entitlement.staff?'staff':entitlement.paid?'paid':null,
     change_pending:change?.status==='awaiting_new',change_cooldown_minutes:Number(change?.cooldown_minutes||0),
     change_reissue_minutes:Number(change?.reissue_minutes||0),change_expires_minutes:Number(change?.expires_minutes||0),
@@ -269,7 +270,7 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
   }catch(error){console.error('telegram customer status',error.code||error.message);res.status(503).json({error:'No se pudo cargar Telegram'});}
  });
  app.post('/api/customers/telegram/link',limit,customerAuth,async(req,res)=>{
-  if(!telegramEnabled())return res.status(503).json({error:'El dueño todavía no habilitó el bot y el canal VIP.'});
+  if(!process.env.TELEGRAM_BOT_TOKEN||!validWebhookSecret())return res.status(503).json({error:'El bot de Telegram todavía no está configurado.'});
   try{
    const [[linked]]=await db.execute('SELECT telegram_user_id FROM telegram_links WHERE user_id=?',[req.customer.id]);
    if(linked)return res.status(409).json({error:'Ya tienes una cuenta Telegram vinculada o reservada. Si la desvinculaste, primero debe salir del canal VIP y debes comprobar la salida.'});
@@ -396,7 +397,7 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
     else{
      await conn.execute('INSERT INTO telegram_links(user_id,telegram_user_id,telegram_username,is_member) VALUES(?,?,?,0)',[token.user_id,String(message.from.id),String(message.from.username||'').slice(0,100)||null]);
      await conn.execute('DELETE FROM telegram_link_tokens WHERE user_id=?',[token.user_id]);
-     await conn.commit();reply='✅ Telegram vinculado con Fijas de Élite. Vuelve a tu panel web para solicitar el acceso al canal VIP.';
+     await conn.commit();reply='✅ Telegram vinculado. Si tienes GOLD, recibirás sus selecciones aquí; con VIP también puedes solicitar acceso al canal VIP desde tu web.';
     }
    }
    }
