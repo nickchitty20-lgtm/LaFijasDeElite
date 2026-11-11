@@ -21,6 +21,8 @@ export const VIP_VALIDATION_DESCRIPTIONS=Object.freeze({
  stale_backtest:'Validación retrospectiva vencida',
  low_overall_sample:'No hay suficientes partidos retrospectivos',
  low_market_sample:'No hay suficientes selecciones del mercado',
+ missing_context_backtest:'Falta validación específica del fútbol internacional',
+ low_context_sample:'No hay suficientes partidos retrospectivos en el grupo de clubes/selecciones',
  invalid_metrics:'Métricas retrospectivas inválidas',
  weak_accuracy:'Rendimiento histórico insuficiente',
  poor_calibration:'La probabilidad estimada no está bien calibrada',
@@ -57,7 +59,10 @@ export function summarizeVipDatabase({rows=[],total={},validation=null,scan=null
   blocked_by_model:0,blocked_by_backtest:0,validation_reasons:{},examples:[],
   telegram_vip_ready:Boolean(telegramReady),scan:summarizeVipScan(scan),
   backtest:validation?{evaluated:count(validation.evaluated),created_at:validation.created_at,
-   model_version:validation.model_version,by_market:Object.entries(read(validation.metrics_json).by_market||{})
+   model_version:validation.model_version,by_context:Object.fromEntries(Object.entries(read(validation.metrics_json).by_context||{})
+    .map(([key,group])=>[key,{evaluated:count(group?.evaluated),by_market:Object.entries(group?.by_market||{})
+     .map(([market,value])=>({market,evaluated:count(value?.evaluated),accuracy:value?.accuracy??null}))}])),
+   by_market:Object.entries(read(validation.metrics_json).by_market||{})
     .map(([key,value])=>({market:key,evaluated:count(value?.evaluated),accuracy:value?.accuracy??null}))}:null};
  for(const row of rows){
   if(row.status!=='draft'||row.visibility!=='vip')continue;

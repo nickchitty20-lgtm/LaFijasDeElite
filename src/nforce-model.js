@@ -7,8 +7,11 @@ import {isNationalCompetition} from './nforce-internationals.js';
 const DAY=86400000;
 const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
 const round=(x,n=1)=>Number(x.toFixed(n));
-export const MODEL_VERSION='nforce-poisson-1.7';
+export const MODEL_VERSION='nforce-poisson-1.8';
 export const MODEL_SETTINGS=Object.freeze({lookbackDays:900,teamGames:30,leagueGames:250,minTeam:7,minLeague:36,freshDays:90,rho:-0.07});
+// International teams play in clustered windows, not weekly league rounds.
+// These settings change data usage, not the VIP accuracy or calibration bar.
+export const NATIONAL_MODEL_SETTINGS=Object.freeze({lookbackDays:900,freshDays:180,decayDays:360,poolGames:900});
 
 export function fulltime(row){
  if(!row||row.home_goals==null||row.away_goals==null||row.home_goals===''||row.away_goals==='')return false;
@@ -52,16 +55,17 @@ export function scoreDistribution(lambdaHome,lambdaAway,maxGoals=12){
  for(const cell of cells)cell.p/=sum;
  return cells;
 }
-const weighted=(rows,cutoff,fn)=>{
+const weighted=(rows,cutoff,fn,decayDays=165)=>{
  let total=0,weight=0,weightSquares=0;
- for(const m of rows){const age=Math.max(0,(cutoff-fixtureTimestamp(m))/DAY);const w=Math.exp(-age/165);
+ for(const m of rows){const age=Math.max(0,(cutoff-fixtureTimestamp(m))/DAY);const w=Math.exp(-age/decayDays);
   total+=w*fn(m);weight+=w;weightSquares+=w*w;}
  return {mean:weight?total/weight:0,effective:weightSquares?weight**2/weightSquares:0};
 };
 /** Find out why a fixture has no model; no fabricated history or kickoffs. */
 export function modelReadiness(target,completed,asOf=fixtureTimestamp(target)){
  const cutoff=Number(asOf),league=String(target?.competition||''),national=isNationalCompetition(league);
- const lookback=national?900:MODEL_SETTINGS.lookbackDays, freshDays=national?180:MODEL_SETTINGS.freshDays;
+ const lookback=national?NATIONAL_MODEL_SETTINGS.lookbackDays:MODEL_SETTINGS.lookbackDays,
+  freshDays=national?NATIONAL_MODEL_SETTINGS.freshDays:MODEL_SETTINGS.freshDays;
  if(!Number.isFinite(cutoff)||!league||!target?.home||!target?.away||target.home===target.away)
   return {ready:false,reason:'invalid_fixture'};
  const prior=(completed||[]).filter(m=>(national?isNationalCompetition(m.competition):m.competition===league)&&fulltime(m)&&
@@ -81,16 +85,20 @@ export function modelReadiness(target,completed,asOf=fixtureTimestamp(target)){
 export function estimateMatch(target,completed,asOf=fixtureTimestamp(target)){
  const r=modelReadiness(target,completed,asOf);
  if(!r.ready)return null;
- const {home,away,prior,ageHome,ageAway}=r,cutoff=Number(asOf),base=prior.slice(0,MODEL_SETTINGS.leagueGames);
- const baseHome=weighted(base,cutoff,m=>Number(m.home_goals)).mean;
- const baseAway=weighted(base,cutoff,m=>Number(m.away_goals)).mean;
+ const national=r.pool==='selecciones';
+ const {home,away,prior,ageHome,ageAway}=r,cutoff=Number(asOf),
+  base=prior.slice(0,national?NATIONAL_MODEL_SETTINGS.poolGames:MODEL_SETTINGS.leagueGames),
+  decayDays=national?NATIONAL_MODEL_SETTINGS.decayDays:165,
+  recentWeighted=(rows,fn)=>weighted(rows,cutoff,fn,decayDays);
+ const baseHome=recentWeighted(base,m=>Number(m.home_goals)).mean;
+ const baseAway=recentWeighted(base,m=>Number(m.away_goals)).mean;
  if(baseHome<0.35||baseAway<0.35)return null;
  const scored=(m,team)=>Number(m.home===team?m.home_goals:m.away_goals);
  const conceded=(m,team)=>Number(m.home===team?m.away_goals:m.home_goals);
  const venueBlend=(rows,venue,fn)=>{
-  const overall=weighted(rows,cutoff,fn).mean;
+  const overall=recentWeighted(rows,fn).mean;
   if(!venue.length)return overall;
-  const part=weighted(venue,cutoff,fn);
+  const part=recentWeighted(venue,fn);
   // Small samples are *not* allowed to overpower overall form.
   return (part.mean*part.effective+overall*4)/(part.effective+4);
  };
@@ -105,12 +113,16 @@ export function estimateMatch(target,completed,asOf=fixtureTimestamp(target)){
   const pooled=(Math.max(0,rate)*n+leagueRate*4)/(n+4);
   return Math.exp(0.85*clamp(Math.log(Math.max(0.10,pooled/leagueRate)),-1.05,1.05));
  };
- const eh=weighted(home,cutoff,()=>1).effective,ea=weighted(away,cutoff,()=>1).effective;
+ const eh=recentWeighted(home,()=>1).effective,ea=recentWeighted(away,()=>1).effective;
  const legacyHome=clamp(baseHome*posteriorRatio(hAtk,baseHome,eh)*posteriorRatio(aDef,baseHome,ea),0.30,3.6);
  const legacyAway=clamp(baseAway*posteriorRatio(aAtk,baseAway,ea)*posteriorRatio(hDef,baseAway,eh),0.30,3.6);
  // The legacy forecast anchors a separately fitted opponent-aware attack/defence
  // model. Blend in log-goal space, never add an arbitrary percentage bonus.
- const ratings=fitOpponentRatings(base,cutoff,baseHome,baseAway);
+ // The national archive often has date-only results. Pass the shared
+ // conservative timestamp function to the opponent model: otherwise it
+ // silently drops most international history and declares no rival ratings.
+ const ratings=fitOpponentRatings(base,cutoff,baseHome,baseAway,national?{
+  halfLife:decayDays*Math.LN2,fixtureTime:fixtureTimestamp}:{ });
  const adjusted=opponentAdjustedGoals(ratings,target.home,target.away,baseHome,baseAway,[legacyHome,legacyAway]);
  const lh=adjusted?.home??legacyHome,la=adjusted?.away??legacyAway;
  const distribution=scoreDistribution(lh,la);
@@ -127,7 +139,7 @@ export function estimateMatch(target,completed,asOf=fixtureTimestamp(target)){
  const flags={home:m=>m.home_goals>m.away_goals,draw:m=>m.home_goals===m.away_goals,away:m=>m.home_goals<m.away_goals,
   over15:m=>Number(m.home_goals)+Number(m.away_goals)>1,over25:m=>Number(m.home_goals)+Number(m.away_goals)>2,
   under25:m=>Number(m.home_goals)+Number(m.away_goals)<3,btts:m=>Number(m.home_goals)>0&&Number(m.away_goals)>0};
- for(const [key,condition] of Object.entries(flags))leagueBaseline[key]=round(100*weighted(base,cutoff,m=>Number(condition(m))).mean);
+ for(const [key,condition] of Object.entries(flags))leagueBaseline[key]=round(100*recentWeighted(base,m=>Number(condition(m))).mean);
  leagueBaseline.noBtts=round(100-leagueBaseline.btts);
  leagueBaseline.oneX=round(leagueBaseline.home+leagueBaseline.draw);
  leagueBaseline.xTwo=round(leagueBaseline.draw+leagueBaseline.away);
@@ -147,6 +159,7 @@ export function estimateMatch(target,completed,asOf=fixtureTimestamp(target)){
   selected:order[0],confidence:round(100*p[order[0]]),margin:round(100*(p[order[0]]-p[order[1]])),
   score:`${peak.home}-${peak.away}`,score_probability:round(100*peak.p),sample,quality,leagueBaseline,
   history_group:r.pool, // selecciones: historial integrado entre competiciones, nunca entre clubes
+  decay_days:decayDays,
   method:'Poisson regularizado con ajuste de rivales, forma temporal y marcadores bajos (sin calibración demostrada)'};
 }
 /** All markets use only full-time historical scores available before kickoff.
@@ -163,12 +176,18 @@ export const VIP_RISK_POLICY=Object.freeze({minTeam:20,minLeague:150,minVenue:6,
  maxFormAgeDays:28,minQuality:86,maxModelDisagreement:9,maxStressDrop:13,minStressed:76,
  minNominal:{'1x2':74,over15:82,over25:79,under25:79,bttsYes:79,bttsNo:79,'1X':86,'X2':86,'12':88},
  minBaselineEdge:8});
+// Preserve the SAME quality, venue, team-history, market and robustness bars.
+// Only adjust maximum inactivity to the already-enforced international model
+// readiness window. A dated international pause is not a weekly club absence.
+export const NATIONAL_VIP_RISK_POLICY=Object.freeze({...VIP_RISK_POLICY,
+ maxFormAgeDays:NATIONAL_MODEL_SETTINGS.freshDays});
+export const riskPolicyForModel=model=>model?.history_group==='selecciones'?NATIONAL_VIP_RISK_POLICY:VIP_RISK_POLICY;
 /** Exact VIP sample prerequisites for one fixture, not market-level counts.
  * Read only: identifies which requirements remain unfulfilled. Does NOT
  * alter thresholds, scores, or publication authorization.
  */
 export function vipSampleGaps(model){
- const risk=VIP_RISK_POLICY,s=model?.sample||{};
+ const risk=riskPolicyForModel(model),s=model?.sample||{};
  const gaps=[];
  const minimum=(code,label,raw,required)=>{
   const value=raw==null||raw===''?null:Number(raw);
@@ -206,7 +225,7 @@ const marketScore=(key,grid,selected)=>{
 };
 export function vipRiskAssessment(option,model){
  const fail=(code)=>({approved:false,code});
- const sample=model?.sample||{},risk=VIP_RISK_POLICY;
+ const sample=model?.sample||{},risk=riskPolicyForModel(model);
  if(!model||!option||!Object.hasOwn(risk.minNominal,option.key))return fail('invalid_market');
  if(vipSampleGaps(model).length)return fail('insufficient_recent_evidence');
  const lh=Number(model.lambda?.home),la=Number(model.lambda?.away);
@@ -355,14 +374,37 @@ export function selectedMarketWon(candidate,match){
 export function walkForwardBacktest(matches,{maxGames=300,now=new Date()}={}){
  const completed=(matches||[]).filter(m=>fulltime(m)&&Number.isFinite(fixtureTimestamp(m))&&fixtureTimestamp(m)<now.getTime()-2*3600000)
   .sort((a,b)=>fixtureTimestamp(a)-fixtureTimestamp(b));
- const cut=completed.slice(-Math.min(1000,maxGames));
+ // Sample recent club and international fixtures separately. A rolling
+ // global window dominated by weekly leagues under-samples national teams.
+ const sampleLimit=Math.max(0,Math.min(1000,Math.trunc(maxGames)));
+ const clubCut=completed.filter(m=>!isNationalCompetition(m.competition)).slice(-sampleLimit);
+ const nationalCut=completed.filter(m=>isNationalCompetition(m.competition)).slice(-Math.min(sampleLimit,300));
+ const cut=[...clubCut,...nationalCut].sort((a,b)=>fixtureTimestamp(a)-fixtureTimestamp(b));
  let evaluated=0,correct=0,brier=0,logloss=0,goalsEvaluated=0,goalsCorrect=0,goalsBrier=0;
  let previousBrier=0,previousEvaluated=0;
  const perLeague={},calibration={},by_market={},segments={vip:{evaluated:0,correct:0},free:{evaluated:0,correct:0}};
+ const emptyContext=()=>({evaluated:0,correct:0,by_market:{},segments:{vip:{evaluated:0,correct:0},free:{evaluated:0,correct:0}}});
+ const by_context={club:emptyContext(),national:emptyContext()};
+ const addMarketSample=(table,key,pred,base,hit)=>{
+  const entry=table[key]||{evaluated:0,correct:0,brier_sum:0,baseline_brier_sum:0,predicted_sum:0,baseline_sum:0};
+  entry.evaluated++;entry.correct+=Number(hit);entry.brier_sum+=(pred-Number(hit))**2;
+  if(Number.isFinite(base)){entry.baseline_brier_sum+=(base-Number(hit))**2;entry.baseline_sum+=base;}
+  else{entry.baseline_brier_sum=NaN;entry.baseline_sum=NaN;}
+  entry.predicted_sum+=pred;table[key]=entry;
+ };
+ const finalizeMarkets=table=>{
+  for(const x of Object.values(table)){x.accuracy=round(100*x.correct/x.evaluated);x.brier=round(x.brier_sum/x.evaluated,4);
+   x.baseline_brier=Number.isFinite(x.baseline_brier_sum)?round(x.baseline_brier_sum/x.evaluated,4):null;
+   x.mean_forecast=round(100*x.predicted_sum/x.evaluated);
+   x.mean_baseline=Number.isFinite(x.baseline_sum)?round(100*x.baseline_sum/x.evaluated):null;
+   delete x.brier_sum;delete x.baseline_brier_sum;delete x.predicted_sum;delete x.baseline_sum;}
+ };
  for(const m of cut){const t=fixtureTimestamp(m);const past=completed.filter(x=>fixtureTimestamp(x)<t);
   const forecast=estimateMatch(m,past,t);if(!forecast)continue;
   const actual=Number(m.home_goals)>Number(m.away_goals)?'home':Number(m.home_goals)<Number(m.away_goals)?'away':'draw';
   const probs=forecast.probabilities,wasCorrect=forecast.selected===actual,actualP=clamp(probs[actual]/100,0.000001,1);
+  const context=by_context[isNationalCompetition(m.competition)?'national':'club'];
+  context.evaluated++;context.correct+=Number(wasCorrect);
   evaluated++;correct+=Number(wasCorrect);logloss-=Math.log(actualP);
   brier+=['home','draw','away'].reduce((sum,k)=>sum+(probs[k]/100-(k===actual?1:0))**2,0);
   if(forecast.previous_lambda){
@@ -378,32 +420,29 @@ export function walkForwardBacktest(matches,{maxGames=300,now=new Date()}={}){
   const bucket=`${Math.floor(Math.min(99.999,forecast.confidence)/10)*10}-${Math.floor(Math.min(99.999,forecast.confidence)/10)*10+9}`;
   const bin=calibration[bucket]||{evaluated:0,correct:0,predicted_sum:0};bin.evaluated++;bin.correct+=Number(wasCorrect);bin.predicted_sum+=forecast.confidence;calibration[bucket]=bin;
   const candidate=makeCandidate({...m,scheduled_time_known:true,kickoff:new Date(t).toISOString()},forecast);
-  if(candidate){const hit=selectedMarketWon(candidate,m);if(hit!==null){const seg=segments[candidate.visibility];seg.evaluated++;seg.correct+=Number(hit);
-   const marketKey=JSON.parse(candidate.evidence_json).pick.key;const bucket=by_market[marketKey]||{evaluated:0,correct:0,brier_sum:0,baseline_brier_sum:0,predicted_sum:0,baseline_sum:0};
+  if(candidate){const hit=selectedMarketWon(candidate,m);if(hit!==null){
+   const seg=segments[candidate.visibility],groupSeg=context.segments[candidate.visibility];
+   seg.evaluated++;seg.correct+=Number(hit);groupSeg.evaluated++;groupSeg.correct+=Number(hit);
    const picked=JSON.parse(candidate.evidence_json).pick;
    const pred=Number(candidate.provider_probability)/100,base=Number(picked.baseline)/100;
-   bucket.evaluated++;bucket.correct+=Number(hit);bucket.brier_sum+=(pred-Number(hit))**2;
-   if(Number.isFinite(base)){
-    bucket.baseline_brier_sum+=(base-Number(hit))**2;
-    bucket.baseline_sum+=base;
-   }else{
-    bucket.baseline_brier_sum=NaN;bucket.baseline_sum=NaN;
-   }
-   bucket.predicted_sum+=pred;by_market[marketKey]=bucket;}}
+   addMarketSample(by_market,picked.key,pred,base,hit);
+   addMarketSample(context.by_market,picked.key,pred,base,hit);
+  }}
  }
  for(const x of Object.values(perLeague))x.accuracy=x.evaluated?round(100*x.correct/x.evaluated):null;
  for(const x of Object.values(segments))x.accuracy=x.evaluated?round(100*x.correct/x.evaluated):null;
- for(const x of Object.values(by_market)){x.accuracy=round(100*x.correct/x.evaluated);x.brier=round(x.brier_sum/x.evaluated,4);
-  x.baseline_brier=Number.isFinite(x.baseline_brier_sum)?round(x.baseline_brier_sum/x.evaluated,4):null;
-  x.mean_forecast=round(100*x.predicted_sum/x.evaluated);
-  x.mean_baseline=Number.isFinite(x.baseline_sum)?round(100*x.baseline_sum/x.evaluated):null;
-  delete x.brier_sum;delete x.baseline_brier_sum;delete x.predicted_sum;delete x.baseline_sum;}
+ finalizeMarkets(by_market);
+ for(const group of Object.values(by_context)){
+  group.accuracy=group.evaluated?round(100*group.correct/group.evaluated):null;
+  finalizeMarkets(group.by_market);
+  for(const seg of Object.values(group.segments))seg.accuracy=seg.evaluated?round(100*seg.correct/seg.evaluated):null;
+ }
  for(const x of Object.values(calibration)){x.mean_forecast=round(x.predicted_sum/x.evaluated);x.observed_accuracy=round(100*x.correct/x.evaluated);delete x.predicted_sum;}
  return {model:MODEL_VERSION,attempted:cut.length,evaluated,accuracy:evaluated?round(100*correct/evaluated):null,
   brier:evaluated?round(brier/evaluated,4):null,logloss:evaluated?round(logloss/evaluated,4):null,
   over25_accuracy:goalsEvaluated?round(100*goalsCorrect/goalsEvaluated):null,
   over25_brier:goalsEvaluated?round(goalsBrier/goalsEvaluated,4):null,
-  per_league:perLeague,segments,by_market,calibration,validated:evaluated>=40,
+  per_league:perLeague,segments,by_market,by_context,calibration,validated:evaluated>=40,
   comparison_previous:{previous_model:'nforce-poisson-1.3',paired_evaluated:previousEvaluated,
    previous_brier:previousEvaluated?round(previousBrier/previousEvaluated,4):null,
    current_brier:previousEvaluated?round(brier/previousEvaluated,4):null,

@@ -8,7 +8,7 @@ const DAY = 86400000;
 const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
 
 export function fitOpponentRatings(prior, cutoff, baseHome, baseAway, {
-  ridge = 5, iterations = 24, halfLife = 165 * Math.LN2, maxEffect = 0.75
+  ridge = 5, iterations = 24, halfLife = 165 * Math.LN2, maxEffect = 0.75, fixtureTime = null
 } = {}) {
   if (!Number.isFinite(cutoff) || !Number.isFinite(baseHome) || !Number.isFinite(baseAway) || baseHome <= 0 || baseAway <= 0)
     return null;
@@ -20,10 +20,13 @@ export function fitOpponentRatings(prior, cutoff, baseHome, baseAway, {
   for (const m of prior || []) {
     const home = String(m.home || ''), away = String(m.away || '');
     const raw = String(m.kickoff || '').trim().replace(' ', 'T');
-    const time = m.kickoff instanceof Date ? m.kickoff.getTime() : raw
+    const time = typeof fixtureTime === 'function' ? fixtureTime(m) :
+      m.kickoff instanceof Date ? m.kickoff.getTime() : raw
       ? Date.parse(/(?:[zZ]|[+-]\d\d:?\d\d)$/.test(raw) ? raw : raw + 'Z')
       : NaN;
-    // No unknown kickoff and no target/future result is allowed in the rating fit.
+    // For historical international results without a kickoff hour, the supplied
+    // fixtureTime uses the conservative END of the date. Never train on a
+    // match on/after the target's timestamp. Club behavior remains unchanged.
     if (!home || !away || home === away || !Number.isFinite(time) || time >= cutoff ||
       !Number.isInteger(Number(m.home_goals)) || !Number.isInteger(Number(m.away_goals)) ||
       Number(m.home_goals) < 0 || Number(m.away_goals) < 0) continue;

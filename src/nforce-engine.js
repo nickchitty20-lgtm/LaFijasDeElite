@@ -370,7 +370,12 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     const [[validated]]=await conn.query('SELECT evaluated,model_version,created_at,metrics_json FROM nforce_backtests ORDER BY id DESC LIMIT 1');
     if(!validated||validated.model_version!==MODEL_VERSION||Number(validated.evaluated)<40||!validated.created_at||now().getTime()-asUtc(validated.created_at).getTime()>8*DAY){await conn.rollback();return {published:false,reason:'Se necesita backtesting vigente'};}
     const pick=reportLimited(row.evidence_json)?.pick;
-    if(Number(reportLimited(validated.metrics_json)?.by_market?.[pick?.key]?.evaluated||0)<40){await conn.rollback();return {published:false,reason:'El mercado no dispone de 40 selecciones retrospectivas evaluadas'};}
+    const evidence=reportLimited(row.evidence_json);
+    const context=evidence?.model?.history_group==='selecciones'?'national':'club';
+    const report=reportLimited(validated.metrics_json);
+    const metric=report?.by_context?.[context]?.by_market?.[pick?.key]||
+     (context==='club'?report?.by_market?.[pick?.key]:null);
+    if(Number(metric?.evaluated||0)<40){await conn.rollback();return {published:false,reason:'El mercado no dispone de 40 selecciones retrospectivas del mismo tipo de competición'};}
     const [[count]]=await conn.execute("SELECT COUNT(*) AS total FROM football_candidates WHERE provider=? AND visibility=? AND status='published' AND DATE(published_at)=UTC_DATE()",[NFORCE_PROVIDER,row.visibility]);
     if(Number(count.total)>=(row.visibility==='vip'?2:1)){await conn.rollback();return {published:false,reason:'Límite diario'};}
    }
@@ -405,7 +410,11 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     backtestRow?.created_at&&now().getTime()-asUtc(backtestRow.created_at).getTime()<=8*DAY;
    for(const row of rows){
     if(!canAutoPublishCandidate(row)){blocked++;continue;}
-    if(!backtestReady||Number(reportLimited(backtestRow.metrics_json)?.by_market?.[reportLimited(row.evidence_json)?.pick?.key]?.evaluated||0)<40){unvalidated++;continue;}
+    const candidateEvidence=reportLimited(row.evidence_json),context=candidateEvidence?.model?.history_group==='selecciones'?'national':'club';
+    const backtestReport=reportLimited(backtestRow?.metrics_json);
+    const metric=backtestReport?.by_context?.[context]?.by_market?.[candidateEvidence?.pick?.key]||
+     (context==='club'?backtestReport?.by_market?.[candidateEvidence?.pick?.key]:null);
+    if(!backtestReady||Number(metric?.evaluated||0)<40){unvalidated++;continue;}
     if(row.visibility==='vip'&&!evaluateVipEvidence(row,backtestRow,{asOf:now()}).approved){unvalidated++;continue;}
     const ready=Boolean(process.env.TELEGRAM_BOT_TOKEN&&(row.visibility==='vip'?process.env.TELEGRAM_VIP_CHAT_ID:row.visibility==='gold'?true:freeTelegramDestination(process.env)));
     if(!ready){missingChannel++;continue;}
@@ -539,7 +548,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     secondary_enabled:secondaryConfig.enabled,secondary_competitions:SECONDARY_COMPETITIONS.length,secondary_fixtures:Number(stats.secondary_fixtures||0),verified_club_fixtures:Number(stats.verified_club_fixtures||0),
     settlement:settlement.getStatus(),
     backtest:lastBacktest?{evaluated:lastBacktest.evaluated,accuracy:lastBacktest.accuracy,brier:lastBacktest.brier,validated:Number(lastBacktest.evaluated)>=40&&validation.model===MODEL_VERSION&&now().getTime()-asUtc(lastBacktest.created_at).getTime()<=8*DAY,
-    model_version:validation.model,segments:validation.segments||null,by_market:validation.by_market||null,calibration:validation.calibration||null,comparison_previous:validation.comparison_previous||null}:null});
+    model_version:validation.model,segments:validation.segments||null,by_market:validation.by_market||null,by_context:validation.by_context||null,calibration:validation.calibration||null,comparison_previous:validation.comparison_previous||null}:null});
   }catch(e){res.status(500).json({error:'No se pudo consultar N-FORCE: '+safeError(e)});}
  });
  app.get(api('candidates'),authenticate,async(req,res)=>{

@@ -30,7 +30,15 @@ export function evaluateVipEvidence(candidate,validation,{asOf=new Date()}={}){
  const report=typeof validation.metrics_json==='string'?safeJson(validation.metrics_json):validation.metrics_json||{};
  if(Number(validation.evaluated)<VIP_POLICY.minOverall||report.model!==MODEL_VERSION)
   return deny('low_overall_sample',`Se requieren al menos ${VIP_POLICY.minOverall} partidos evaluados con el modelo actual.`,{evaluated:Number(validation.evaluated||0)});
- const metric=report.by_market?.[pick.key];
+ // Never authorize international picks using club-dominated backtest results.
+ // New v1.8 validations carry stratified cohorts. Legacy/mock reports are
+ // allowed only for club fixtures; national fixtures always fail closed.
+ const national=model.history_group==='selecciones';
+ const cohort=report.by_context?.[national?'national':'club'];
+ if(national&&!cohort)return deny('missing_context_backtest','Falta validación retrospectiva independiente de selecciones; ejecuta Validar modelo.');
+ if(cohort&&Number(cohort.evaluated)<VIP_POLICY.minOverall)
+  return deny('low_context_sample',`El historial ${national?'de selecciones':'de clubes'} tiene ${Number(cohort.evaluated||0)}/${VIP_POLICY.minOverall} partidos evaluados.`,{evaluated:Number(cohort.evaluated||0)});
+ const metric=cohort?cohort.by_market?.[pick.key]:report.by_market?.[pick.key];
  const n=Number(metric?.evaluated||0),wins=Number(metric?.correct||0);
  if(n<VIP_POLICY.minMarket)return deny('low_market_sample',`El mercado ${pick.key} tiene ${n}/${VIP_POLICY.minMarket} selecciones retrospectivas; no hay validación suficiente.`,{evaluated:n});
  if(!Number.isFinite(wins)||wins<0||wins>n)return deny('invalid_metrics','El historial de resultados del mercado es inválido.');
@@ -49,7 +57,7 @@ export function evaluateVipEvidence(candidate,validation,{asOf=new Date()}={}){
   return deny('weak_lift',`No supera la frecuencia histórica de referencia por al menos ${VIP_POLICY.minBaselineLift} puntos.`,details);
  if(baseBrier-brier<VIP_POLICY.minBrierSkill)
   return deny('weak_skill','No demuestra suficiente mejora del error probabilístico frente a la referencia histórica.',details);
- const segmentVip=report.segments?.vip,segmentFree=report.segments?.free;
+ const segmentVip=(cohort?.segments||report.segments)?.vip,segmentFree=(cohort?.segments||report.segments)?.free;
  if(Number(segmentVip?.evaluated)>=VIP_POLICY.minMarket&&Number(segmentFree?.evaluated)>=VIP_POLICY.minMarket){
   const gap=100*Number(segmentVip.correct)/Number(segmentVip.evaluated)-100*Number(segmentFree.correct)/Number(segmentFree.evaluated);
   if(!Number.isFinite(gap)||gap<VIP_POLICY.minVipOverFree)
