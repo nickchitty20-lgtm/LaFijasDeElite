@@ -142,6 +142,16 @@ export async function initializeDatabase() {
       INDEX idx_nforce_kickoff (kickoff),
       INDEX idx_nforce_club (competition,home_team,match_date)
     ) ENGINE=InnoDB`);
+    // v3.6.2: settings persist in MySQL across Railway restarts, not in process.env.
+    // A legacy enabled variable is migrated only ONCE; never overwrite an owner choice.
+    await connection.query(`CREATE TABLE IF NOT EXISTS nforce_source_settings (
+      source_id VARCHAR(40) NOT NULL PRIMARY KEY,
+      enabled BOOLEAN NOT NULL DEFAULT FALSE,
+      updated_by BIGINT UNSIGNED NULL,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB`);
+    await connection.execute('INSERT IGNORE INTO nforce_source_settings(source_id,enabled) VALUES (?,?)',
+      ['thesportsdb',process.env.FOOTBALL_SECONDARY_SCHEDULE==='true'?1:0]);
     await connection.query(`CREATE TABLE IF NOT EXISTS nforce_import_runs (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
       status ENUM('running','completed','failed') NOT NULL DEFAULT 'running',

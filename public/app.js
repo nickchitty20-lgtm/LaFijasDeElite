@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 let currentAdminRole='';
-const ADMIN_PANEL_BUILD='3.5.9';
+const ADMIN_PANEL_BUILD='3.6.2';
 // Diagnose a partial/old Railway deployment instead of silently rendering stale UI.
 async function checkAdminBuild(){
  const label=$('adminBuildVersion'),status=$('adminBuildStatus');
@@ -349,7 +349,7 @@ async function loadAudit(){
 // Cada cargo ve solamente sus módulos autorizados; la navegación no depende
 // de la propiedad hidden del panel (que cambia cada vez que elegimos una pestaña).
 const ADMIN_SECTIONS_BY_ROLE={
- owner:['overview','predictions','performance-demo','football','payments','finance','vip','plans','customers','staff','audit','telegram','mytelegram'],
+ owner:['overview','predictions','performance-demo','football','sources','payments','finance','vip','plans','customers','staff','audit','telegram','mytelegram'],
  general_admin:['overview','predictions','payments','finance','vip','plans','customers','audit','mytelegram'],
  payments_admin:['overview','payments','finance','vip','plans','customers','mytelegram'],
  analyst:['overview','predictions','mytelegram'],
@@ -383,7 +383,8 @@ function selectAdminSection(section){
   const ownOnly=panel.id==='paypalDiagnosticsPanel';
   panel.hidden=panel.dataset.panel!==section||!allowed.has(panel.dataset.panel)||(ownOnly&&currentAdminRole!=='owner');
  }
- document.querySelector('#dashboard .heading h1').textContent=({overview:'Resumen del negocio',predictions:'Gestión de pronósticos',payments:'Solicitudes de pago',finance:'Finanzas y conciliación',vip:'Gestión de membresías VIP',plans:'Planes y precios',customers:'Clientes registrados',staff:'Gestión de personal',audit:'Historial de actividad',telegram:'Telegram y suscriptores VIP',mytelegram:'Mi Telegram VIP',football:'Análisis automático de fútbol','performance-demo':'Estadísticas de prueba · DEMO'})[section]||'Resumen del negocio';
+ document.querySelector('#dashboard .heading h1').textContent=({overview:'Resumen del negocio',predictions:'Gestión de pronósticos',payments:'Solicitudes de pago',finance:'Finanzas y conciliación',vip:'Gestión de membresías VIP',plans:'Planes y precios',customers:'Clientes registrados',staff:'Gestión de personal',audit:'Historial de actividad',telegram:'Telegram y suscriptores VIP',mytelegram:'Mi Telegram VIP',football:'Análisis automático de fútbol',sources:'Fuentes deportivas','performance-demo':'Estadísticas de prueba · DEMO'})[section]||'Resumen del negocio';
+ if(section==='sources'&&currentAdminRole==='owner')loadSportsSources();
 }
 document.querySelectorAll('.admin-nav button[data-section]').forEach(button=>button.addEventListener('click',()=>selectAdminSection(button.dataset.section)));
 
@@ -571,6 +572,47 @@ $('myTelegramChangeForm')?.addEventListener('submit',async event=>{
 
 
 // v2.1.3 — Manual scan and detailed reasons, owner-only.
+// Owner-controlled source settings; the saved DB value is authoritative on every load.
+async function loadSportsSources(){
+ if(currentAdminRole!=='owner'||!$('sportsSourcesPanel'))return;
+ const toggle=$('sportsSecondaryToggle'),state=$('sportsSecondaryState'),info=$('sportsSecondaryInfo'),live=$('sportsLiveState'),notice=$('sportsSourcesNotice');
+ toggle.disabled=true;
+ try{
+  const data=await api('/api/admin/football/sources');
+  toggle.checked=Boolean(data.secondary.enabled);
+  state.textContent=toggle.checked?'Activada':'Desactivada';
+  state.classList.toggle('enabled',toggle.checked);
+  state.classList.toggle('disabled',!toggle.checked);
+  info.textContent=`${data.secondary.competition_count} competiciones consultables · Configuración persistente en MySQL. Sin clave propia adicional con el acceso público.`;
+  const last=$('sportsSecondaryLastImport'),run=data.secondary.last_import;
+  if(last)last.textContent=run?`Última importación: ${run.requests||0} consultas · ${run.discovered||0} partidos detectados · ${run.inserted||0} nuevos · ${run.matched||0} vinculados${run.errors?.length?' · Incidencias: '+run.errors.slice(0,2).join(' / '):''}.`:'Sin resultados de importación en este proceso. Importa datos para comprobar la cobertura.';
+  live.textContent=data.live_schedule.configured?'Configurado':'No configurado';
+  live.classList.toggle('enabled',data.live_schedule.configured);
+  live.classList.toggle('disabled',!data.live_schedule.configured);
+  toggle.disabled=false;
+ }catch(error){state.textContent='Error de lectura';notice.textContent='No se pudo cargar la configuración: '+error.message;}
+}
+$('sportsSecondaryToggle')?.addEventListener('change',async()=>{
+ const toggle=$('sportsSecondaryToggle'),notice=$('sportsSourcesNotice'),state=$('sportsSecondaryState');
+ const enabled=toggle.checked;toggle.disabled=true;notice.textContent='Guardando el cambio…';
+ try{
+  const saved=await api('/api/admin/football/sources/secondary',{method:'POST',body:JSON.stringify({enabled})});
+  state.textContent=saved.enabled?'Activada':'Desactivada';
+  state.classList.toggle('enabled',saved.enabled);state.classList.toggle('disabled',!saved.enabled);
+  notice.textContent=saved.message+' Pulsa «Importar datos ahora» si deseas consultar nuevos partidos.';
+ }catch(error){toggle.checked=!enabled;notice.textContent='No se pudo guardar: '+error.message;}
+ finally{toggle.disabled=false;}
+});
+$('sportsSourcesRefresh')?.addEventListener('click',loadSportsSources);
+$('sportsSourcesImport')?.addEventListener('click',async()=>{
+ const button=$('sportsSourcesImport'),notice=$('sportsSourcesNotice');
+ button.disabled=true;notice.textContent='Solicitando importación de datos deportivos…';
+ try{const response=await api('/api/admin/football/import',{method:'POST',body:'{}'});
+  notice.textContent=response.message||'Importación solicitada. Consulta Análisis automático para ver los resultados.';
+ }catch(error){notice.textContent='Error al importar: '+error.message;}
+ finally{button.disabled=false;}
+});
+
 async function loadFootballEngine(){
  const summary=$('footballEngineSummary'),list=$('footballCandidateList'),message=$('footballEngineMsg');
  if(!summary||currentAdminRole!=='owner')return;
@@ -591,7 +633,7 @@ async function loadFootballEngine(){
   const stats=[
    ['Motor de análisis',status.engine?'N-FORCE':(status.configured?'Motor clásico':'Sin configurar')],
    ...(status.engine?[['Cotejo automático de resultados',status.settlement?.working?'Comprobando…':status.settlement?.last?`${status.settlement.last.settled} actualizados · ${status.settlement.last.won} ganados · ${status.settlement.last.lost} perdidos · ${status.settlement.last.void} anulados`:'Pendiente del siguiente control'],['Sin cotejar: sin FT / mercado desconocido',status.settlement?.last?`${status.settlement.last.invalid_source} / ${status.settlement.last.unsupported}`:'—']]:[]),
-   ...(status.engine?[['Partidos importados',status.total_matches||0],['Resultados históricos',status.complete_matches||0],['Última importación',status.source_import?`${status.source_import.status} · ${status.source_import.sources} registros de competición · ${status.source_import.records} partidos`:'Pendiente'],['Competiciones cargadas en MySQL',status.loaded_competitions!=null?`${status.loaded_competitions} de ${status.configured_competitions||20} configuradas`:'No disponible'],['Competiciones con verificación de horarios independiente',status.live_schedule_supported_competitions!=null?`${status.live_schedule_supported_competitions} de ${status.configured_competitions||20} (según cobertura del sincronizador)`:'No disponible'],['Competiciones de la última importación',status.last_import_report?.competitions_imported!=null?`${status.last_import_report.competitions_imported} con datos en la última importación`:'Ejecuta «Importar datos» para comprobar la cobertura'],['Torneos de selecciones configurados',status.national_competitions_configured??'—'],['Torneos de selecciones cargados',status.loaded_national_competitions??'—'],['Partidos de selecciones en MySQL',status.national_matches??'—'],['Temporadas aún sin datos',status.last_import_report?.datasets_missing??'—'],['Backtesting',status.backtest?`${status.backtest.evaluated} evaluados · ${status.backtest.accuracy??'—'}% precisión observada${status.backtest.validated?'':' (muestra insuficiente, antigua o de otra versión)'}`:'Aún sin validar'],
+   ...(status.engine?[['Partidos importados',status.total_matches||0],['Resultados históricos',status.complete_matches||0],['Calendario complementario',status.secondary_enabled?'Activado (Fuentes deportivas)':'Desactivado (actívalo en Fuentes deportivas)'],['Torneos del calendario complementario',status.secondary_competitions??'—'],['Partidos exclusivos de la fuente adicional',status.secondary_fixtures??0],['Errores del calendario complementario',status.last_import_report?.secondary?.errors?.slice(0,2).join(' · ')||'Sin errores reportados'],['Último rastreo complementario',status.last_import_report?.secondary?`${status.last_import_report.secondary.requests||0} consultas · ${status.last_import_report.secondary.discovered||0} detectados · ${status.last_import_report.secondary.inserted||0} nuevos · ${status.last_import_report.secondary.matched||0} vinculados${status.last_import_report.secondary.errors?.length?' · Algunas consultas fallaron':''}`:'Pendiente de importar datos'],['Última importación',status.source_import?`${status.source_import.status} · ${status.source_import.sources} registros de competición · ${status.source_import.records} partidos`:'Pendiente'],['Competiciones cargadas en MySQL',status.loaded_competitions!=null?`${status.loaded_competitions} de ${status.configured_competitions||20} configuradas`:'No disponible'],['Competiciones con verificación de horarios independiente',status.live_schedule_supported_competitions!=null?`${status.live_schedule_supported_competitions} de ${status.configured_competitions||20} (según cobertura del sincronizador)`:'No disponible'],['Competiciones de la última importación',status.last_import_report?.competitions_imported!=null?`${status.last_import_report.competitions_imported} con datos en la última importación`:'Ejecuta «Importar datos» para comprobar la cobertura'],['Torneos de selecciones configurados',status.national_competitions_configured??'—'],['Torneos de selecciones cargados',status.loaded_national_competitions??'—'],['Partidos de selecciones en MySQL',status.national_matches??'—'],['Temporadas aún sin datos',status.last_import_report?.datasets_missing??'—'],['Backtesting',status.backtest?`${status.backtest.evaluated} evaluados · ${status.backtest.accuracy??'—'}% precisión observada${status.backtest.validated?'':' (muestra insuficiente, antigua o de otra versión)'}`:'Aún sin validar'],
    ['Resultados retrospectivos del perfil GOLD / VIP',status.backtest?.segments?`Abierto: ${status.backtest.segments.free?.evaluated||0} pruebas · ${status.backtest.segments.free?.accuracy??'—'}% | VIP: ${status.backtest.segments.vip?.evaluated||0} pruebas · ${status.backtest.segments.vip?.accuracy??'—'}%`:'Pendiente de backtesting'],
    ['Evaluación por mercado',status.backtest?.by_market?Object.entries(status.backtest.by_market).map(([market,v])=>`${market}: ${v.evaluated} pruebas · ${v.accuracy}%`).join(' | ')||'Sin selecciones históricas validadas':'Pendiente'],
    ['Comparación con el motor anterior (Brier)',status.backtest?.comparison_previous?.paired_evaluated?
@@ -611,6 +653,7 @@ async function loadFootballEngine(){
    ['Último escaneo: revisados / sin modelo / por filtros',status.latest?`${status.latest.examined||0} / ${status.latest.without_prediction||0} / ${status.latest.below_filters||0}`:'Sin datos'],
    ['Motivos de historial insuficiente',status.last_scan_report?.insufficient_reasons?JSON.stringify(status.last_scan_report.insufficient_reasons):'Pendiente de un escaneo reciente'],
    ['Propuestas existentes / borradores actualizados',status.last_scan_report?`${status.last_scan_report.already_present||0} / ${status.last_scan_report.updated_existing_drafts||0}`:'Pendiente de escaneo'],
+   ['Diagnóstico de búsqueda',status.last_scan_report?.insight?.headline||'Ejecuta Analizar ahora para conocer el motivo'],
    ['Partidos futuros sin hora exacta',status.last_scan_report?.fixtures_without_time??'Pendiente de un escaneo reciente'],
    ['Calendario: diagnóstico',status.calendar_diagnostic?.diagnosis||'Sin diagnóstico'],
    ['Encuentros con fecha pero sin hora en la ventana',status.calendar_diagnostic?.date_only_in_window??'—'],
@@ -835,6 +878,10 @@ function showFootballScanReport(r){
  const line=(label,value)=>{const row=document.createElement('p');const b=document.createElement('strong');b.textContent=label+': ';row.append(b,document.createTextNode(String(value)));report.append(row);};
  line('Resultado',r?.message||r?.note||r?.error||'Escaneo finalizado');
  if(r?.ok){
+  if(r.insight){
+   line('Diagnóstico del escaneo',r.insight.headline||r.insight.code);
+   for(const suggestion of r.insight.suggestions||[])line('Qué hacer',suggestion);
+  }
   if(r.lookahead_days!=null)line('Ventana de búsqueda',`${r.lookahead_days} días`);
   line('Partidos próximos analizados',r.fixtures_in_window);
   line('Partidos realmente estudiados',r.examined);
@@ -866,6 +913,13 @@ function showFootballScanReport(r){
    const reasons={invalid_market:'Mercado no admitido',vip_1x2_margin:'Margen 1X2 insuficiente',insufficient_recent_evidence:'Historial reciente insuficiente',missing_goal_sensitivity:'Datos insuficientes para sensibilidad',inconsistent_probability:'Probabilidad inconsistente',weak_nominal_edge:'Probabilidad o diferencia histórica insuficiente',fragile_prediction:'Predicción poco estable'};
    line('Filtros VIP (rechazos por mercado evaluado)',Object.entries(r.vip_rejections_by_market_reason).map(([key,value])=>`${reasons[key]||key}: ${value}`).join(' · ')||'Ninguno');
   }
+  if(Array.isArray(r.per_competition)&&r.per_competition.length){
+   for(const c of r.per_competition.slice(0,20))line(`Competición: ${c.league}`,`${c.examined} partidos · ${c.modeled} modelos · ${c.created} nuevas · ${c.existing} ya registradas · ${c.insufficient} sin historial · ${c.filtered} filtradas`);
+  }
+  if(Array.isArray(r.near_misses)&&r.near_misses.length){
+   line('Partidos observados pero NO publicables',`${r.near_misses.length} ejemplos. Son diagnósticos, no recomendaciones.`);
+   for(const m of r.near_misses.slice(0,5))line('En observación',`${m.match} · ${m.league} · ${m.reason}`);
+  }
   if(r.recently_skipped!=null)line('Partidos pausados temporalmente (ahorro API)',r.recently_skipped);
   line('Datos insuficientes',r.insufficient_history??r.without_prediction??0);
   line('Rechazados por filtros',r.below_filters);
@@ -880,7 +934,8 @@ $('footballScanButton')?.addEventListener('click',async()=>{
  const btn=$('footballScanButton');btn.disabled=true;
  const msg=$('footballEngineMsg');msg.textContent='Iniciando análisis estadístico de los partidos guardados…';
  try{
-  const start=await api('/api/admin/football/scan',{method:'POST',body:'{}'});
+  const days=Number($('footballScanDays')?.value||21);
+  const start=await api('/api/admin/football/scan',{method:'POST',body:JSON.stringify({days})});
   if(start.accepted){
    msg.textContent='Escaneo en curso; actualizaremos esta pantalla cuando termine.';
    // Manual requests return immediately because the provider's Free limit

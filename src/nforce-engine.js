@@ -12,6 +12,9 @@ import {LIVE_VERIFICATION_LEAGUES,independentScheduleCoverage} from './live-sche
 import {candidateModelVersion,discardedInBuild,discardReason,reasonForDiscard,canReopenOldDiscard,CANDIDATE_REVIEW_BUILD} from './nforce-candidate-revival.js';
 import {classifyAutomaticCandidate,shouldBlockLegacyFreeDraft,GOLD_ROLLOUT} from './nforce-gold-transition.js';
 import {nforceSourceReadiness} from './nforce-source-readiness.js';
+import {explainScan,tallyCompetition} from './nforce-scan-insights.js';
+import {importSecondaryFixtures,SECONDARY_COMPETITIONS} from './secondary-fixtures.js';
+import {readSecondarySource,saveSecondarySource} from './nforce-source-settings.js';
 
 const DAY=86400000;
 const asUtc=x=>x instanceof Date?x:new Date(String(x||'').replace(' ','T')+(String(x||'').match(/Z|[+-]\d\d:\d\d$/)?'':'Z'));
@@ -22,11 +25,11 @@ const reportLimited=e=>{try{return typeof e==='string'?JSON.parse(e):e||{};}catc
 const owner=req=>req.admin?.role==='owner';
 export const IMPORT_INTERVAL_HOURS=2;
 export const SCAN_INTERVAL_MINUTES=60;
-// 14 days by default to bridge international breaks. Owners may choose 3..21 days
+// 21 days by default to bridge international breaks. Owners may choose 3..21 days
 // to PREPARE draft picks during calendar gaps. All drafts remain subject to normal approval, fresh
 // schedule checks and the same statistical safeguards before publication.
-const requestedScanDays=Number(process.env.NFORCE_SCAN_DAYS??14);
-export const NFORCE_SCAN_LOOKAHEAD_DAYS=Number.isInteger(requestedScanDays)&&requestedScanDays>=3&&requestedScanDays<=21?requestedScanDays:14;
+const requestedScanDays=Number(process.env.NFORCE_SCAN_DAYS??21);
+export const NFORCE_SCAN_LOOKAHEAD_DAYS=Number.isInteger(requestedScanDays)&&requestedScanDays>=3&&requestedScanDays<=21?requestedScanDays:21;
 export const NFORCE_SCAN_FIXTURE_LIMIT=240;
 
 export function importDecision(last,now=Date.now(),hours=IMPORT_INTERVAL_HOURS){
@@ -35,7 +38,7 @@ export function importDecision(last,now=Date.now(),hours=IMPORT_INTERVAL_HOURS){
  const next=started+interval;
  return {due:!Number.isFinite(next)||now>=next,next:Number.isFinite(next)?new Date(next).toISOString():null};
 }
-export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenFootball,sendTelegram=sendPredictionToTelegram,enqueueEvent=null,now=()=>new Date()}={}){
+export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenFootball,fetchSecondary=importSecondaryFixtures,sendTelegram=sendPredictionToTelegram,enqueueEvent=null,now=()=>new Date()}={}){
  const settlement=createNforceSettlement({db,now});
  let importing=false,scanning=false,publishing=false,interval=null;
  let lastScanReport=null,lastImportReport=null,lastPublishReport=null,lastSchedulerMessage='',lastError='';
@@ -96,16 +99,25 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
      }catch(e){errors.push(`${dataset.path}: ${safeError(e)}`);}
     }
    }
-   const status=sources?'completed':'failed';
+   // Optional supplementary fixtures are discovered AFTER historical import,
+   // so reconciliation sees current local rows and prevents duplicate games.
+   // Failures do not discard or roll back successful historical results.
+   let secondary={enabled:false},secondaryEnabled=false;
+   try{
+    const config=await readSecondarySource(conn);
+    secondaryEnabled=config.enabled;
+    secondary=await fetchSecondary({conn,now:now(),env:process.env,enabled:secondaryEnabled});
+   }catch(error){secondary={enabled:secondaryEnabled,failed:true,error:safeError(error),requests:0,inserted:0,matched:0};}
+   const status=sources||secondary.inserted||secondary.matched?'completed':'failed';
    await conn.execute('UPDATE nforce_import_runs SET status=?,finished_at=UTC_TIMESTAMP(),sources=?,records=?,scheduled=?,completed_results=?,errors_json=? WHERE id=?',
     [status,sources,imported,scheduled,completed,JSON.stringify(errors).slice(0,3900),id]);
-   lastImportReport={ok:sources>0,status,sources,records:imported,scheduled,completed,failed_sources:errors.length,errors:errors.slice(0,5),
+   lastImportReport={ok:status==='completed',status,sources,records:imported,scheduled,completed,failed_sources:errors.length,errors:errors.slice(0,5),secondary,
     competitions_configured:LEAGUES.length+NATIONAL_COMPETITIONS.length,competitions_imported:importedCompetitions.size,
     leagues_imported:[...LEAGUES,...NATIONAL_COMPETITIONS].filter(l=>importedCompetitions.has(l.code)).map(l=>l.name),
     national_teams_supported:true,national_competitions_imported:NATIONAL_COMPETITIONS.filter(c=>importedCompetitions.has(c.code)).map(c=>c.name),
     datasets_missing:missing,leagues_with_missing_seasons:[...missingCompetitions],
     warning:errors.length?'Importación parcial: algunas consultas fallaron.':missing?'Algunas competiciones aún no tienen archivos disponibles para todas las temporadas; no se inventan partidos.':'Los calendarios pueden estar desactualizados; verifica horarios antes de publicar.'};
-   if(!sources)lastError='Fallaron las consultas de resultados deportivos';
+   if(status==='failed')lastError='Fallaron las consultas de resultados deportivos';
    return lastImportReport;
   });}finally{importing=false;}
  }
@@ -116,7 +128,8 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
    kickoff:r.kickoff?asUtc(r.kickoff).toISOString():null,scheduled_time_known:Boolean(r.scheduled_time_known),
    home_goals:r.home_goals==null?null:Number(r.home_goals),away_goals:r.away_goals==null?null:Number(r.away_goals)}));
  }
- async function scan({manual=false}={}){
+ async function scan({manual=false,days=NFORCE_SCAN_LOOKAHEAD_DAYS}={}){
+  if(!Number.isInteger(days)||days<3||days>21)throw Error('Ventana de búsqueda inválida (3–21 días)');
   if(scanning)return {busy:true};scanning=true;
   try{return await withLock('fijas_nforce_scan',async conn=>{
    const [[last]]=await conn.query("SELECT status,started_at FROM nforce_scans ORDER BY id DESC LIMIT 1");
@@ -129,8 +142,8 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
    try{
     const all=await loadMatches(),time=now().getTime();
     const usable=all.filter(x=>fulltime(x));
-    const calendar_diagnostic=diagnoseNforceCalendar(all,{now:now(),days:NFORCE_SCAN_LOOKAHEAD_DAYS});
-    const horizon=time+NFORCE_SCAN_LOOKAHEAD_DAYS*DAY;
+    const calendar_diagnostic=diagnoseNforceCalendar(all,{now:now(),days:days});
+    const horizon=time+days*DAY;
     const futureWithTimes=all.filter(x=>x.scheduled_time_known&&x.kickoff&&x.home_goals===null&&(!x.live_status||x.live_status==='NS')&&Date.parse(x.kickoff)>time+60*60000)
      .sort((a,b)=>Date.parse(a.kickoff)-Date.parse(b.kickoff));
     const withinWindow=futureWithTimes.filter(x=>Date.parse(x.kickoff)<horizon);
@@ -139,14 +152,17 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     let models=0,drafts=0,underMin=0,rejected=0,alreadyPresent=0,updatedDrafts=0,reopenedOldDiscards=0;
     const existingByStatus={draft:0,discarded:0,published:0,other:0};
     const examples=[];const missingReasons={};const filteredExamples=[];
+    const perCompetition={};const nearMisses=[];
     const marketCounts={};const categoryCounts={free:0,gold:0,vip:0};const vipRejections={};
     for(const m of future){
      const model=estimateMatch(m,usable,Date.parse(m.kickoff));
-     if(!model){underMin++;const why=modelReadiness(m,usable,Date.parse(m.kickoff));missingReasons[why.reason]=(missingReasons[why.reason]||0)+1;if(examples.length<4)examples.push(`${m.home} vs ${m.away}: ${why.reason} (liga ${why.sample?.league||0}, local ${why.sample?.home||0}, visita ${why.sample?.away||0})`);continue;}
+     if(!model){underMin++;tallyCompetition(perCompetition,m,'insufficient');const why=modelReadiness(m,usable,Date.parse(m.kickoff));missingReasons[why.reason]=(missingReasons[why.reason]||0)+1;if(examples.length<4)examples.push(`${m.home} vs ${m.away}: ${why.reason} (liga ${why.sample?.league||0}, local ${why.sample?.home||0}, visita ${why.sample?.away||0})`);continue;}
      models++;
      const marketDiagnostics={};const candidate=classifyAutomaticCandidate(makeCandidate(m,model,marketDiagnostics));
      for(const [reason,total] of Object.entries(marketDiagnostics.vip_rejections||{}))vipRejections[reason]=(vipRejections[reason]||0)+total;
-     if(!candidate){rejected++;if(filteredExamples.length<5)filteredExamples.push(`${m.home} vs ${m.away}: 1X2 ${model.confidence}% · >1.5 ${model.totals.over15}% · BTTS ${model.totals.btts}% · calidad ${model.quality}/100`);continue;}
+     if(!candidate){rejected++;tallyCompetition(perCompetition,m,'filtered');
+      if(nearMisses.length<8)nearMisses.push({match:`${m.home} vs ${m.away}`,league:m.league,kickoff:m.kickoff,estimated_1x2:model.confidence,quality:model.quality,reason:'No alcanzó los criterios de selección; no es una propuesta publicable.'});
+      if(filteredExamples.length<5)filteredExamples.push(`${m.home} vs ${m.away}: 1X2 ${model.confidence}% · >1.5 ${model.totals.over15}% · BTTS ${model.totals.btts}% · calidad ${model.quality}/100`);continue;}
      categoryCounts[candidate.visibility]++;
      const marketKey=JSON.parse(candidate.evidence_json).pick.key;marketCounts[marketKey]=(marketCounts[marketKey]||0)+1;
      const [r]=await conn.execute(`INSERT IGNORE INTO football_candidates
@@ -154,6 +170,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'draft')`,[
       candidate.provider,candidate.fixture_id,candidate.visibility,candidate.home_team,candidate.away_team,candidate.league,
       candidate.kickoff,candidate.market,candidate.selection,candidate.provider_probability,null,candidate.analysis,candidate.evidence_json]);
+     const revivedBefore=reopenedOldDiscards;
      if(!Number(r.affectedRows||0)){
       // Fixture IDs are unique across all candidate statuses. A previous
       // The selected fixture must be modeled again before a stale, version-
@@ -209,16 +226,18 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
        }
       }
      }
+     tallyCompetition(perCompetition,m,Number(r.affectedRows||0)?'new':reopenedOldDiscards>revivedBefore?'reopened':'existing');
      drafts+=Number(r.affectedRows||0);
     }
     await conn.execute('UPDATE nforce_scans SET status=?,finished_at=UTC_TIMESTAMP(),upcoming=?,modeled=?,drafts=?,insufficient=?,filtered=? WHERE id=?',
      ['completed',future.length,models,drafts,underMin,rejected,id]);
     lastError='';lastScanReport={ok:true,mode:manual?'manual':'scheduled',
-     lookahead_days:NFORCE_SCAN_LOOKAHEAD_DAYS,fixture_limit:NFORCE_SCAN_FIXTURE_LIMIT,calendar_diagnostic,
+     lookahead_days:days,fixture_limit:NFORCE_SCAN_FIXTURE_LIMIT,calendar_diagnostic,
      fixtures_with_known_time:futureWithTimes.length,fixtures_in_window:future.length,examined:future.length,
      fixtures_truncated:Math.max(0,withinWindow.length-future.length),
      next_fixture_beyond_window:nextBeyondWindow?{match:`${nextBeyondWindow.home} vs ${nextBeyondWindow.away}`,kickoff:nextBeyondWindow.kickoff}:null,
-     modeled:models,drafts_created:drafts,reopened_old_discards:reopenedOldDiscards,reopened_incompatible_discards:reopenedOldDiscards,already_present:alreadyPresent,existing_by_status:existingByStatus,
+     modeled:models,drafts_created:drafts,per_competition:Object.values(perCompetition).sort((a,b)=>b.examined-a.examined),
+     near_misses:nearMisses,reopened_old_discards:reopenedOldDiscards,reopened_incompatible_discards:reopenedOldDiscards,already_present:alreadyPresent,existing_by_status:existingByStatus,
      updated_existing_drafts:updatedDrafts,eligible:drafts+reopenedOldDiscards+alreadyPresent,
      eligible_by_category:categoryCounts,eligible_by_market:marketCounts,vip_rejections_by_market_reason:vipRejections,
      insufficient_history:underMin,insufficient_reasons:missingReasons,below_filters:rejected,rejection_examples:examples,filter_examples:filteredExamples,
@@ -228,6 +247,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
       `Sin encuentros listos. ${calendar_diagnostic.diagnosis}`:
       alreadyPresent?`${alreadyPresent} propuestas elegibles ya registradas (pendientes: ${existingByStatus.draft}, descartadas: ${existingByStatus.discarded}, publicadas: ${existingByStatus.published}); los descartes de esta versión siguen descartados.`:
       'No hay propuestas nuevas: el historial es insuficiente o los filtros han rechazado los mercados.'};
+    lastScanReport.insight=explainScan(lastScanReport);
     return lastScanReport;
    }catch(e){lastError=safeError(e);await conn.execute('UPDATE nforce_scans SET status=?,finished_at=UTC_TIMESTAMP(),error_message=? WHERE id=?',['failed',lastError,id]);throw e;}
   });}finally{scanning=false;}
@@ -369,6 +389,25 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
    return lastPublishReport;
   });}finally{publishing=false;}
  }
+ // Persisted provider controls: only the owner may read or change them.
+ app.get(api('sources'),authenticate,async(req,res)=>{
+  if(!owner(req))return res.status(403).json({error:'Solo creador'});
+  try{
+   const secondary=await readSecondarySource(db);
+   res.json({secondary:{...secondary,name:'TheSportsDB',competition_count:SECONDARY_COMPETITIONS.length,last_import:lastImportReport?.secondary||null},
+    historical:{name:'Histórico deportivo',enabled:true,editable:false},
+    live_schedule:{configured:process.env.FOOTBALL_SCHEDULE_LIVE==='true'&&Boolean(process.env.FOOTBALL_API_KEY),editable:false}});
+  }catch(e){res.status(500).json({error:'No se pudo leer Fuentes deportivas: '+safeError(e)});}
+ });
+ app.post(api('sources/secondary'),authenticate,async(req,res)=>{
+  if(!owner(req))return res.status(403).json({error:'Solo creador'});
+  if(!req.body||Object.keys(req.body).length!==1||typeof req.body.enabled!=='boolean')
+   return res.status(400).json({error:'Envía únicamente enabled: true o false'});
+  try{
+   const result=await saveSecondarySource(db,{enabled:req.body.enabled,actorId:req.admin.id});
+   res.json({...result,message:result.changed?`Calendario complementario ${result.enabled?'activado':'desactivado'}. El cambio se aplicará en la próxima importación.`:'La configuración ya estaba guardada.'});
+  }catch(e){res.status(500).json({error:'No se pudo guardar el cambio: '+safeError(e)});}
+ });
  // Keep old API paths so existing dashboard, VIP protection and payment flows remain intact.
  app.get(api('status'),authenticate,async(req,res)=>{
   if(!owner(req))return res.status(403).json({error:'Solo creador'});
@@ -381,6 +420,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     (SELECT COUNT(DISTINCT competition) FROM nforce_matches) AS loaded_competitions,
     (SELECT COUNT(DISTINCT competition) FROM nforce_matches WHERE competition LIKE 'int.%') AS loaded_national_competitions,
     (SELECT COUNT(*) FROM nforce_matches WHERE competition LIKE 'int.%') AS national_matches,
+    (SELECT COUNT(*) FROM nforce_matches WHERE source_path='secondary/thesportsdb') AS secondary_fixtures,
     (SELECT COUNT(*) FROM nforce_matches WHERE home_goals IS NOT NULL) AS complete_matches`);
    const [[latest]]=await db.query('SELECT status,initiated_by,started_at,finished_at,error_message,upcoming AS examined,drafts AS drafts_created,insufficient AS without_prediction,filtered AS below_filters FROM nforce_scans ORDER BY id DESC LIMIT 1');
    const [[lastImport]]=await db.query('SELECT status,started_at,finished_at,sources,records,scheduled,completed_results,errors_json FROM nforce_import_runs ORDER BY id DESC LIMIT 1');
@@ -388,6 +428,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
    const validation=reportLimited(lastBacktest?.metrics_json);const decided=Number(stats.won||0)+Number(stats.lost||0);
    const retry=importDecision(lastImport,now().getTime());
    const calendar_diagnostic=diagnoseNforceCalendar(await loadMatches(),{now:now(),days:NFORCE_SCAN_LOOKAHEAD_DAYS});
+   const secondaryConfig=await readSecondarySource(db);
    res.json({calendar_diagnostic,engine:'N-FORCE',model_version:MODEL_VERSION,configured:true,auto_import:process.env.FOOTBALL_AUTO_IMPORT!=='false',
     scan_lookahead_days:NFORCE_SCAN_LOOKAHEAD_DAYS,scan_fixture_limit:NFORCE_SCAN_FIXTURE_LIMIT,
     auto_scan:process.env.FOOTBALL_AUTO_SCAN==='true',auto_publish:process.env.FOOTBALL_AUTO_PUBLISH==='true'&&process.env.NFORCE_LIVE_RELEASE_ACK==='true',
@@ -398,6 +439,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     scheduled_retry_reason:'Control local cada hora',manual_scan:{available:!scanning,remaining:'Ilimitados con pausa de 5 min',daily_limit:'—'},
     configured_competitions:LEAGUES.length+NATIONAL_COMPETITIONS.length,national_competitions_configured:NATIONAL_COMPETITIONS.length,live_schedule_supported_competitions:LIVE_VERIFICATION_LEAGUES.length,loaded_competitions:Number(stats.loaded_competitions||0),loaded_national_competitions:Number(stats.loaded_national_competitions||0),national_matches:Number(stats.national_matches||0),
     total_matches:Number(stats.total_matches||0),complete_matches:Number(stats.complete_matches||0),source_import:lastImport||null,next_import_at:retry.next,
+    secondary_enabled:secondaryConfig.enabled,secondary_competitions:SECONDARY_COMPETITIONS.length,secondary_fixtures:Number(stats.secondary_fixtures||0),
     settlement:settlement.getStatus(),
     backtest:lastBacktest?{evaluated:lastBacktest.evaluated,accuracy:lastBacktest.accuracy,brier:lastBacktest.brier,validated:Number(lastBacktest.evaluated)>=40&&validation.model===MODEL_VERSION&&now().getTime()-asUtc(lastBacktest.created_at).getTime()<=8*DAY,
     model_version:validation.model,segments:validation.segments||null,by_market:validation.by_market||null,calibration:validation.calibration||null,comparison_previous:validation.comparison_previous||null}:null});
@@ -528,7 +570,9 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
  app.post(api('scan'),authenticate,async(req,res)=>{
   if(!owner(req))return res.status(403).json({error:'Solo creador'});
   if(scanning)return res.status(409).json({error:'Escaneo en curso'});
-  scan({manual:true}).catch(e=>{lastScanReport={ok:false,error:safeError(e)};});
+  const days=Number(req.body?.days??NFORCE_SCAN_LOOKAHEAD_DAYS);
+  if(!Number.isInteger(days)||days<3||days>21)return res.status(400).json({error:'Selecciona 7, 14 o 21 días'});
+  scan({manual:true,days}).catch(e=>{lastScanReport={ok:false,error:safeError(e)};});
   res.status(202).json({accepted:true,message:'Análisis local iniciado. Actualiza el panel para revisar las propuestas.'});
  });
  app.post(api('candidates/:id/refresh'),authenticate,async(req,res)=>{

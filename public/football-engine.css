@@ -59,3 +59,25 @@
 .football-discarded-item strong{font-size:13px;color:#f0e2c7;overflow-wrap:anywhere}
 .football-discarded-item p{font-size:12px;line-height:1.6;color:#aebec0}
 .football-discarded-item button{max-width:100%;white-space:normal}
+
+/* Owner-only scan period selector, with compact mobile wrapping. */
+.football-scan-range{display:inline-flex;align-items:center;gap:.5rem;font-size:.86rem;color:#b8c8d6}.football-scan-range select{border:1px solid #48566a;border-radius:8px;background:#151b25;color:#ecf3ff;padding:.55rem;max-width:100%}
+
+/* v3.6.2 · Sports source controls, owner-only */
+.fe-sports-sources .football-engine-top{margin-bottom:22px}
+.sports-source-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,265px),1fr));gap:15px}
+.sports-source-card{min-width:0;border:1px solid #384653;border-radius:15px;padding:19px;background:linear-gradient(130deg,#151c27,#11191e)}
+.sports-source-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.sports-source-heading h3{margin:0 0 9px;color:#edce8e;font-size:16px}
+.sports-source-heading p,.sports-source-hint,.sports-source-disclaimer{color:#adbccc;font-size:13px;line-height:1.65}
+.sports-source-heading p{margin:0 0 10px}
+.sports-source-state{display:inline-flex;border:1px solid #656575;border-radius:30px;padding:5px 11px;color:#b9c5d4;font-size:12px;font-weight:700}
+.sports-source-state.enabled{border-color:#3d755c;color:#9ad9af;background:#142920}
+.sports-source-state.disabled{border-color:#78634c;color:#d9bc89;background:#2a2319}
+.sports-source-toggle{display:flex;gap:12px;align-items:center;color:#f1e3cc;font-weight:700;cursor:pointer;margin:16px 0}
+.sports-source-toggle input{width:21px;height:21px;min-width:21px;accent-color:#caa55c;cursor:pointer}
+.sports-source-toggle input:disabled{cursor:progress;opacity:.55}
+.sports-source-actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:20px}
+.sports-source-notice{min-height:1.2em;color:#eacb8c;font-size:13px;line-height:1.6}
+.sports-source-disclaimer{border-top:1px solid #34414a;padding-top:16px}
+@media(max-width:600px){.sports-source-actions button{width:100%}}

@@ -1,3 +1,25 @@
+## Control de APIs desde el panel (v3.6.2)
+
+En **Panel de administración → Fuentes deportivas** (solo propietario) puedes activar o desactivar la búsqueda complementaria, consultar el estado del verificador y solicitar una importación. Los cambios quedan guardados en MySQL y sobreviven reinicios/despliegues de Railway. Para conocer si aporta nuevos partidos, revisa las métricas de **Análisis automático** después de importar. La antigua variable `FOOTBALL_SECONDARY_SCHEDULE` solo determina el estado inicial una vez creada la tabla; no sobreescribe una preferencia guardada en MySQL.
+
+La clave del verificador independiente, si se utiliza, se mantiene en Railway y nunca aparece en el navegador. El calendario complementario es para descubrir encuentros, no para confirmar que un partido aún no ha comenzado. No se eliminan encuentros previos al desactivar su búsqueda.
+
+## v3.6.1 · API complementaria de detección de partidos (opcional)
+
+El escaneo ahora puede **descubrir más encuentros reales** de clubes y selecciones desde TheSportsDB v1 además de los archivos históricos habituales y la comprobación independiente que ya utilizaba el proyecto. El endpoint público permite una clave compartida `123`, sin registrarse. No lo confundas con un feed minuto a minuto: la fuente adicional **solo permite descubrir calendario**, no garantiza que un partido siga sin iniciarse. Los filtros GOLD/VIP, la revisión manual y los controles de publicación permanecen intactos.
+
+**Activación en Railway:** añadir `FOOTBALL_SECONDARY_SCHEDULE=true` a las variables del servicio y redesplegar. `FOOTBALL_SECONDARY_API_KEY` se puede dejar vacío para usar `123`. En el panel N-FORCE, pulsar **Importar datos deportivos**, esperar a que termine, y usar **Analizar ahora** con 21 días. Revisa las filas **Calendario complementario**, **Partidos exclusivos de la fuente adicional**, **Último rastreo complementario** y **Errores del calendario complementario** para identificar si la segunda fuente realmente detectó encuentros. Si no aporta partidos, puede deberse a la cobertura o límites del plan gratuito y no a un fallo del modelo.
+
+La cuota documentada es de 30 solicitudes/minuto; la modalidad gratuita devuelve como máximo unos 20 próximos encuentros por liga según endpoint y puede devolver menos. Se realizan hasta 22 consultas cuando se completa la importación; un escaneo ordinario no consulta esta API. La app reconcilia equipos y horarios para evitar duplicados. Los eventos sin hora UTC comprobable, cancelados o ya iniciados no se aceptan. No se importan resultados desde esta fuente para fabricar estadísticas ni se confunde una fecha programada con una verificación independiente de estado.
+
+Antes de usar datos de este servicio en un producto monetizado, confirmar con el proveedor sus condiciones de uso comercial y atribución. En entornos sin acceso de red, las pruebas automáticas solo validan la integración con respuestas simuladas: confirmar consultas reales desde el entorno Railway.
+
+---
+
+## Actualización v3.6.0 (diagnóstico de escaneos)
+
+El motor revisa por defecto los próximos **21 días**. Si Railway tiene `NFORCE_SCAN_DAYS=14`, ese valor previo se mantiene hasta que lo cambies a `21` o elimines la variable. Después de importar datos, selecciona **21 días** y ejecuta **Analizar ahora** y consulta **Diagnóstico del escaneo**, **Competición** y **En observación**. Estos últimos partidos *no* son propuestas aprobables. La función no rebaja los filtros GOLD/VIP ni inventa horarios de selecciones nacionales. Un resultado de cero propuestas sigue siendo posible cuando no hay datos suficientes.
+
 ## Selecciones nacionales (v3.5.9)
 
 N-FORCE mantiene las 20 ligas de clubes y añade 11 categorías de torneos de selecciones: Mundial, Eurocopa, eliminatorias mundialistas, amistosos, Nations League, Copa América y competiciones de confederaciones. En el panel del dueño, `Análisis automático` ahora muestra los torneos y registros importados.
