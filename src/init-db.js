@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { db } from './db.js';
+import {applyVipPriceIncrease,VIP_PRICE_TARGETS} from './vip-pricing.js';
 
 export async function initializeDatabase() {
   const schema = await readFile(new URL('../sql/schema.sql', import.meta.url), 'utf8');
@@ -436,9 +437,9 @@ export async function initializeDatabase() {
     // Planes iniciales: se insertan solo cuando no existe otro con el mismo nombre.
     // Nunca se modifican precios ni duraciones configurados por un administrador.
     const starterPlans = [
-      ['VIP Semanal', 7, 15],
-      ['VIP Mensual', 30, 45],
-      ['VIP Trimestral', 90, 120]
+      ['VIP Semanal', 7, VIP_PRICE_TARGETS[7]],
+      ['VIP Mensual', 30, VIP_PRICE_TARGETS[30]],
+      ['VIP Trimestral', 90, VIP_PRICE_TARGETS[90]]
     ];
     for (const [name, duration, price] of starterPlans) {
       const [rows] = await connection.execute('SELECT id FROM plans WHERE name = ? LIMIT 1', [name]);
@@ -450,6 +451,8 @@ export async function initializeDatabase() {
     // Existing prices remain untouched; create the agreed GOLD trial offering only once.
     const [goldExisting]=await connection.execute("SELECT id FROM plans WHERE tier='gold' LIMIT 1");
     if(!goldExisting.length)await connection.execute("INSERT INTO plans (name,duration_days,price_pen,tier,active) VALUES ('ÉLITE GOLD · 30 días',30,59.90,'gold',1)");
+    // Apply new premium VIP prices once, never changing historical payment amounts.
+    await applyVipPriceIncrease(connection);
     console.log('Customer columns ready');
     console.log('Prediction columns ready');
     console.log(`Database schema ready (${statements.length} tables checked)`);

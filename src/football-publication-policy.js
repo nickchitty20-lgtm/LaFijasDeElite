@@ -1,4 +1,5 @@
 import {selectMarket,MODEL_VERSION} from './nforce-model.js';
+import {GOLD_ROLLOUT} from './nforce-gold-transition.js';
 /** A selected outcome is an estimated 1X2 probability, NOT real hit rate. */
 export const FREE_MIN_PROBABILITY=40;
 export const FREE_MAX_PROBABILITY=68;
@@ -16,7 +17,8 @@ export function canAutoPublishCandidate(row){
   const d=evidenceData(row.evidence_json),m=d.model;
   if(m?.model!==MODEL_VERSION||!m.sample||!Number.isFinite(probability))return false;
   const expected=selectMarket({home:row.home_team,away:row.away_team},m);
-  return Boolean(expected&&expected.visibility===row.visibility&&expected.market===row.market&&
+  const expectedVisibility=expected?.visibility==='free' && d.distribution?.rollout===GOLD_ROLLOUT?'gold':expected?.visibility;
+  return Boolean(expected&&expectedVisibility===row.visibility&&expected.market===row.market&&
    expected.selection===row.selection&&Math.abs(expected.probability-probability)<0.11&&
    d.pick?.key===expected.key);
  }

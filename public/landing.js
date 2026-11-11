@@ -3,7 +3,7 @@ const el=id=>document.getElementById(id);
 const clean=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const price=n=>Number(n).toLocaleString('es-PE',{minimumFractionDigits:0,maximumFractionDigits:2});
 const days=n=>Number(n)===1?'1 día':`${Number(n)} días`;
-// v3.5.1: prices and access of BOTH tiers come from the same live plan catalogue.
+// v3.5.2: GOLD receives future automatic OPEN-profile picks; VIP retains its higher gate.
 function renderMembershipPlans(plans){
  const vipPlans=Array.isArray(plans)?plans.filter(p=>p.tier!=='gold'&&Number(p.price_pen)>0):[];
  const goldPlans=Array.isArray(plans)?plans.filter(p=>p.tier==='gold'&&Number(p.price_pen)>0):[];

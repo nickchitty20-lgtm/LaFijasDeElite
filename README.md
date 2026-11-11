@@ -1139,3 +1139,12 @@ GOLD es una membresía pagada, independiente de VIP, con un precio inicial de S/
 - Por ahora la **generación automática de candidatos GOLD desde N-FORCE está pendiente**. El dueño clasifica y aprueba manualmente GOLD; no se reetiquetan predicciones anteriores.
 
 **Prueba segura:** configura Telegram, vincula una cuenta de prueba, activa el plan GOLD por un pago de prueba verificado, publica manualmente una selección GOLD futura y comprueba el chat privado de Telegram. No hace falta añadir un canal GOLD.
+
+
+## GOLD automático y VIP premium — v3.5.2
+
+- Desde esta versión, nuevas propuestas que el modelo seleccionaría como `free` se etiquetan `gold` al guardarlas, conservando sus probabilidades, selección y evidencia originales. No se altera el motor para fabricar más pronósticos ni para prometer resultados.
+- La aprobación N-FORCE publica GOLD mediante la cola de mensajes privados ya disponible; suscriptores GOLD o VIP vigentes y con Telegram vinculado lo recibirán (requiere bot iniciado). No se publican fijas GOLD completas en el canal o grupo público.
+- Para borradores antiguos que aún figuren `free`, ejecutar un escaneo o **Actualizar propuesta** antes de aprobar; mientras tanto se bloquea su publicación. Los pronósticos gratuitos ya publicados, con sus resultados, se preservan sin relabeling retroactivo.
+- Precios recomendados VIP: 7 días S/89.90, 30 días S/249.90 y 90 días S/649.90. Un cambio de precios se aplica **una única vez** al arrancar en Railway sobre planes VIP activos con esas duraciones, subiéndolos hasta un mínimo por duración y dejando intactos los precios superiores. Planes de duraciones diferentes y GOLD no se modifican. Pagos históricos o solicitudes pendientes no se recalculan.
+- El historial público sigue distinguiendo `free` (histórico), `gold` y `vip`; nunca se omiten pérdidas. VIP mantiene sus filtros estrictos y puede no generar ninguna fija.

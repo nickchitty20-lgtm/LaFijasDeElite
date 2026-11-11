@@ -10,6 +10,7 @@ import {publishedFootballDetails} from './football-report.js';
 import {createNforceSettlement} from './nforce-settlement.js';
 import {LIVE_VERIFICATION_LEAGUES} from './live-schedule.js';
 import {candidateModelVersion,discardedInBuild,canReopenOldDiscard,CANDIDATE_REVIEW_BUILD} from './nforce-candidate-revival.js';
+import {classifyAutomaticCandidate,shouldBlockLegacyFreeDraft,GOLD_ROLLOUT} from './nforce-gold-transition.js';
 
 const DAY=86400000;
 const asUtc=x=>x instanceof Date?x:new Date(String(x||'').replace(' ','T')+(String(x||'').match(/Z|[+-]\d\d:\d\d$/)?'':'Z'));
@@ -136,12 +137,12 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     let models=0,drafts=0,underMin=0,rejected=0,alreadyPresent=0,updatedDrafts=0,reopenedOldDiscards=0;
     const existingByStatus={draft:0,discarded:0,published:0,other:0};
     const examples=[];const missingReasons={};const filteredExamples=[];
-    const marketCounts={};const categoryCounts={free:0,vip:0};const vipRejections={};
+    const marketCounts={};const categoryCounts={free:0,gold:0,vip:0};const vipRejections={};
     for(const m of future){
      const model=estimateMatch(m,usable,Date.parse(m.kickoff));
      if(!model){underMin++;const why=modelReadiness(m,usable,Date.parse(m.kickoff));missingReasons[why.reason]=(missingReasons[why.reason]||0)+1;if(examples.length<4)examples.push(`${m.home} vs ${m.away}: ${why.reason} (liga ${why.sample?.league||0}, local ${why.sample?.home||0}, visita ${why.sample?.away||0})`);continue;}
      models++;
-     const marketDiagnostics={};const candidate=makeCandidate(m,model,marketDiagnostics);
+     const marketDiagnostics={};const candidate=classifyAutomaticCandidate(makeCandidate(m,model,marketDiagnostics));
      for(const [reason,total] of Object.entries(marketDiagnostics.vip_rejections||{}))vipRejections[reason]=(vipRejections[reason]||0)+total;
      if(!candidate){rejected++;if(filteredExamples.length<5)filteredExamples.push(`${m.home} vs ${m.away}: 1X2 ${model.confidence}% · >1.5 ${model.totals.over15}% · BTTS ${model.totals.btts}% · calidad ${model.quality}/100`);continue;}
      categoryCounts[candidate.visibility]++;
@@ -264,7 +265,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     await conn.rollback();return {refreshed:false,reason:'Los datos del calendario están desactualizados. Importa datos y vuelve a intentarlo.'};
    }
    const model=estimateMatch(fixture,all.filter(fulltime),kickoff);
-   const refreshed=makeCandidate(fixture,model);
+   const refreshed=classifyAutomaticCandidate(makeCandidate(fixture,model));
    if(!refreshed){
     await conn.rollback();return {refreshed:false,reason:'Con el modelo actual, el encuentro no supera los filtros de selección. No se publicará.'};
    }
@@ -288,6 +289,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
    const [rows]=await conn.execute('SELECT * FROM football_candidates WHERE id=? FOR UPDATE',[id]);row=rows[0];
    if(!row||row.provider!==NFORCE_PROVIDER||row.status!=='draft'){await conn.rollback();return {published:false,reason:'Ya procesado o ajeno al motor local'};}
    if(reportLimited(row.evidence_json)?.model?.model!==MODEL_VERSION)throw Error('La propuesta pertenece a una versión anterior del modelo. Analiza de nuevo antes de publicarla.');
+   if(shouldBlockLegacyFreeDraft(row)){await conn.rollback();return {published:false,reason:'Esta propuesta antigua aún es GRATIS. Ejecuta «Analizar ahora» o «Actualizar propuesta» para convertirla a GOLD antes de publicarla.'};}
    const kickoff=asUtc(row.kickoff);
    if(!Number.isFinite(kickoff.getTime())||kickoff.getTime()<now().getTime()+20*60000)throw Error('El partido comenzó o empieza demasiado pronto');
    // Source may have rescheduled or completed this fixture after the candidate
@@ -356,7 +358,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     if(!canAutoPublishCandidate(row)){blocked++;continue;}
     if(!backtestReady||Number(reportLimited(backtestRow.metrics_json)?.by_market?.[reportLimited(row.evidence_json)?.pick?.key]?.evaluated||0)<40){unvalidated++;continue;}
     if(row.visibility==='vip'&&!evaluateVipEvidence(row,backtestRow,{asOf:now()}).approved){unvalidated++;continue;}
-    const ready=Boolean(process.env.TELEGRAM_BOT_TOKEN&&(row.visibility==='vip'?process.env.TELEGRAM_VIP_CHAT_ID:freeTelegramDestination(process.env)));
+    const ready=Boolean(process.env.TELEGRAM_BOT_TOKEN&&(row.visibility==='vip'?process.env.TELEGRAM_VIP_CHAT_ID:row.visibility==='gold'?true:freeTelegramDestination(process.env)));
     if(!ready){missingChannel++;continue;}
     try{const r=await publish(row.id,null,{automatic:true});if(r.published)published++;else if(r.reason==='Límite diario')limited++;}
     catch(e){failed++;lastError=safeError(e);}
@@ -388,7 +390,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
    res.json({calendar_diagnostic,engine:'N-FORCE',model_version:MODEL_VERSION,configured:true,auto_import:process.env.FOOTBALL_AUTO_IMPORT!=='false',
     scan_lookahead_days:NFORCE_SCAN_LOOKAHEAD_DAYS,scan_fixture_limit:NFORCE_SCAN_FIXTURE_LIMIT,
     auto_scan:process.env.FOOTBALL_AUTO_SCAN==='true',auto_publish:process.env.FOOTBALL_AUTO_PUBLISH==='true'&&process.env.NFORCE_LIVE_RELEASE_ACK==='true',
-    free_public_full:true,telegram_free_ready:!!(process.env.TELEGRAM_BOT_TOKEN&&freeTelegramDestination(process.env)),telegram_vip_ready:!!(process.env.TELEGRAM_BOT_TOKEN&&process.env.TELEGRAM_VIP_CHAT_ID),
+    automatic_free_promoted_to_gold:true,gold_distribution_rollout:GOLD_ROLLOUT,free_public_full:true,telegram_free_ready:!!(process.env.TELEGRAM_BOT_TOKEN&&freeTelegramDestination(process.env)),telegram_vip_ready:!!(process.env.TELEGRAM_BOT_TOKEN&&process.env.TELEGRAM_VIP_CHAT_ID),
     drafts:Number(stats.drafts||0),published:Number(stats.published||0),won:Number(stats.won||0),lost:Number(stats.lost||0),accuracy:decided?Number((100*stats.won/decided).toFixed(1)):null,
     latest:latest||null,scanning,importing,publishing,last_error:lastError,last_import_report:lastImportReport,last_scan_report:lastScanReport,
     vip_policy:VIP_POLICY,vip_risk_policy:VIP_RISK_POLICY,last_publish_report:lastPublishReport,last_scheduler_message:lastSchedulerMessage,scheduled_retry_at:latest?new Date(asUtc(latest.started_at).getTime()+SCAN_INTERVAL_MINUTES*60000).toISOString():null,

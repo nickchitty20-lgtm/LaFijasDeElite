@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 let currentAdminRole='';
-const ADMIN_PANEL_BUILD='3.5.1';
+const ADMIN_PANEL_BUILD='3.5.2';
 // Diagnose a partial/old Railway deployment instead of silently rendering stale UI.
 async function checkAdminBuild(){
  const label=$('adminBuildVersion'),status=$('adminBuildStatus');
@@ -592,7 +592,7 @@ async function loadFootballEngine(){
    ['Motor de análisis',status.engine?'N-FORCE':(status.configured?'Motor clásico':'Sin configurar')],
    ...(status.engine?[['Cotejo automático de resultados',status.settlement?.working?'Comprobando…':status.settlement?.last?`${status.settlement.last.settled} actualizados · ${status.settlement.last.won} ganados · ${status.settlement.last.lost} perdidos · ${status.settlement.last.void} anulados`:'Pendiente del siguiente control'],['Sin cotejar: sin FT / mercado desconocido',status.settlement?.last?`${status.settlement.last.invalid_source} / ${status.settlement.last.unsupported}`:'—']]:[]),
    ...(status.engine?[['Partidos importados',status.total_matches||0],['Resultados históricos',status.complete_matches||0],['Última importación',status.source_import?`${status.source_import.status} · ${status.source_import.sources} registros de competición · ${status.source_import.records} partidos`:'Pendiente'],['Ligas cargadas en MySQL',status.loaded_competitions!=null?`${status.loaded_competitions} de ${status.configured_competitions||20} configuradas`:'No disponible'],['Ligas con verificación de horarios independiente',status.live_schedule_supported_competitions!=null?`${status.live_schedule_supported_competitions} de ${status.configured_competitions||20} (según cobertura del sincronizador)`:'No disponible'],['Ligas de la última importación',status.last_import_report?.competitions_imported!=null?`${status.last_import_report.competitions_imported} con datos en la última importación`:'Ejecuta «Importar datos» para comprobar la cobertura'],['Temporadas aún sin datos',status.last_import_report?.datasets_missing??'—'],['Backtesting',status.backtest?`${status.backtest.evaluated} evaluados · ${status.backtest.accuracy??'—'}% precisión observada${status.backtest.validated?'':' (muestra insuficiente, antigua o de otra versión)'}`:'Aún sin validar'],
-   ['Resultados retrospectivos gratis / VIP',status.backtest?.segments?`Gratis: ${status.backtest.segments.free?.evaluated||0} pruebas · ${status.backtest.segments.free?.accuracy??'—'}% | VIP: ${status.backtest.segments.vip?.evaluated||0} pruebas · ${status.backtest.segments.vip?.accuracy??'—'}%`:'Pendiente de backtesting'],
+   ['Resultados retrospectivos del perfil GOLD / VIP',status.backtest?.segments?`Gratis: ${status.backtest.segments.free?.evaluated||0} pruebas · ${status.backtest.segments.free?.accuracy??'—'}% | VIP: ${status.backtest.segments.vip?.evaluated||0} pruebas · ${status.backtest.segments.vip?.accuracy??'—'}%`:'Pendiente de backtesting'],
    ['Evaluación por mercado',status.backtest?.by_market?Object.entries(status.backtest.by_market).map(([market,v])=>`${market}: ${v.evaluated} pruebas · ${v.accuracy}%`).join(' | ')||'Sin selecciones históricas validadas':'Pendiente'],
    ['Comparación con el motor anterior (Brier)',status.backtest?.comparison_previous?.paired_evaluated?
     `Anterior: ${status.backtest.comparison_previous.previous_brier} · Nuevo: ${status.backtest.comparison_previous.current_brier} · ${status.backtest.comparison_previous.paired_evaluated} partidos pareados. ${status.backtest.comparison_previous.brier_difference<0?'Mejora retrospectiva':status.backtest.comparison_previous.brier_difference>0?'Sin mejora retrospectiva':'Mismo error'} (menor es mejor; no garantiza futuro).`:'Ejecuta Validar modelo']]:[]),
@@ -792,7 +792,7 @@ function showFootballScanReport(r){
   if(r.next_fixture_beyond_window)line('Siguiente fuera de la ventana',`${r.next_fixture_beyond_window.match} · ${new Date(r.next_fixture_beyond_window.kickoff).toLocaleString('es-PE')}`);
   if(r.updated_existing_drafts!=null)line('Borradores actualizados con el nuevo modelo',r.updated_existing_drafts);
   if(r.eligible!=null)line('Propuestas elegibles (nuevas + existentes)',r.eligible);
-  if(r.eligible_by_category)line('Clasificación de propuestas (GRATIS / VIP)',`${r.eligible_by_category.free||0} / ${r.eligible_by_category.vip||0}`);
+  if(r.eligible_by_category)line('Clasificación de propuestas (GOLD / VIP; antiguas GRATIS)',`${r.eligible_by_category.gold||0} / ${r.eligible_by_category.vip||0} · GRATIS: ${r.eligible_by_category.free||0}`);
   if(r.eligible_by_market){
    const names={'1x2':'1X2',over15:'Más de 1.5',over25:'Más de 2.5',under25:'Menos de 2.5',bttsYes:'Ambos marcan Sí',bttsNo:'Ambos marcan No','1X':'Doble oportunidad 1X','X2':'Doble oportunidad X2','12':'Doble oportunidad 12'};
    line('Propuestas por mercado',Object.entries(r.eligible_by_market).map(([key,value])=>`${names[key]||key}: ${value}`).join(' · ')||'Ninguna');
