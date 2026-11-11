@@ -59,10 +59,10 @@ test('las propuestas antiguas del perfil abierto pueden volver solo tras reevalu
 
 test('una incompatibilidad explícita puede reintentarse en el próximo escaneo sin reinstalar la app',()=>{
  const incompatible={...row('nforce-poisson-1.5'),
-  evidence_json:JSON.stringify({model:{model:'nforce-poisson-1.5'},discarded_in_build:'3.5.5',discard_reason:'version_incompatible'})};
- assert.equal(canReopenOldDiscard(incompatible,MODEL_VERSION,'3.5.5'),true);
+  evidence_json:JSON.stringify({model:{model:'nforce-poisson-1.5'},discarded_in_build:'3.5.6',discard_reason:'version_incompatible'})};
+ assert.equal(canReopenOldDiscard(incompatible,MODEL_VERSION,'3.5.6'),true);
  const manuallyDiscarded={...incompatible,evidence_json:JSON.stringify({model:{model:'nforce-poisson-1.5'},discarded_in_build:'3.5.2',discard_reason:'manual'})};
- assert.equal(canReopenOldDiscard(manuallyDiscarded,MODEL_VERSION,'3.5.5'),false);
+ assert.equal(canReopenOldDiscard(manuallyDiscarded,MODEL_VERSION,'3.5.6'),false);
  const newerModel={...row('nforce-poisson-1.7'),evidence_json:JSON.stringify({model:{model:'nforce-poisson-1.7'},discard_reason:'version_incompatible',discarded_in_build:'3.5.1'})};
- assert.equal(canReopenOldDiscard(newerModel,MODEL_VERSION,'3.5.5'),false);
+ assert.equal(canReopenOldDiscard(newerModel,MODEL_VERSION,'3.5.6'),false);
 });

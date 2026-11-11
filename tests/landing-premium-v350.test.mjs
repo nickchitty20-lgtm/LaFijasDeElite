@@ -29,5 +29,5 @@ test('muestras pequeñas no usan tasas de éxito como reclamo comercial',()=>{
  assert.match(home,/sin cifras simuladas/);
  assert.match(home,/incluidos fallos y publicaciones retiradas/);
  assert.match(home,/Los importes GOLD y VIP/);
- assert.match(backend,/APP_VERSION = '3\.5\.5'/);
+ assert.match(backend,/APP_VERSION = '3\.5\.6'/);
 });
