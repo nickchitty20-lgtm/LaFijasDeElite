@@ -1,3 +1,21 @@
+# Fijas de Élite v3.6.9 — VIP equilibrado y calendario amplio por API
+
+**Cambios principales**
+
+- **VIP equilibrado:** 16 partidos por equipo (antes 20), 120 por liga (150), 5 por sede (6), muestra efectiva 9 (11), calidad 81/100 (86), actividad reciente de clubes 35 días (28). Las selecciones conservan el margen de inactividad de 180 días.
+- **Riesgo/robustez:** ajuste prudente de probabilidad mínima y tolerancia a escenarios, sin forzar la selección de mercados ni inventar probabilidades.
+- **Backtesting VIP:** mínimo global y de cohorte de 70 partidos (antes 80); 32 pruebas para el mercado específico (antes 40), rendimiento observado mínimo 68% (antes 70%), Wilson inferior 55%, y requisitos positivos de calibración, diferencia con referencia y Brier. No garantiza 68% en futuros partidos. Clubes y selecciones continúan con validación independiente.
+- **Sin mínimos escondidos:** los controles de autopublicación y aprobación manual utilizan las mismas constantes de política; continúa bloqueado un VIP sin validación. Cambia el modelo a `nforce-poisson-1.9`, así que se debe repetir **Validar modelo (backtest)** después del despliegue. Las propuestas antiguas deben reanalizarse antes de publicarse.
+- **Fuente IV de cobertura ampliada:** nueva sección en **Panel N-FORCE → Fuentes deportivas**. Cuando se habilita, reutiliza `FOOTBALL_API_KEY` y consulta partidos de hasta **29 competiciones compatibles con el historial**. En plan `free` consulta **solo mañana en UTC**; únicamente `FOOTBALL_SCHEDULE_PLAN=extended`, en una cuenta del proveedor que permita ese rango, consulta **hasta 21 días en una petición**. No desbloquea ligas sin históricos y no equivale a una verificación del estado NS al momento de publicar.
+- **Importaciones auditables:** deduplicación contra MySQL, registros por nueva fuente, resultados: recibidos/compatibles/ligas sin correspondencia/nuevos/vinculados. Cupo interno: 6 consultas diarias en free o 4 en extended, separado del verificador de horarios. El switch persiste en MySQL y está desactivado por defecto.
+- **Sin borrar MySQL:** migración crea el switch y el contador de consultas. No modifica membresías GOLD/VIP, pagos, lista blanca de Telegram ni contenido publicado.
+
+**Pasos:** 1) despliega la versión, 2) entra en Fuentes deportivas y activa **Calendario amplio · Fuente IV** cuando tengas `FOOTBALL_API_KEY`, 3) opcionalmente configura `FOOTBALL_SCHEDULE_PLAN=extended` si tu plan admite fechas ampliadas, 4) pulsa **Importar y analizar al terminar**, 5) ejecuta **Validar modelo (backtest)**, y 6) revisa el diagnóstico VIP y las propuestas.
+
+**Limitaciones:** no se ha probado contra una clave real, MySQL remoto o Railway. Una nueva fuente no garantiza candidatos suficientes ni un resultado económico. Para ampliar ligas sin historial compatible, primero debe integrarse su historial de forma autorizada. Verifica los derechos de uso comercial de la API que contrates.
+
+---
+
 # Fijas de Élite v3.6.8 — Modelo VIP adaptado a selecciones nacionales
 
 - **Fallo real corregido:** el modelo de fuerza de rivales ignoraba numerosos resultados internacionales que solo incluyen fecha, porque exigía `kickoff`. Ahora utiliza el mismo instante conservador de cierre del día empleado por el modelo base; nunca aprovecha partidos en la fecha/hora posterior al encuentro evaluado. No se inventan horarios de futuros partidos.

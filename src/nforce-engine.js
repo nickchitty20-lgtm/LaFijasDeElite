@@ -17,6 +17,8 @@ import {explainScan,tallyCompetition} from './nforce-scan-insights.js';
 import {importSecondaryFixtures,SECONDARY_COMPETITIONS} from './secondary-fixtures.js';
 import {readSecondarySource,saveSecondarySource,readFootballDataSource,saveFootballDataSource} from './nforce-source-settings.js';
 import {importFootballDataFixtures,FOOTBALL_DATA_COMPETITIONS} from './football-data-fixtures.js';
+import {readWideSource,saveWideSource} from './nforce-source-settings.js';
+import {importWideCalendar,WIDE_SUPPORTED_COMPETITIONS} from './api-football-wide.js';
 
 const DAY=86400000;
 const asUtc=x=>x instanceof Date?x:new Date(String(x||'').replace(' ','T')+(String(x||'').match(/Z|[+-]\d\d:\d\d$/)?'':'Z'));
@@ -40,7 +42,7 @@ export function importDecision(last,now=Date.now(),hours=IMPORT_INTERVAL_HOURS){
  const next=started+interval;
  return {due:!Number.isFinite(next)||now>=next,next:Number.isFinite(next)?new Date(next).toISOString():null};
 }
-export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenFootball,fetchSecondary=importSecondaryFixtures,fetchFootballData=importFootballDataFixtures,sendTelegram=sendPredictionToTelegram,enqueueEvent=null,now=()=>new Date()}={}){
+export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenFootball,fetchSecondary=importSecondaryFixtures,fetchFootballData=importFootballDataFixtures,fetchWide=importWideCalendar,sendTelegram=sendPredictionToTelegram,enqueueEvent=null,now=()=>new Date()}={}){
  const settlement=createNforceSettlement({db,now});
  let importing=false,scanning=false,publishing=false,combinedRunning=false,interval=null;
  let lastScanReport=null,lastImportReport=null,lastPublishReport=null,lastSchedulerMessage='',lastError='';
@@ -116,10 +118,16 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     footballDataEnabled=source.enabled;
     footballData=await fetchFootballData({conn,now:now(),enabled:footballDataEnabled,key:process.env.FOOTBALL_DATA_ORG_KEY});
    }catch(error){footballData={enabled:footballDataEnabled,failed:true,error:safeError(error),requests:0,inserted:0,matched:0,errors:[safeError(error)]};}
-   const status=sources||secondary.inserted||secondary.matched||footballData.inserted||footballData.matched?'completed':'failed';
+   let wide={enabled:false},wideEnabled=false;
+   try{
+    const config=await readWideSource(conn);
+    wideEnabled=config.enabled;
+    wide=await fetchWide({conn,now:now(),env:process.env,enabled:wideEnabled});
+   }catch(error){wide={enabled:wideEnabled,failed:true,error:safeError(error),requests:0,inserted:0,matched:0,errors:[safeError(error)]};}
+   const status=sources||secondary.inserted||secondary.matched||footballData.inserted||footballData.matched||wide.inserted||wide.matched?'completed':'failed';
    await conn.execute('UPDATE nforce_import_runs SET status=?,finished_at=UTC_TIMESTAMP(),sources=?,records=?,scheduled=?,completed_results=?,errors_json=? WHERE id=?',
     [status,sources,imported,scheduled,completed,JSON.stringify(errors).slice(0,3900),id]);
-   lastImportReport={ok:status==='completed',status,sources,records:imported,scheduled,completed,failed_sources:errors.length,errors:errors.slice(0,5),secondary,football_data:footballData,
+   lastImportReport={ok:status==='completed',status,sources,records:imported,scheduled,completed,failed_sources:errors.length,errors:errors.slice(0,5),secondary,football_data:footballData,api_football_wide:wide,
     competitions_configured:LEAGUES.length+NATIONAL_COMPETITIONS.length,competitions_imported:importedCompetitions.size,
     leagues_imported:[...LEAGUES,...NATIONAL_COMPETITIONS].filter(l=>importedCompetitions.has(l.code)).map(l=>l.name),
     national_teams_supported:true,national_competitions_imported:NATIONAL_COMPETITIONS.filter(c=>importedCompetitions.has(c.code)).map(c=>c.name),
@@ -368,14 +376,14 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
    if(automatic){
     if(!canAutoPublishCandidate(row))throw Error('Evidencias insuficientes para autopublicación');
     const [[validated]]=await conn.query('SELECT evaluated,model_version,created_at,metrics_json FROM nforce_backtests ORDER BY id DESC LIMIT 1');
-    if(!validated||validated.model_version!==MODEL_VERSION||Number(validated.evaluated)<40||!validated.created_at||now().getTime()-asUtc(validated.created_at).getTime()>8*DAY){await conn.rollback();return {published:false,reason:'Se necesita backtesting vigente'};}
+    if(!validated||validated.model_version!==MODEL_VERSION||Number(validated.evaluated)<VIP_POLICY.minOverall||!validated.created_at||now().getTime()-asUtc(validated.created_at).getTime()>8*DAY){await conn.rollback();return {published:false,reason:'Se necesita backtesting vigente'};}
     const pick=reportLimited(row.evidence_json)?.pick;
     const evidence=reportLimited(row.evidence_json);
     const context=evidence?.model?.history_group==='selecciones'?'national':'club';
     const report=reportLimited(validated.metrics_json);
     const metric=report?.by_context?.[context]?.by_market?.[pick?.key]||
      (context==='club'?report?.by_market?.[pick?.key]:null);
-    if(Number(metric?.evaluated||0)<40){await conn.rollback();return {published:false,reason:'El mercado no dispone de 40 selecciones retrospectivas del mismo tipo de competición'};}
+    if(Number(metric?.evaluated||0)<VIP_POLICY.minMarket){await conn.rollback();return {published:false,reason:`El mercado no dispone de ${VIP_POLICY.minMarket} pruebas retrospectivas del mismo tipo de competición`};}
     const [[count]]=await conn.execute("SELECT COUNT(*) AS total FROM football_candidates WHERE provider=? AND visibility=? AND status='published' AND DATE(published_at)=UTC_DATE()",[NFORCE_PROVIDER,row.visibility]);
     if(Number(count.total)>=(row.visibility==='vip'?2:1)){await conn.rollback();return {published:false,reason:'Límite diario'};}
    }
@@ -406,7 +414,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
    const [rows]=await db.query("SELECT * FROM football_candidates WHERE provider=? AND status='draft' AND kickoff>DATE_ADD(UTC_TIMESTAMP(),INTERVAL 30 MINUTE) AND kickoff<DATE_ADD(UTC_TIMESTAMP(),INTERVAL 73 HOUR) ORDER BY kickoff LIMIT 40",[NFORCE_PROVIDER]);
    let published=0,failed=0,missingChannel=0,blocked=0,unvalidated=0,limited=0;
    const [[backtestRow]]=await db.query('SELECT evaluated,model_version,created_at,metrics_json FROM nforce_backtests ORDER BY id DESC LIMIT 1');
-   const backtestReady=backtestRow?.model_version===MODEL_VERSION&&Number(backtestRow?.evaluated)>=40&&
+   const backtestReady=backtestRow?.model_version===MODEL_VERSION&&Number(backtestRow?.evaluated)>=VIP_POLICY.minOverall&&
     backtestRow?.created_at&&now().getTime()-asUtc(backtestRow.created_at).getTime()<=8*DAY;
    for(const row of rows){
     if(!canAutoPublishCandidate(row)){blocked++;continue;}
@@ -414,7 +422,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     const backtestReport=reportLimited(backtestRow?.metrics_json);
     const metric=backtestReport?.by_context?.[context]?.by_market?.[candidateEvidence?.pick?.key]||
      (context==='club'?backtestReport?.by_market?.[candidateEvidence?.pick?.key]:null);
-    if(!backtestReady||Number(metric?.evaluated||0)<40){unvalidated++;continue;}
+    if(!backtestReady||Number(metric?.evaluated||0)<VIP_POLICY.minMarket){unvalidated++;continue;}
     if(row.visibility==='vip'&&!evaluateVipEvidence(row,backtestRow,{asOf:now()}).approved){unvalidated++;continue;}
     const ready=Boolean(process.env.TELEGRAM_BOT_TOKEN&&(row.visibility==='vip'?process.env.TELEGRAM_VIP_CHAT_ID:row.visibility==='gold'?true:freeTelegramDestination(process.env)));
     if(!ready){missingChannel++;continue;}
@@ -423,7 +431,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     if(published>=3)break;
    }
    lastPublishReport={at:now().toISOString(),reviewed:rows.length,published,failed,missing_channel:missingChannel,blocked_by_filters:blocked,
-    without_validation:unvalidated,daily_limit:limited,reason:published?null:unvalidated?'Falta backtesting vigente con al menos 40 selecciones del mercado; ejecuta «Validar modelo».':missingChannel?'Faltan token o chats de Telegram.':
+    without_validation:unvalidated,daily_limit:limited,reason:published?null:unvalidated?`Falta backtesting vigente con al menos ${VIP_POLICY.minMarket} pruebas del mercado; ejecuta «Validar modelo».`:missingChannel?'Faltan token o chats de Telegram.':
      limited?'Límite diario alcanzado.':rows.length?'Borradores no aptos para publicación automática.':'No hay propuestas locales aptas.'};
    return lastPublishReport;
   });}finally{publishing=false;}
@@ -443,7 +451,8 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
   try{
    const secondary=await readSecondarySource(db);
    const footballData=await readFootballDataSource(db);
-   res.json({football_data:{...footballData,name:'football-data.org',configured:Boolean(process.env.FOOTBALL_DATA_ORG_KEY),competition_count:Object.keys(FOOTBALL_DATA_COMPETITIONS).length,last_import:lastImportReport?.football_data||null},
+   const wide=await readWideSource(db);
+   res.json({api_football_wide:{...wide,name:'Calendario de cobertura ampliada · Fuente IV',configured:Boolean(process.env.FOOTBALL_API_KEY),plan:process.env.FOOTBALL_SCHEDULE_PLAN==='extended'?'extended':'free',competition_count:WIDE_SUPPORTED_COMPETITIONS.length,last_import:lastImportReport?.api_football_wide||null},football_data:{...footballData,name:'football-data.org',configured:Boolean(process.env.FOOTBALL_DATA_ORG_KEY),competition_count:Object.keys(FOOTBALL_DATA_COMPETITIONS).length,last_import:lastImportReport?.football_data||null},
     secondary:{...secondary,name:'TheSportsDB',competition_count:SECONDARY_COMPETITIONS.length,last_import:lastImportReport?.secondary||null},
     historical:{name:'Histórico deportivo',enabled:true,editable:false},
     live_schedule:{configured:process.env.FOOTBALL_SCHEDULE_LIVE==='true'&&Boolean(process.env.FOOTBALL_API_KEY),editable:false}});
@@ -457,6 +466,16 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
    const result=await saveSecondarySource(db,{enabled:req.body.enabled,actorId:req.admin.id});
    res.json({...result,message:result.changed?`Calendario complementario ${result.enabled?'activado':'desactivado'}. El cambio se aplicará en la próxima importación.`:'La configuración ya estaba guardada.'});
   }catch(e){res.status(500).json({error:'No se pudo guardar el cambio: '+safeError(e)});}
+ });
+ app.post(api('sources/wide-calendar'),authenticate,async(req,res)=>{
+  if(!owner(req))return res.status(403).json({error:'Solo creador'});
+  if(!req.body||Object.keys(req.body).length!==1||typeof req.body.enabled!=='boolean')
+   return res.status(400).json({error:'Envía únicamente enabled: true o false'});
+  try{
+   const result=await saveWideSource(db,{enabled:req.body.enabled,actorId:req.admin.id});
+   res.json({...result,configured:Boolean(process.env.FOOTBALL_API_KEY),plan:process.env.FOOTBALL_SCHEDULE_PLAN==='extended'?'extended':'free',
+    message:result.changed?'Calendario amplio guardado. '+(process.env.FOOTBALL_API_KEY?'Importa datos para descubrir encuentros.':'Configura FOOTBALL_API_KEY en Railway para que funcione.'):'Sin cambios en el calendario amplio.'});
+  }catch(e){res.status(500).json({error:'No se pudo guardar calendario amplio: '+safeError(e)});}
  });
  app.post(api('sources/football-data'),authenticate,async(req,res)=>{
   if(!owner(req))return res.status(403).json({error:'Solo creador'});
@@ -484,7 +503,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     id:String(r.id),competition:r.competition,league:r.league,
     home_team:r.home_team,away_team:r.away_team,
     match_date:r.match_date, kick_off:r.kickoff, scheduled_time_known:Boolean(r.scheduled_time_known),
-    source:String(r.source_path||'').startsWith('verified/')?'verificador':r.source_path==='secondary/thesportsdb'?'complementaria':r.source_path==='secondary/football-data-org'?'football-data':'histórico',
+    source:String(r.source_path||'').startsWith('verified/')?'verificador':r.source_path==='secondary/thesportsdb'?'complementaria':r.source_path==='secondary/football-data-org'?'football-data':r.source_path==='secondary/api-football-wide'?'wide-calendar':'histórico',
     source_checked_at:r.source_checked_at,
     // This status is informational, never inferred from an unverified discovery feed.
     verified_status:r.verified_status||null,verified_at:r.verified_at||null
@@ -524,6 +543,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     (SELECT COUNT(*) FROM nforce_matches WHERE competition LIKE 'int.%') AS national_matches,
     (SELECT COUNT(*) FROM nforce_matches WHERE source_path='secondary/thesportsdb') AS secondary_fixtures,
     (SELECT COUNT(*) FROM nforce_matches WHERE source_path='secondary/football-data-org') AS football_data_fixtures,
+    (SELECT COUNT(*) FROM nforce_matches WHERE source_path='secondary/api-football-wide') AS wide_fixtures,
     (SELECT COUNT(*) FROM nforce_matches WHERE source_path='verified/domestic-fixtures') AS verified_club_fixtures,
     (SELECT COUNT(*) FROM nforce_matches WHERE home_goals IS NOT NULL) AS complete_matches`);
    const [[latest]]=await db.query('SELECT status,initiated_by,started_at,finished_at,error_message,upcoming AS examined,drafts AS drafts_created,insufficient AS without_prediction,filtered AS below_filters FROM nforce_scans ORDER BY id DESC LIMIT 1');
@@ -534,6 +554,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
    const calendar_diagnostic=diagnoseNforceCalendar(await loadMatches(),{now:now(),days:NFORCE_SCAN_LOOKAHEAD_DAYS});
    const secondaryConfig=await readSecondarySource(db);
    const footballDataConfig=await readFootballDataSource(db);
+   const wideConfig=await readWideSource(db);
    res.json({calendar_diagnostic,engine:'N-FORCE',model_version:MODEL_VERSION,configured:true,auto_import:process.env.FOOTBALL_AUTO_IMPORT!=='false',
     scan_lookahead_days:NFORCE_SCAN_LOOKAHEAD_DAYS,scan_fixture_limit:NFORCE_SCAN_FIXTURE_LIMIT,
     auto_scan:process.env.FOOTBALL_AUTO_SCAN==='true',auto_publish:process.env.FOOTBALL_AUTO_PUBLISH==='true'&&process.env.NFORCE_LIVE_RELEASE_ACK==='true',
@@ -545,9 +566,10 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     configured_competitions:LEAGUES.length+NATIONAL_COMPETITIONS.length,national_competitions_configured:NATIONAL_COMPETITIONS.length,live_schedule_supported_competitions:LIVE_VERIFICATION_LEAGUES.length,loaded_competitions:Number(stats.loaded_competitions||0),loaded_national_competitions:Number(stats.loaded_national_competitions||0),national_matches:Number(stats.national_matches||0),
     total_matches:Number(stats.total_matches||0),complete_matches:Number(stats.complete_matches||0),source_import:lastImport||null,next_import_at:retry.next,
     football_data_enabled:footballDataConfig.enabled,football_data_configured:Boolean(process.env.FOOTBALL_DATA_ORG_KEY),football_data_fixtures:Number(stats.football_data_fixtures||0),
+    wide_enabled:wideConfig.enabled,wide_configured:Boolean(process.env.FOOTBALL_API_KEY),wide_fixtures:Number(stats.wide_fixtures||0),
     secondary_enabled:secondaryConfig.enabled,secondary_competitions:SECONDARY_COMPETITIONS.length,secondary_fixtures:Number(stats.secondary_fixtures||0),verified_club_fixtures:Number(stats.verified_club_fixtures||0),
     settlement:settlement.getStatus(),
-    backtest:lastBacktest?{evaluated:lastBacktest.evaluated,accuracy:lastBacktest.accuracy,brier:lastBacktest.brier,validated:Number(lastBacktest.evaluated)>=40&&validation.model===MODEL_VERSION&&now().getTime()-asUtc(lastBacktest.created_at).getTime()<=8*DAY,
+    backtest:lastBacktest?{evaluated:lastBacktest.evaluated,accuracy:lastBacktest.accuracy,brier:lastBacktest.brier,validated:Number(lastBacktest.evaluated)>=VIP_POLICY.minOverall&&validation.model===MODEL_VERSION&&now().getTime()-asUtc(lastBacktest.created_at).getTime()<=8*DAY,
     model_version:validation.model,segments:validation.segments||null,by_market:validation.by_market||null,by_context:validation.by_context||null,calibration:validation.calibration||null,comparison_previous:validation.comparison_previous||null}:null});
   }catch(e){res.status(500).json({error:'No se pudo consultar N-FORCE: '+safeError(e)});}
  });
@@ -730,7 +752,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
   if(process.env.FOOTBALL_AUTO_SCAN==='true'||process.env.FOOTBALL_AUTO_PUBLISH==='true'){
    const [[b]]=await db.query('SELECT created_at,model_version,evaluated FROM nforce_backtests ORDER BY id DESC LIMIT 1');
    if(!b||b.model_version!==MODEL_VERSION||now().getTime()-asUtc(b.created_at).getTime()>7*DAY||
-      (Number(b.evaluated||0)<40&&now().getTime()-asUtc(b.created_at).getTime()>12*3600000)){
+      (Number(b.evaluated||0)<VIP_POLICY.minOverall&&now().getTime()-asUtc(b.created_at).getTime()>12*3600000)){
     await backtest().catch(e=>{lastError='Backtesting: '+safeError(e);});
    }
   }

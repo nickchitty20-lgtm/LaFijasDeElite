@@ -3,8 +3,10 @@
  * A VIP remains unpublished if the specific market has insufficient evidence.
  */
 import {MODEL_VERSION} from './nforce-model.js';
-export const VIP_POLICY=Object.freeze({minOverall:80,minMarket:40,minAccuracy:70,minWilsonLower:58,
- maxCalibrationGap:12,minBrierSkill:0.01,minBaselineLift:5,minVipOverFree:5,maxAgeDays:8});
+// Slightly broader historical sample allowance; still fail closed on
+// market-specific accuracy, Wilson uncertainty, calibration and Brier skill.
+export const VIP_POLICY=Object.freeze({minOverall:70,minMarket:32,minAccuracy:68,minWilsonLower:55,
+ maxCalibrationGap:13,minBrierSkill:0.005,minBaselineLift:4,minVipOverFree:3,maxAgeDays:8});
 
 const finite=x=>x!==null&&x!==undefined&&x!==''&&Number.isFinite(Number(x));
 const percent=(x)=>Math.round(Number(x)*10)/10;

@@ -154,6 +154,13 @@ export async function initializeDatabase() {
       ['thesportsdb',process.env.FOOTBALL_SECONDARY_SCHEDULE==='true'?1:0]);
     await connection.execute('INSERT IGNORE INTO nforce_source_settings(source_id,enabled) VALUES (?,?)',
       ['footballdata',process.env.FOOTBALL_DATA_ORG_ENABLED==='true'?1:0]);
+    await connection.execute('INSERT IGNORE INTO nforce_source_settings(source_id,enabled) VALUES (?,?)',
+      ['apisportswide',process.env.FOOTBALL_WIDE_DISCOVERY==='true'?1:0]);
+    await connection.query(`CREATE TABLE IF NOT EXISTS nforce_wide_calendar_requests (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      requested_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_nforce_wide_request_at (requested_at)
+    ) ENGINE=InnoDB`);
     await connection.query(`CREATE TABLE IF NOT EXISTS nforce_import_runs (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
       status ENUM('running','completed','failed') NOT NULL DEFAULT 'running',

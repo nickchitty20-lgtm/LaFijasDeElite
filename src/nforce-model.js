@@ -7,7 +7,7 @@ import {isNationalCompetition} from './nforce-internationals.js';
 const DAY=86400000;
 const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
 const round=(x,n=1)=>Number(x.toFixed(n));
-export const MODEL_VERSION='nforce-poisson-1.8';
+export const MODEL_VERSION='nforce-poisson-1.9';
 export const MODEL_SETTINGS=Object.freeze({lookbackDays:900,teamGames:30,leagueGames:250,minTeam:7,minLeague:36,freshDays:90,rho:-0.07});
 // International teams play in clustered windows, not weekly league rounds.
 // These settings change data usage, not the VIP accuracy or calibration bar.
@@ -172,11 +172,14 @@ export function estimateMatch(target,completed,asOf=fixtureTimestamp(target)){
  * regularized forecast. Conservative VIPs must survive these scenarios.
  * All test scenarios derive from the historical goal model, not market odds.
  */
-export const VIP_RISK_POLICY=Object.freeze({minTeam:20,minLeague:150,minVenue:6,minEffective:11,
- maxFormAgeDays:28,minQuality:86,maxModelDisagreement:9,maxStressDrop:13,minStressed:76,
- minNominal:{'1x2':74,over15:82,over25:79,under25:79,bttsYes:79,bttsNo:79,'1X':86,'X2':86,'12':88},
- minBaselineEdge:8});
-// Preserve the SAME quality, venue, team-history, market and robustness bars.
+// v1.9 balanced profile: allow a few fewer prior games and slightly broader
+// sensitivity tolerance. This is a heuristic candidate screen, NOT a claim of
+// validated 70% accuracy. The independent walk-forward evidence gate remains.
+export const VIP_RISK_POLICY=Object.freeze({minTeam:16,minLeague:120,minVenue:5,minEffective:9,
+ maxFormAgeDays:35,minQuality:81,maxModelDisagreement:10,maxStressDrop:15,minStressed:73,
+ minNominal:{'1x2':72,over15:80,over25:77,under25:77,bttsYes:77,bttsNo:77,'1X':84,'X2':84,'12':86},
+ minBaselineEdge:6});
+// Keep the same (balanced) sample and robustness bars for national teams.
 // Only adjust maximum inactivity to the already-enforced international model
 // readiness window. A dated international pause is not a weekly club absence.
 export const NATIONAL_VIP_RISK_POLICY=Object.freeze({...VIP_RISK_POLICY,
