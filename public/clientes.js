@@ -23,7 +23,7 @@ async function loadCustomerPicks(){
   for(const p of r.predictions){
    const article=document.createElement('article');article.className='customer-pick fe-research-card'+(p.locked?' is-locked':'');
    const h=document.createElement('h4');h.textContent=(p.locked?'🔒 ':'⚽ ')+p.title;article.append(h);
-   const meta=document.createElement('p');meta.textContent=`${p.league||'Fútbol'} · ${p.visibility==='vip'?'VIP':p.visibility==='gold'?'GOLD':'Gratis'}`;article.append(meta);
+   const meta=document.createElement('p');meta.textContent=`${p.league||'Fútbol'} · ${p.visibility==='vip'?'VIP':p.visibility==='gold'?'GOLD':'Abierto'}`;article.append(meta);
    const schedule=window.FijasMatchSchedule?.render(p.match_date,{...(p.locked?{}:p.football_details?.match_context||{}),prediction_id:p.id});if(schedule)article.append(schedule);
    if(p.locked){const desc=document.createElement('p');desc.textContent=`🔒 Selección, mercados y análisis privados. Necesitas una membresía ${p.visibility==='gold'?'GOLD o VIP':'VIP'} activa.`;article.append(desc);
     const go=document.createElement('a');go.className='vip-unlock';go.href='#request';go.textContent=p.visibility==='gold'?'Desbloquear GOLD':'Desbloquear VIP';article.append(go);
@@ -267,15 +267,15 @@ async function refreshTelegramStatus(){
    r.change_pending?'Cambio de Telegram en curso. Tu cuenta anterior ya no tiene acceso al canal. Vincula la nueva cuenta mediante el enlace generado.':
    r.detached_pending?'Telegram desvinculado: la cuenta antigua todavía tiene su plaza reservada. Puede salir del canal o el creador retirarla manualmente. No puedes vincular otra por ahora.':
    !r.linked?r.change_cooldown_minutes>0?'El Telegram anterior ya salió. Espera el plazo de seguridad de 30 días, salvo excepción autorizada por el dueño.':'Primero vincula tu Telegram para verificar tu identidad.':
-   `${r.telegram_username?'@'+r.telegram_username:'Cuenta Telegram vinculada'} · ${r.is_member?'Miembro del canal VIP · También recibes GOLD':r.has_vip?'VIP activo · Recibirás GOLD por privado y puedes solicitar canal VIP':r.has_gold?'GOLD activo · Las nuevas selecciones GOLD llegarán por privado':'Sin acceso de pago · Vincula Telegram y elige una membresía'}`;
+   `${r.telegram_username?'@'+r.telegram_username:'Cuenta Telegram vinculada'} · ${r.is_member?'Miembro del canal VIP · También recibes GOLD':r.has_vip?'VIP activo · Recibirás GOLD por privado y puedes solicitar canal VIP':r.has_gold?'GOLD activo · Lista blanca GOLD habilitada y nuevas selecciones por privado':'Sin acceso de pago · Vincula Telegram y elige una membresía'}`;
   const group=$('telegramPublicLink');group.replaceChildren();
   const addPublicLink=(url,label)=>{
    if(!url||!/^https:\/\/t\.me\//i.test(url))return;
    const a=document.createElement('a');a.href=url;a.target='_blank';a.rel='noopener noreferrer';
    a.className='telegram-action';a.textContent=label;group.append(a);
   };
-  addPublicLink(r.public_channel_url,'📢 Canal GRATIS · Pronósticos ↗');
-  addPublicLink(r.public_group_url,'💬 Grupo GRATIS · Comunidad extra ↗');
+  addPublicLink(r.public_channel_url,'📢 Canal oficial ↗');
+  addPublicLink(r.public_group_url,'💬 Comunidad ↗');
   if(!group.childElementCount)group.textContent='Los enlaces públicos aparecerán cuando el dueño los configure.';
  }catch(error){status.textContent=error.message;}
 }

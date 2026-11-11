@@ -261,7 +261,7 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
      FROM telegram_change_state WHERE user_id=?`,[req.customer.id]);
    res.json({configured:telegramEnabled(),linked:Boolean(link)&&link.link_status==='active',detached_pending:link?.link_status==='detached',telegram_username:link?.link_status==='active'?link.telegram_username:null,
     telegram_user_id:link?.telegram_user_id?String(link.telegram_user_id):null,
-    is_member:link?.link_status==='active'&&(!change||change.status!=='awaiting_new')?Boolean(link?.is_member):false,has_vip:vip,has_gold:gold,gold_private_dm:gold && link?.link_status==='active',
+    is_member:link?.link_status==='active'&&(!change||change.status!=='awaiting_new')?Boolean(link?.is_member):false,has_vip:vip,has_gold:gold,gold_private_dm:gold && link?.link_status==='active',gold_whitelisted:Boolean(gold && link?.link_status==='active' && (!change||change.status!=='awaiting_new')),
     staff_vip:entitlement.staff,access_reason:entitlement.staff?'staff':entitlement.paid?'paid':null,
     change_pending:change?.status==='awaiting_new',change_cooldown_minutes:Number(change?.cooldown_minutes||0),
     change_reissue_minutes:Number(change?.reissue_minutes||0),change_expires_minutes:Number(change?.expires_minutes||0),
