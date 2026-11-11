@@ -44,7 +44,7 @@ function fakeEngine({officialReady=true,publicFails=false,hasMatches=true}={}){
  };
  const app={get(path,...cb){handlers['GET '+path]=cb.at(-1);},post(path,...cb){handlers['POST '+path]=cb.at(-1);}};
  installNforceEngine(app,{db,authenticate(){},now:()=>NOW,
-  sendRadarTelegram:async(chat,message)=>{sends.private.push({chat,message});return {message_id:17}},
+  inspectVipChannel:async()=>({ready:true,chat_id:'-1001234567890'}),sendRadarTelegram:async(chat,message)=>{sends.private.push({chat,message});return {message_id:17}},
   sendRadarOfficialTelegram:async(chat,message)=>{sends.official.push({chat,message});if(publicFails)throw Error('telegram error');return {message_id:23}},
   inspectOfficialChannel:async(env,options)=>{sends.checked.push(options);return officialReady?{ready:true,chat_id:'-1008888888888',title:'Oficial'}:{ready:false,reason:'Sin permiso de publicación.'};}
  });
@@ -86,7 +86,7 @@ test('manual bulletin publishes private first and a distinct public teaser exact
  assert.equal(f.sends.official[0].chat,'-1008888888888');
  assert.match(f.sends.private[0].message,/Modelo base 1 \/ X \/ 2/);
  assert.doesNotMatch(f.sends.official[0].message,/Modelo base 1 \/ X \/ 2/);
- assert.deepEqual(f.sends.checked,[undefined,{checkPermissions:true}]);
+ assert.deepEqual(f.sends.checked,[{checkPermissions:true}]);
  assert.ok(f.statements.some(x=>x.q.includes("public_status='sent'")));
  const second=await f.send();assert.equal(second.body.sent,false);
  assert.equal(f.sends.private.length,1);assert.equal(f.sends.official.length,1);
@@ -112,4 +112,12 @@ test('without modeled fixtures no private bulletin and no official preview are p
  const f=fakeEngine({hasMatches:false});const result=await f.send();
  assert.equal(result.body.sent,false);
  assert.equal(f.sends.private.length,0);assert.equal(f.sends.official.length,0);
+}));
+
+test('public channel @username verification failure does not preempt sending VIP',()=>withEnv(async()=>{
+ process.env.TELEGRAM_FREE_CHANNEL_CHAT_ID='@FijasDeEliteOficial';
+ const f=fakeEngine({officialReady:false});const result=await f.send();
+ assert.equal(result.body.sent,true);assert.equal(result.body.public_announcement.state,'skipped');
+ assert.equal(f.sends.private.length,1);assert.equal(f.sends.official.length,0);
+ assert.equal(f.sends.checked.length,1);
 }));

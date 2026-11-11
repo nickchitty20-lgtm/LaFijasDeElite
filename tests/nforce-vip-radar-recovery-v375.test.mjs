@@ -32,7 +32,7 @@ async function scenario({previous=null,sendError=null,saveFails=false}={}){
    }
    if(sql.startsWith('SELECT status,sent_at,telegram_message_id,private_failure_kind'))return [[{...record}]];
    if(sql.includes("SET status='reserved',private_failure_kind=NULL,recovery_attempts")){
-    if(!['failed','reserved'].includes(record.status)||record.recovery_attempts>=1)return [{affectedRows:0}];
+    if(!['failed','reserved'].includes(record.status)||record.recovery_attempts>=3)return [{affectedRows:0}];
     record.status='reserved';record.private_failure_kind=null;record.recovery_attempts++;return [{affectedRows:1}];
    }
    if(sql.includes("SET status='failed',private_failure_kind=?")){
@@ -54,14 +54,14 @@ async function scenario({previous=null,sendError=null,saveFails=false}={}){
  }};
  const app={get(route,...args){handlers['GET '+route]=args.at(-1);},post(route,...args){handlers['POST '+route]=args.at(-1);}};
  installNforceEngine(app,{db,authenticate(){},now:()=>NOW,
-  sendRadarTelegram:async(chat,message)=>{sends.push({chat,message});if(failure){const e=failure;failure=null;throw e;}return {message_id:777};}});
+  inspectVipChannel:async()=>({ready:true,chat_id:'-1001234567890'}),sendRadarTelegram:async(chat,message)=>{sends.push({chat,message});if(failure){const e=failure;failure=null;throw e;}return {message_id:777};}});
  const send=async(body={})=>{const res={statusCode:200,status(n){this.statusCode=n;return this;},json(x){this.body=x;return this;}};
   await handlers['POST /api/admin/football/vip-radar/send']({admin:{role:'owner'},body},res);return res.body;};
  const restore=()=>{for(const [k,v] of Object.entries(before)){if(v===undefined)delete process.env[k];else process.env[k]=v;}};
  return {send,sends,record:()=>record,restore};
 }
 
-test('v3.7.5 ambiguous failed attempt requires explicit confirmation and permits only one recovery',async()=>{
+test('v3.7.6 ambiguous failed attempt requires explicit confirmation and permits recovery',async()=>{
  const f=await scenario({previous:{status:'failed'}});
  try{
   let r=await f.send();assert.equal(r.sent,false);assert.equal(r.needs_confirmation,true);assert.equal(f.sends.length,0);
@@ -77,7 +77,7 @@ test('definitive Telegram rejection can be retried without falsely reporting del
  try{
   let r=await f.send();assert.equal(r.sent,false);assert.equal(r.retryable,true);
   assert.equal(f.record().private_failure_kind,'rejected');
-  r=await f.send();assert.equal(r.sent,true);assert.equal(f.sends.length,2);
+  r=await f.send();assert.equal(r.needs_confirmation,true);r=await f.send({confirm_unsent:true});assert.equal(r.sent,true);assert.equal(f.sends.length,2);
   assert.equal(f.record().status,'sent');
  }finally{f.restore();}
 });
@@ -108,4 +108,18 @@ test('an interrupted reserved attempt can be manually recovered after explicit c
   r=await f.send({confirm_unsent:true});assert.equal(r.sent,true);assert.equal(f.sends.length,1);
   r=await f.send();assert.equal(r.already_sent,true);
  }finally{f.restore();}
+});
+
+test('owner can recover a second failed attempt after checking it was not delivered',async()=>{
+ const f=await scenario({previous:{status:'failed',private_failure_kind:'unknown',recovery_attempts:1}});
+ try{
+  let r=await f.send();assert.equal(r.needs_confirmation,true);
+  r=await f.send({confirm_unsent:true});assert.equal(r.sent,true);
+  assert.equal(f.record().recovery_attempts,2);
+ }finally{f.restore();}
+});
+
+test('never retries a confirmed sent bulletin even if owner requests recovery',async()=>{
+ const f=await scenario({previous:{status:'sent',sent_at:'2026-11-11',telegram_message_id:345,recovery_attempts:2}});
+ try{const r=await f.send({confirm_unsent:true});assert.equal(r.sent,false);assert.equal(r.already_sent,true);assert.equal(f.sends.length,0);}finally{f.restore();}
 });

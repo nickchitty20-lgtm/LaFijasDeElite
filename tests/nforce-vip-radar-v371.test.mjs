@@ -77,7 +77,7 @@ test('solo propietario puede previsualizar y enviar; despacho VIP no se repite e
    throw Error('SQL inesperado: '+q.slice(0,65));
   }
  };
- installNforceEngine(app,{db,authenticate(){},now:()=>when,sendRadarTelegram:async(chat,message)=>{sent.push({chat,message});return {message_id:11};}});
+ installNforceEngine(app,{db,authenticate(){},now:()=>when,inspectVipChannel:async()=>({ready:true,chat_id:'-1001234567890'}),sendRadarTelegram:async(chat,message)=>{sent.push({chat,message});return {message_id:11};}});
  const makeRes=()=>({statusCode:200,body:null,status(code){this.statusCode=code;return this;},set(){return this;},json(body){this.body=body;return this;}});
  const preview=handlers['GET /api/admin/football/vip-radar'];
  const forbidden=makeRes();await preview({admin:{role:'analyst'}},forbidden);assert.equal(forbidden.statusCode,403);
