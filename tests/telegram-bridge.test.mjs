@@ -52,7 +52,7 @@ test('public publishing sends only full FREE predictions to official channel',as
   const result=await sendPredictionToTelegram(pick,{TELEGRAM_BOT_TOKEN:'example-token',TELEGRAM_FREE_CHAT_ID:'-100999',TELEGRAM_FREE_CHANNEL_CHAT_ID:'-1001234567',PUBLIC_BASE_URL:'https://example.com'});
   assert.equal(result.state,'sent');assert.equal(request.chat_id,'-1001234567');
   assert.equal(request.text.includes('SUPER PRIVADO 1044'),true);
-  assert.match(request.text,/RIESGO ALTO/);
+  assert.match(request.text,/Nivel de riesgo: alto/);
  }finally{globalThis.fetch=old;}
 });
 test('VIP publishing sends full content privately; preview requires database',async()=>{

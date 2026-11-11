@@ -144,7 +144,7 @@ test('Ficha gratuita de alto riesgo, no promete garantías',()=>{
  assert.equal(canAutoPublishCandidate({...c,status:'draft'}),true);
  const text=telegramFreeAutoPost({title:'Club A vs Club C',league:'Premier League',match_date:'2026-11-10 20:00:00',market:c.market,selection:c.selection,
   estimated_probability:c.provider_probability,analysis:c.analysis});
- assert.match(text,/RIESGO ALTO/);
+ assert.match(text,/Nivel de riesgo: alto/);
 });
 test('Backtesting walk-forward: métricas sin rentabilidad inventada',()=>{
  const rows=history(480);
