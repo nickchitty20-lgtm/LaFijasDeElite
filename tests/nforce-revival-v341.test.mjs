@@ -7,14 +7,14 @@ const row=(version,status='discarded')=>({status,prediction_id:null,published_at
  evidence_json:JSON.stringify({model:{model:version}})});
 
 test('solo un modelo anterior reconocido permite reevaluar un descarte',()=>{
- assert.equal(MODEL_VERSION,'nforce-poisson-1.6');
+ assert.equal(MODEL_VERSION,'nforce-poisson-1.7');
  assert.equal(isOlderModelVersion('nforce-poisson-1.5',MODEL_VERSION),true);
  assert.equal(isOlderModelVersion('nforce-poisson-1.4',MODEL_VERSION),true);
- assert.equal(isOlderModelVersion('nforce-poisson-1.6',MODEL_VERSION),false);
+ assert.equal(isOlderModelVersion('nforce-poisson-1.6',MODEL_VERSION),true);
  assert.equal(isOlderModelVersion('nforce-poisson-1.7',MODEL_VERSION),false);
  assert.equal(isOlderModelVersion('versión desconocida',MODEL_VERSION),false);
  assert.equal(canReopenOldDiscard(row('nforce-poisson-1.5'),MODEL_VERSION),true);
- assert.equal(canReopenOldDiscard(row('nforce-poisson-1.6'),MODEL_VERSION),false,'Sin pruebas de incompatibilidad no revivir descartes de versiones antiguas');
+ assert.equal(canReopenOldDiscard(row('nforce-poisson-1.6'),MODEL_VERSION),true,'Un descarte de un modelo anterior puede reanalizarse si no fue manual');
  assert.equal(canReopenOldDiscard({...row('nforce-poisson-1.6'),evidence_json:JSON.stringify({model:{model:MODEL_VERSION},discarded_in_build:'3.4.1'})},MODEL_VERSION),false);
  assert.equal(isOlderBuildVersion('3.4.0','3.4.1'),true);
  assert.equal(canReopenOldDiscard(row('nforce-poisson-1.7'),MODEL_VERSION),false);
@@ -63,6 +63,6 @@ test('una incompatibilidad explícita puede reintentarse en el próximo escaneo 
  assert.equal(canReopenOldDiscard(incompatible,MODEL_VERSION,'3.5.6'),true);
  const manuallyDiscarded={...incompatible,evidence_json:JSON.stringify({model:{model:'nforce-poisson-1.5'},discarded_in_build:'3.5.2',discard_reason:'manual'})};
  assert.equal(canReopenOldDiscard(manuallyDiscarded,MODEL_VERSION,'3.5.6'),false);
- const newerModel={...row('nforce-poisson-1.7'),evidence_json:JSON.stringify({model:{model:'nforce-poisson-1.7'},discard_reason:'version_incompatible',discarded_in_build:'3.5.1'})};
+ const newerModel={...row('nforce-poisson-1.8'),evidence_json:JSON.stringify({model:{model:'nforce-poisson-1.8'},discard_reason:'version_incompatible',discarded_in_build:'3.5.1'})};
  assert.equal(canReopenOldDiscard(newerModel,MODEL_VERSION,'3.5.6'),false);
 });

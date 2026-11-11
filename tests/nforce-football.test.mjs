@@ -27,7 +27,7 @@ test('Dataset OpenFootball CC0: allowlist estricta, temporadas correctas',()=>{
  assert.ok(paths.includes('2026-27/en.1.json'));
  assert.ok(paths.includes('2025-26/es.1.json'));
  assert.equal(LEAGUES.length,20);
- assert.equal(paths.length,40);
+ assert.equal(paths.length,60);
  assert.ok(paths.includes('2026-27/en.2.json'));
  assert.ok(paths.includes('2026-27/nl.1.json'));
  assert.ok(paths.includes('2026-27/pt.1.json'));

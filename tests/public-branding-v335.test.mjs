@@ -17,5 +17,5 @@ test('publicly served page and engine strings omit former marketing terms',()=>{
   const contents=readFileSync(new URL(`../${file}`,import.meta.url),'utf8');
   assert.ok(!contents.toLowerCase().includes(legacy.toLowerCase()),`${file} still contains outdated branding`);
  }
- assert.match(readFileSync(new URL('../views/panel.html',import.meta.url),'utf8'),/Panel v3\.6\.6/);
+ assert.match(readFileSync(new URL('../views/panel.html',import.meta.url),'utf8'),/Panel v3\.6\.7/);
 });

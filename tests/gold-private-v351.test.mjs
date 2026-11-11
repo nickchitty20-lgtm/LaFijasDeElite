@@ -56,7 +56,7 @@ test('project migration and routes protect all Gold picks and keep VIP separate'
  assert.match(backend,/if\(p.visibility==='gold'&&!gold\)return/);
  assert.match(backend,/if\(p.visibility==='vip'&&!vip\)return/);
  assert.match(backend,/goldControl.start\(\)/);
- assert.match(backend,/APP_VERSION = '3\.6\.6'/);
+ assert.match(backend,/APP_VERSION = '3\.6\.7'/);
 });
 
 test('Gold private delivery is made once, uses Telegram DM, and requires current entitlement',async()=>{

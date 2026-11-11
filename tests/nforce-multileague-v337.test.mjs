@@ -7,7 +7,7 @@ test('20 leagues are allowlisted and include calendar-year Brazil with distinct 
  const paths=allowedDatasets(new Date('2026-11-09T12:00:00Z')).map(x=>x.path);
  assert.equal(LEAGUES.length,20);
  assert.equal(new Set(LEAGUES.map(l=>l.code)).size,20);
- assert.equal(paths.length,40);
+ assert.equal(paths.length,60);
  assert.ok(paths.includes('2026-27/en.2.json')&&paths.includes('2026-27/pt.1.json'));
  assert.ok(paths.includes('2026/br.1.json')&&!paths.includes('2026-27/br.1.json'));
 });
