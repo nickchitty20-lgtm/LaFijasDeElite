@@ -77,5 +77,5 @@ test('panel retira tarjeta al confirmar descarte y mantiene reanalizar de propue
  assert.match(app,/if\(!list\.querySelector\('\.football-candidate'\)\)/);
  assert.match(app,/Reanalizar esta propuesta/);
  const panel=readFileSync(new URL('../views/panel.html',import.meta.url),'utf8');
- assert.match(panel,/app\.js\?v=3\.5\.8/);
+ assert.match(panel,/app\.js\?v=3\.5\.9/);
 });

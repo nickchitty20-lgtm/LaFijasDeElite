@@ -96,7 +96,7 @@ test('N-FORCE local: datos CC0 simulados → MySQL → pronóstico GRATIS → Te
   sendTelegram:async(payload)=>{telegram.push(payload);return {state:'sent'};},enqueueEvent:async()=>{}});
  try{
   const imported=await controller.importData();
-  assert.equal(imported.sources,1);assert.equal(imported.records,matches.length+1);assert.equal(imported.competitions_configured,20);assert.equal(imported.competitions_imported,1);assert.equal(imported.datasets_missing,39);
+  assert.equal(imported.sources,1);assert.equal(imported.records,matches.length+1);assert.equal(imported.competitions_configured,31);assert.equal(imported.competitions_imported,1);assert.equal(imported.datasets_missing,59);
   assert.equal(table.length,matches.length+1);
   const scanned=await controller.scan({manual:true});
   assert.equal(scanned.ok,true);assert.equal(scanned.lookahead_days,14);assert.equal(scanned.fixtures_in_window,1);assert.equal(scanned.drafts_created,1);

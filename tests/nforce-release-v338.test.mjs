@@ -13,8 +13,8 @@ test('v3.4.1 defaults to 14-day horizon while allowing explicit configurable ove
 test('the status API exposes persisted league coverage, distinct from 20 configured',()=>{
  const engine=source('src/nforce-engine.js');
  assert.match(engine,/COUNT\(DISTINCT competition\) FROM nforce_matches/);
- assert.match(engine,/configured_competitions:LEAGUES\.length,live_schedule_supported_competitions:LIVE_VERIFICATION_LEAGUES\.length,loaded_competitions/);
+ assert.match(engine,/configured_competitions:LEAGUES\.length\+NATIONAL_COMPETITIONS\.length,national_competitions_configured:NATIONAL_COMPETITIONS\.length,live_schedule_supported_competitions:LIVE_VERIFICATION_LEAGUES\.length,loaded_competitions/);
  const ui=source('public/app.js');
- assert.match(ui,/Ligas cargadas en MySQL/);
- assert.match(ui,/Ligas de la última importación/);
+ assert.match(ui,/Competiciones cargadas en MySQL/);
+ assert.match(ui,/Competiciones de la última importación/);
 });
