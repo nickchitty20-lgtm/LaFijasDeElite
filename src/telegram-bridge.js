@@ -25,22 +25,22 @@ export function telegramCommunityNotice(visibility,{channelUrl='',baseUrl=''}={}
  if(visibility==='free'){
   const link=safeTelegramPublicUrl(channelUrl);
   if(!link)return '';
-  return `⚽ ¡Se publicó una nueva fija GRATIS!\n📢 Revísala en nuestro canal oficial:\n${link}\n\n⚠️ Pronósticos sin garantía.`;
+  return `⚽ FIJAS DE ÉLITE · OFICIAL\n📣 Nueva fija GRATIS.\n\n🔎 Detalles en nuestro canal:\n${link}\n\nℹ️ Estimación deportiva, no certeza.`;
  }
- if(visibility==='vip')return `👑 ¡Se publicó una nueva fija VIP!\n🔒 Accede desde nuestra web:\n${telegramHomeUrl(baseUrl)}\n\n⚠️ Pronósticos sin garantía.`;
+ if(visibility==='vip')return `👑 FIJAS DE ÉLITE · VIP\n📣 Nueva fija VIP publicada.\n\n🔐 Acceso exclusivo: ${telegramHomeUrl(baseUrl)}\n\nℹ️ Estimación deportiva, no certeza.`;
  return '';
 }
 
 export function telegramPublicNotice(p,base){
- const label=p.visibility==='vip'?'🔒 NUEVO VIP':'⚽ NUEVO PRONÓSTICO GRATIS';
+ const label=p.visibility==='vip'?'👑 FIJAS DE ÉLITE · NUEVO VIP':'⚽ FIJAS DE ÉLITE · NUEVO INFORME';
  const location=telegramHomeUrl(base);
- return `${label}\n🏆 Liga: ${h(p.league)}${h(telegramMatchSchedule(p.match_date))}\n\n🔐 Consulta los detalles iniciando sesión en Fijas de Élite.\n${h(location)}\n\nLos pronósticos no garantizan resultados.`;
+ return `${label}\n🏆 Competición: ${h(p.league)}${h(telegramMatchSchedule(p.match_date))}\n\n🔎 Revisa los detalles iniciando sesión en Fijas de Élite.\n🌐 ${h(location)}\n\nℹ️ Estimación deportiva sujeta a incertidumbre.`;
 }
 export function telegramFreeAutoPost(p,base){
  const n=Number(p.estimated_probability);
- const verified=p.estimated_probability!=null && Number.isFinite(n)&&n>=0&&n<=100;
- const confidence=verified?`\n📈 Probabilidad estimada: ${n.toFixed(1)}% (NO es porcentaje de aciertos real).`:'';
- return `⚽ <b>FIJAS DE ÉLITE · CANAL GRATIS</b>\n<b>${h(p.title)}</b>\n🏆 ${h(p.league)}${h(telegramMatchSchedule(p.match_date))}\n🎯 ${h(p.market)}: <b>${h(p.selection)}</b>${confidence}\n⚠️ <b>RIESGO ALTO · NO ES UNA FIJA SEGURA</b>\n\n${h(publicAnalysisText(p.analysis).slice(0,1400))}\n\nEstimación estadística no calibrada, no garantía de acierto. No apuestes dinero que no puedas perder.\n\n🔗 Sitio oficial: ${h(telegramHomeUrl(base))}`;
+ const verified=p.estimated_probability!=null&&Number.isFinite(n)&&n>=0&&n<=100;
+ const confidence=verified?`\n📈 Probabilidad estimada por el modelo: ${n.toFixed(1)}% (no es la tasa histórica de aciertos).`:'';
+ return `⚽ <b>FIJAS DE ÉLITE · ANÁLISIS OFICIAL</b>\n\n<b>${h(p.title)}</b>\n🏆 ${h(p.league)}${h(telegramMatchSchedule(p.match_date))}\n🎯 <b>${h(p.market)}:</b> ${h(p.selection)}${confidence}\n⚖️ <b>Nivel de riesgo: alto.</b>\n\n<b>Lectura estadística</b>\n${h(publicAnalysisText(p.analysis).slice(0,1400))}\n\n<i>Proyección orientativa, sujeta a incertidumbre. Considera los riesgos antes de tomar decisiones.</i>\n\n🌐 <b>Fijas de Élite:</b> ${h(telegramHomeUrl(base))}`;
 }
 export function telegramGoalsSummary(p){
  const f=p?.football_details;
@@ -52,7 +52,7 @@ export function telegramGoalsSummary(p){
   line('Ambos anotan',f.model_goals?.btts!=null?`${f.model_goals.btts}% según N-FORCE`:hist?`${hist.both_scored}/${hist.games} antecedentes`:'Sin datos suficientes')+
   line('Marcador orientativo',f.estimated_score)+
   line('Diferencia de goles',f.estimated_margin!=null?`${f.estimated_margin} gol(es)`:null);
- return msg+'\n<i>Estimaciones, no apuestas garantizadas ni cuotas verificadas para goles.</i>';
+ return msg+'\n<i>Indicadores orientativos; cuotas de goles no verificadas.</i>';
 }
 export function telegramAdvancedSummary(p){
  const a=p?.football_details?.advanced;if(!a)return '';
@@ -69,14 +69,14 @@ export function telegramAdvancedSummary(p){
   if(xi?.starting?.length)msg+='\n🧩 '+label+' '+h(xi.formation||'once reportado')+': '+xi.starting.slice(0,11).map(h).join(', ');
  }
  msg+='\n🧩 Alineaciones: '+h(status[a.status?.lineups]||'no disponibles');
- return msg+'\n<i>Lesiones y onces sujetos a actualización. Sin garantías de resultado.</i>';
+ return msg+'\n<i>Disponibilidad de jugadores y alineaciones sujeta a actualización.</i>';
 }
 export function telegramMatchContext(p){
  const c=p?.football_details?.match_context;if(!c)return '';
  return (c.round?'\n🏆 Jornada: '+h(c.round):'')+(c.venue?'\n🏟 Estadio: '+h(c.venue):'')+(c.city?' · '+h(c.city):'');
 }
 export function telegramVipPost(p){
- return `♛ <b>FIJAS DE ÉLITE · VIP</b>\n<b>${h(p.title)}</b>\n🏆 ${h(p.league)}${h(telegramMatchSchedule(p.match_date))}\n🎯 <b>${h(p.market)}:</b> ${h(p.selection)}\n📊 Cuota: ${p.odds!=null && Number.isFinite(Number(p.odds))?Number(p.odds).toFixed(2):'No disponible (sin cuota verificada)'}${telegramMatchContext(p)}${telegramGoalsSummary(p)}${telegramAdvancedSummary(p)}\n\n<b>Análisis y riesgos:</b>\n${h(publicAnalysisText(p.analysis).slice(0,2300))}\n\nInformación deportiva, no una garantía de resultado.`;
+ return `👑 <b>FIJAS DE ÉLITE · SELECCIÓN VIP</b>\n\n<b>${h(p.title)}</b>\n🏆 ${h(p.league)}${h(telegramMatchSchedule(p.match_date))}\n🎯 <b>${h(p.market)}:</b> ${h(p.selection)}\n📊 Cuota: ${p.odds!=null&&Number.isFinite(Number(p.odds))?Number(p.odds).toFixed(2):'No disponible (sin cuota verificada)'}${telegramMatchContext(p)}${telegramGoalsSummary(p)}${telegramAdvancedSummary(p)}\n\n<b>🔎 Fundamentos y riesgos</b>\n${h(publicAnalysisText(p.analysis).slice(0,2300))}\n\n<i>Pronóstico validado según los criterios del modelo; el resultado sigue siendo incierto.</i>`;
 }
 export async function telegramApi(method,payload={},env=process.env){
  if(!env.TELEGRAM_BOT_TOKEN)throw Error('Bot de Telegram no configurado');
@@ -101,12 +101,12 @@ export async function telegramApi(method,payload={},env=process.env){
 export function telegramVipPublicPreview(p,base){
  const url=telegramHomeUrl(base);
  const matchName=String(p?.title||'').trim();
- // Auto-generated titles are known to contain only home and away team names.
- const fixture=p?.auto_generated===true && /^[^\n|:]{2,70}\s+vs\.?\s+[^\n|:]{2,70}$/i.test(matchName)
+ // Only trusted automatic fixture names may appear in the public channel.
+ const fixture=p?.auto_generated===true&&/^[^\n|:]{2,70}\s+vs\.?\s+[^\n|:]{2,70}$/i.test(matchName)
   ?`\n⚽ <b>${h(matchName)}</b>`:'';
  const league=p?.league?`\n🏆 ${h(String(p.league).slice(0,120))}`:'';
  const schedule=p?.match_date?h(telegramMatchSchedule(p.match_date)):'';
- return `🔒 <b>FIJAS DE ÉLITE · ADELANTO VIP</b>\n\n👑 ¡Nuevo pronóstico exclusivo publicado!${fixture}${league}${schedule}\n\n🔐 La selección, cuota, mercados de goles, marcador estimado y análisis están disponibles solo en el canal VIP.\n\n✨ Consulta los planes y tu acceso: ${h(url)}\n\n<i>Pronósticos con riesgo: no hay resultados garantizados.</i>`;
+ return `👑 <b>FIJAS DE ÉLITE · ADELANTO VIP</b>\n\n📣 <b>Nueva selección VIP disponible</b>${fixture}${league}${schedule}\n\n🔒 El pronóstico, su cuota y los fundamentos completos están reservados a miembros VIP.\n\n✨ Conoce la membresía: ${h(url)}\n\n<i>Evaluación estadística sujeta a incertidumbre.</i>`;
 }
 
 /** Verify ONLY the private VIP destination. Never post as part of this check.

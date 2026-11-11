@@ -9,7 +9,7 @@ export function goldPrivateMessage(p){
  const date=p.match_date instanceof Date?p.match_date:p.match_date?new Date(/(?:Z|[+-]\d\d:?\d\d)$/.test(text)?text.replace(' ','T'):text.replace(' ','T')+'Z'):null;
  const when=date && Number.isFinite(date.getTime())?
   '\n🗓 '+new Intl.DateTimeFormat('es-PE',{timeZone:'America/Lima',dateStyle:'medium',timeStyle:'short'}).format(date):'';
- return `💎 <b>FIJAS DE ÉLITE · GOLD</b>\n<b>${h(p.title)}</b>\n🏆 ${h(p.league||'Fútbol')}${when}\n🎯 <b>${h(p.market||'Selección')}:</b> ${h(p.selection||'')}\n\n<b>Análisis y riesgos:</b>\n${h(String(p.analysis||'').slice(0,2200))}\n\n<i>Estimación estadística, sin garantías de acierto o ganancias.</i>`;
+ return `💎 <b>FIJAS DE ÉLITE · PRONÓSTICO GOLD</b>\n\n<b>${h(p.title)}</b>\n🏆 ${h(p.league||'Fútbol')}${when}\n🎯 <b>${h(p.market||'Selección')}:</b> ${h(p.selection||'')}\n\n<b>🔎 Análisis y factores de riesgo</b>\n${h(String(p.analysis||'').slice(0,2200))}\n\n<i>Pronóstico estadístico sujeto a incertidumbre.</i>`;
 }
 export function goldMayReceive({active,linked,entitled,whitelisted,pendingChange,telegramId,archived}){
  return Boolean(active && linked && entitled && whitelisted && !pendingChange && !archived && /^\d{1,16}$/.test(String(telegramId||'')));

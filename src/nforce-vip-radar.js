@@ -109,7 +109,7 @@ export function prepareVipRadar(matches,{now=new Date(),days=VIP_RADAR_MAX_DAYS,
     `${counts.near_term_eligible} encuentros próximos tienen modelo y hora conocida.`},
   next_eligible_at:chosen[0]?.kickoff||null,
   counts,from_hours:VIP_RADAR_MIN_LEAD_HOURS,lookahead_days:days,
-  official_vip_count:0,disclaimer:'Análisis previo exclusivo. No constituye una selección VIP validada ni una recomendación de apuesta.'};
+  official_vip_count:0,disclaimer:'Radar VIP: seguimiento anticipado, distinto de las selecciones VIP validadas. Probabilidades estimadas sujetas a incertidumbre.'};
 }
 
 export function vipRadarTelegramMessage(report,{asOf=new Date()}={}){
@@ -120,12 +120,12 @@ export function vipRadarTelegramMessage(report,{asOf=new Date()}={}){
   const p=f.probabilities;
   return `<b>${i+1}. ${h(f.home)} vs. ${h(f.away)}</b>\n🏆 ${h(f.league)} · 🕒 ${h(dt)} (Perú)\n`+
    `📊 Modelo base 1 / X / 2: ${pct(p.home)} / ${pct(p.draw)} / ${pct(p.away)}`+
-   (f.ai?`\n🧠 Híbrido IA exploratorio 1 / X / 2: ${pct(f.ai.hybrid.home)} / ${pct(f.ai.hybrid.draw)} / ${pct(f.ai.hybrid.away)}`:'')+
-   `\nCalidad del historial: ${Number(f.quality)}/100 (no representa aciertos).`;
+   (f.ai?`\n📈 Proyección complementaria 1 / X / 2: ${pct(f.ai.hybrid.home)} / ${pct(f.ai.hybrid.draw)} / ${pct(f.ai.hybrid.away)}`:'')+
+   `\n📚 Cobertura estadística: ${Number(f.quality)}/100 (no es una tasa de aciertos).`;
  }).join('\n\n');
- return head+rows+'\n\n⚠️ <b>RADAR INFORMATIVO · NO SON FIJAS VIP APROBADAS.</b>\n'+
-  'Las probabilidades son estimaciones, no tasas de acierto verificadas ni garantías de resultados. El canal distinguirá los pronósticos VIP validados de estos estudios.\n'+
-  'No apuestes dinero que no puedas permitirte perder.';
+ return head+rows+'\n\n🔎 <b>RADAR VIP · ANÁLISIS ANTICIPADO</b>\n'+
+  'Estos estudios muestran encuentros en seguimiento. Las selecciones VIP validadas se publican por separado.\n'+
+  'ℹ️ Probabilidades estimadas, no tasas históricas de acierto. Los resultados son inciertos.';
 }
 
 /** Public teaser for a successfully delivered VIP scouting bulletin.
@@ -142,9 +142,9 @@ export function vipRadarOfficialTeaser(report,{baseUrl}={}){
   ?`\n🗓️ ${h(new Intl.DateTimeFormat('es-PE',{timeZone:'America/Lima',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(sample.kickoff)))} (Perú)` :'';
  const count=Math.min(report.items.length,5); // Private bulletin also lists at most five fixtures.
  return `👑 <b>FIJAS DE ÉLITE · RADAR VIP</b>\n\n`+
-  `📣 ¡Nuevo boletín de análisis anticipado en nuestro canal VIP!\n`+
+  `📣 <b>Nuevo boletín exclusivo de análisis anticipado</b>\n`+
   `⚽ <b>${count} ${count===1?'partido estudiado':'partidos estudiados'}</b>${fixture}${competition}${kickoff}\n\n`+
-  `🔒 Probabilidades y análisis completos: exclusivamente para miembros VIP.\n`+
-  `ℹ️ Boletín informativo, no pronósticos VIP aprobados ni resultados garantizados.\n\n`+
-  `✨ Conoce nuestros planes: ${h(telegramHomeUrl(baseUrl))}`;
+  `🔒 Las probabilidades y el estudio completo están disponibles en el canal VIP.\n`+
+  `🔎 Radar VIP ofrece seguimiento anticipado; las selecciones VIP validadas se publican por separado.\n\n`+
+  `✨ Descubre la membresía: ${h(telegramHomeUrl(baseUrl))}`;
 }

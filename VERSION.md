@@ -1,3 +1,13 @@
+# Fijas de Élite v3.7.8 — Mensajería Telegram premium unificada
+
+- Se rediseñaron los anuncios públicos de VIP, GOLD y Radar VIP, los comunicados a la comunidad, los mensajes con pronósticos gratuitos, la entrega privada VIP/GOLD y las notificaciones de membresía.
+- En lugar de expresiones como «no son fijas VIP aprobadas», Radar VIP se describe de manera precisa como **análisis anticipado**, diferenciando las **selecciones VIP validadas** sin inducir a error sobre su alcance.
+- Los anuncios públicos siguen ocultando selecciones privadas, mercados, cuotas, probabilidades y análisis exclusivos. Se mantienen el escape HTML y los enlaces al sitio público.
+- Las aclaraciones sobre incertidumbre permanecen breves y verificables; no se prometen aciertos, ganancias ni contenido exclusivo inexistente.
+- No se alteran APIs deportivas, criterios GOLD/VIP, el cálculo del modelo, envíos de Telegram, auditoría, recuperación de mensajes, MySQL ni variables Railway. Los nuevos textos aplican a **mensajes enviados después de desplegar**.
+
+---
+
 # Fijas de Élite v3.7.7 — Recuperación manual de envíos a Telegram mal configurados
 
 - **Reenvío VIP excepcional desde N-FORCE:** un boletín marcado `sent` puede reenviarse al canal VIP correcto *solo* a petición explícita del propietario, tras comprobar que no aparece allí. El mensaje previo sigue registrado, sin borrar su ID ni cambiar el estado de entrega original. La configuración VIP se vuelve a verificar contra Telegram antes de intentarlo.

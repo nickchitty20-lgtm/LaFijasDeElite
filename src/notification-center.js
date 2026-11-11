@@ -16,7 +16,7 @@ export async function enqueueVipActivation(conn,userId,membershipId){
   SELECT p.user_id,'vip_activated',?,? FROM telegram_notice_prefs p
   JOIN users u ON u.id=p.user_id JOIN telegram_links t ON t.user_id=p.user_id AND t.link_status='active'
   WHERE p.user_id=? AND p.vip_enabled=1 AND u.account_status='active'`,
-  [`membership:${membershipId}`,`♛ Tu membresía VIP fue activada o renovada. Consulta su fecha de vencimiento en ${baseUrl()}`,userId]);
+  [`membership:${membershipId}`,`👑 FIJAS DE ÉLITE · ACCESO VIP\n✅ Tu membresía VIP está activa o renovada.\n🗓 Consulta su vigencia y acceso en ${baseUrl()}`,userId]);
 }
 export async function enqueuePredictionEvent(db,predictionId,visibility){
  if(visibility==='gold')return; // The dedicated GOLD outbox delivers the actual selection, not a public alert.
@@ -78,7 +78,7 @@ export function installNotificationCenter(app,{db,customerAuth,limit}){
   for(const r of rows){
    const days=Number(r.days_left);
    await db.execute(`INSERT IGNORE INTO telegram_notice_outbox(user_id,kind,reference_key,message)
-    VALUES (?,'vip_expiring',?,?)`,[r.user_id,`expiry:${r.last_date}:${days}`,`⏳ Tu VIP vence en ${days} día(s), el ${r.last_date}. Puedes renovarlo desde ${baseUrl()}`]);
+    VALUES (?,'vip_expiring',?,?)`,[r.user_id,`expiry:${r.last_date}:${days}`,`⏳ FIJAS DE ÉLITE · MEMBRESÍA VIP\nTu acceso VIP vence en ${days} día(s), el ${r.last_date}.\n✨ Consulta la renovación en ${baseUrl()}`]);
   }
  }
  async function processOutbox(){

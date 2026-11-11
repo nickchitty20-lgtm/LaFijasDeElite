@@ -1,3 +1,9 @@
+# Fijas de Élite v3.7.8 — Anuncios profesionales de Telegram
+
+**Actualización de mensajes sin cambios en la lógica de negocio.** Nuevos formatos premium para el canal oficial, mensajes VIP/GOLD, Radar VIP, comunidad y notificaciones. El Radar VIP es análisis anticipado; las selecciones VIP validadas se anuncian aparte. Los anuncios públicos no contienen información reservada y las advertencias conservan una explicación breve de incertidumbre. Despliega normalmente en Railway; sin migraciones adicionales.
+
+---
+
 # Fijas de Élite v3.7.7 — Recuperación manual de envíos a Telegram mal configurados
 
 - **Reenvío VIP excepcional desde N-FORCE:** un boletín marcado `sent` puede reenviarse al canal VIP correcto *solo* a petición explícita del propietario, tras comprobar que no aparece allí. El mensaje previo sigue registrado, sin borrar su ID ni cambiar el estado de entrega original. La configuración VIP se vuelve a verificar contra Telegram antes de intentarlo.

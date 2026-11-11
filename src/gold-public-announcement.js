@@ -13,16 +13,16 @@ export function goldOfficialAnnouncement(baseUrl,p=null){
  const safeFixture=p?.auto_generated===true && /^[^\n|:]{2,70}\s+vs\.?\s+[^\n|:]{2,70}$/i.test(title);
  const match=safeFixture?`\n⚽ <b>${h(title)}</b>`:'';
  const league=safeFixture&&p?.league?`\n🏆 ${h(String(p.league).slice(0,100))}`:'';
- const kickoff=p?.match_date?`\n🗓 ${h(telegramMatchSchedule(p.match_date))}`:'';
+ const kickoff=p?.match_date?h(telegramMatchSchedule(p.match_date)):'';
  return `💎 <b>FIJAS DE ÉLITE · ADELANTO GOLD</b>
 
-🔎 ¡Nuevo análisis GOLD publicado!${match}${league}${kickoff}
+📣 <b>Nuevo estudio GOLD disponible</b>${match}${league}${kickoff}
 
-🔒 La selección, el mercado exacto y el análisis completo se envían solo por privado a miembros GOLD y VIP autorizados.
+🔐 El pronóstico completo y sus fundamentos llegan por privado a miembros GOLD y VIP verificados.
 
-🌐 Solicita tu acceso GOLD: ${landing}
+✨ Descubre el acceso GOLD: ${landing}
 
-<i>Pronósticos estadísticos con riesgo; ningún resultado está garantizado.</i>`;
+<i>Evaluación estadística sujeta a incertidumbre.</i>`;
 }
 
 /** One announcement per *published* GOLD prediction, official channel only.
