@@ -14,7 +14,8 @@ import {classifyAutomaticCandidate,shouldBlockLegacyFreeDraft,GOLD_ROLLOUT} from
 import {nforceSourceReadiness} from './nforce-source-readiness.js';
 import {explainScan,tallyCompetition} from './nforce-scan-insights.js';
 import {importSecondaryFixtures,SECONDARY_COMPETITIONS} from './secondary-fixtures.js';
-import {readSecondarySource,saveSecondarySource} from './nforce-source-settings.js';
+import {readSecondarySource,saveSecondarySource,readFootballDataSource,saveFootballDataSource} from './nforce-source-settings.js';
+import {importFootballDataFixtures,FOOTBALL_DATA_COMPETITIONS} from './football-data-fixtures.js';
 
 const DAY=86400000;
 const asUtc=x=>x instanceof Date?x:new Date(String(x||'').replace(' ','T')+(String(x||'').match(/Z|[+-]\d\d:\d\d$/)?'':'Z'));
@@ -38,9 +39,9 @@ export function importDecision(last,now=Date.now(),hours=IMPORT_INTERVAL_HOURS){
  const next=started+interval;
  return {due:!Number.isFinite(next)||now>=next,next:Number.isFinite(next)?new Date(next).toISOString():null};
 }
-export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenFootball,fetchSecondary=importSecondaryFixtures,sendTelegram=sendPredictionToTelegram,enqueueEvent=null,now=()=>new Date()}={}){
+export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenFootball,fetchSecondary=importSecondaryFixtures,fetchFootballData=importFootballDataFixtures,sendTelegram=sendPredictionToTelegram,enqueueEvent=null,now=()=>new Date()}={}){
  const settlement=createNforceSettlement({db,now});
- let importing=false,scanning=false,publishing=false,interval=null;
+ let importing=false,scanning=false,publishing=false,combinedRunning=false,interval=null;
  let lastScanReport=null,lastImportReport=null,lastPublishReport=null,lastSchedulerMessage='',lastError='';
  const api=path=>`/api/admin/football/${path}`;
  async function withLock(name,callback){
@@ -108,10 +109,16 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     secondaryEnabled=config.enabled;
     secondary=await fetchSecondary({conn,now:now(),env:process.env,enabled:secondaryEnabled});
    }catch(error){secondary={enabled:secondaryEnabled,failed:true,error:safeError(error),requests:0,inserted:0,matched:0};}
-   const status=sources||secondary.inserted||secondary.matched?'completed':'failed';
+   let footballData={enabled:false},footballDataEnabled=false;
+   try{
+    const source=await readFootballDataSource(conn);
+    footballDataEnabled=source.enabled;
+    footballData=await fetchFootballData({conn,now:now(),enabled:footballDataEnabled,key:process.env.FOOTBALL_DATA_ORG_KEY});
+   }catch(error){footballData={enabled:footballDataEnabled,failed:true,error:safeError(error),requests:0,inserted:0,matched:0,errors:[safeError(error)]};}
+   const status=sources||secondary.inserted||secondary.matched||footballData.inserted||footballData.matched?'completed':'failed';
    await conn.execute('UPDATE nforce_import_runs SET status=?,finished_at=UTC_TIMESTAMP(),sources=?,records=?,scheduled=?,completed_results=?,errors_json=? WHERE id=?',
     [status,sources,imported,scheduled,completed,JSON.stringify(errors).slice(0,3900),id]);
-   lastImportReport={ok:status==='completed',status,sources,records:imported,scheduled,completed,failed_sources:errors.length,errors:errors.slice(0,5),secondary,
+   lastImportReport={ok:status==='completed',status,sources,records:imported,scheduled,completed,failed_sources:errors.length,errors:errors.slice(0,5),secondary,football_data:footballData,
     competitions_configured:LEAGUES.length+NATIONAL_COMPETITIONS.length,competitions_imported:importedCompetitions.size,
     leagues_imported:[...LEAGUES,...NATIONAL_COMPETITIONS].filter(l=>importedCompetitions.has(l.code)).map(l=>l.name),
     national_teams_supported:true,national_competitions_imported:NATIONAL_COMPETITIONS.filter(c=>importedCompetitions.has(c.code)).map(c=>c.name),
@@ -389,12 +396,23 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
    return lastPublishReport;
   });}finally{publishing=false;}
  }
+ // Provider contract requires visible attribution when this optional source
+ // is switched on. Never expose the API key; the public API reports credit only.
+ app.get('/api/public/data-credit',async(_req,res)=>{
+  try{
+   const config=await readFootballDataSource(db);
+   const active=config.enabled&&Boolean(process.env.FOOTBALL_DATA_ORG_KEY);
+   res.set('Cache-Control','no-store').json({active,credit:active?'Football data provided by the Football-Data.org API':null});
+  }catch(_){res.status(503).json({active:false,credit:null});}
+ });
  // Persisted provider controls: only the owner may read or change them.
  app.get(api('sources'),authenticate,async(req,res)=>{
   if(!owner(req))return res.status(403).json({error:'Solo creador'});
   try{
    const secondary=await readSecondarySource(db);
-   res.json({secondary:{...secondary,name:'TheSportsDB',competition_count:SECONDARY_COMPETITIONS.length,last_import:lastImportReport?.secondary||null},
+   const footballData=await readFootballDataSource(db);
+   res.json({football_data:{...footballData,name:'football-data.org',configured:Boolean(process.env.FOOTBALL_DATA_ORG_KEY),competition_count:Object.keys(FOOTBALL_DATA_COMPETITIONS).length,last_import:lastImportReport?.football_data||null},
+    secondary:{...secondary,name:'TheSportsDB',competition_count:SECONDARY_COMPETITIONS.length,last_import:lastImportReport?.secondary||null},
     historical:{name:'Histórico deportivo',enabled:true,editable:false},
     live_schedule:{configured:process.env.FOOTBALL_SCHEDULE_LIVE==='true'&&Boolean(process.env.FOOTBALL_API_KEY),editable:false}});
   }catch(e){res.status(500).json({error:'No se pudo leer Fuentes deportivas: '+safeError(e)});}
@@ -407,6 +425,39 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
    const result=await saveSecondarySource(db,{enabled:req.body.enabled,actorId:req.admin.id});
    res.json({...result,message:result.changed?`Calendario complementario ${result.enabled?'activado':'desactivado'}. El cambio se aplicará en la próxima importación.`:'La configuración ya estaba guardada.'});
   }catch(e){res.status(500).json({error:'No se pudo guardar el cambio: '+safeError(e)});}
+ });
+ app.post(api('sources/football-data'),authenticate,async(req,res)=>{
+  if(!owner(req))return res.status(403).json({error:'Solo creador'});
+  if(!req.body||Object.keys(req.body).length!==1||typeof req.body.enabled!=='boolean')
+   return res.status(400).json({error:'Envía únicamente enabled: true o false'});
+  try{
+   const result=await saveFootballDataSource(db,{enabled:req.body.enabled,actorId:req.admin.id});
+   res.json({...result,configured:Boolean(process.env.FOOTBALL_DATA_ORG_KEY),message:result.changed?'Configuración guardada. '+(process.env.FOOTBALL_DATA_ORG_KEY?'Importa datos para buscar partidos.':'Falta FOOTBALL_DATA_ORG_KEY en Railway; la fuente no podrá consultar partidos.'):'La configuración ya estaba guardada.'});
+  }catch(e){res.status(500).json({error:'No se pudo guardar la fuente de calendario: '+safeError(e)});}
+ });
+ // Preview of the calendar actually present in MySQL, not external fixtures
+ // advertised by a web page. Owner-only; never treats discovery as verified NS.
+ app.get(api('fixtures'),authenticate,async(req,res)=>{
+  if(!owner(req))return res.status(403).json({error:'Solo creador'});
+  try{
+   const [rows]=await db.query(`SELECT m.id,m.competition,m.league,m.home_team,m.away_team,
+    m.match_date,COALESCE(s.kickoff,m.kickoff) AS kickoff,m.scheduled_time_known,m.source_path,
+    m.source_checked_at,s.status AS verified_status,s.checked_at AS verified_at
+    FROM nforce_matches m LEFT JOIN nforce_fixture_schedules s
+      ON s.nforce_match_id=m.id AND s.checked_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 4 HOUR)
+    WHERE m.home_goals IS NULL AND m.away_goals IS NULL
+      AND m.match_date BETWEEN UTC_DATE() AND DATE_ADD(UTC_DATE(),INTERVAL 21 DAY)
+    ORDER BY COALESCE(m.kickoff,CONCAT(m.match_date,' 23:59:59')) ASC LIMIT 80`);
+   res.json({total_returned:rows.length,limit:80,fixtures:rows.map(r=>({
+    id:String(r.id),competition:r.competition,league:r.league,
+    home_team:r.home_team,away_team:r.away_team,
+    match_date:r.match_date, kick_off:r.kickoff, scheduled_time_known:Boolean(r.scheduled_time_known),
+    source:String(r.source_path||'').startsWith('verified/')?'verificador':r.source_path==='secondary/thesportsdb'?'complementaria':r.source_path==='secondary/football-data-org'?'football-data':'histórico',
+    source_checked_at:r.source_checked_at,
+    // This status is informational, never inferred from an unverified discovery feed.
+    verified_status:r.verified_status||null,verified_at:r.verified_at||null
+   }))});
+  }catch(e){res.status(500).json({error:'No se pudo consultar el calendario importado: '+safeError(e)});}
  });
  // Keep old API paths so existing dashboard, VIP protection and payment flows remain intact.
  app.get(api('status'),authenticate,async(req,res)=>{
@@ -421,6 +472,8 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     (SELECT COUNT(DISTINCT competition) FROM nforce_matches WHERE competition LIKE 'int.%') AS loaded_national_competitions,
     (SELECT COUNT(*) FROM nforce_matches WHERE competition LIKE 'int.%') AS national_matches,
     (SELECT COUNT(*) FROM nforce_matches WHERE source_path='secondary/thesportsdb') AS secondary_fixtures,
+    (SELECT COUNT(*) FROM nforce_matches WHERE source_path='secondary/football-data-org') AS football_data_fixtures,
+    (SELECT COUNT(*) FROM nforce_matches WHERE source_path='verified/domestic-fixtures') AS verified_club_fixtures,
     (SELECT COUNT(*) FROM nforce_matches WHERE home_goals IS NOT NULL) AS complete_matches`);
    const [[latest]]=await db.query('SELECT status,initiated_by,started_at,finished_at,error_message,upcoming AS examined,drafts AS drafts_created,insufficient AS without_prediction,filtered AS below_filters FROM nforce_scans ORDER BY id DESC LIMIT 1');
    const [[lastImport]]=await db.query('SELECT status,started_at,finished_at,sources,records,scheduled,completed_results,errors_json FROM nforce_import_runs ORDER BY id DESC LIMIT 1');
@@ -429,6 +482,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
    const retry=importDecision(lastImport,now().getTime());
    const calendar_diagnostic=diagnoseNforceCalendar(await loadMatches(),{now:now(),days:NFORCE_SCAN_LOOKAHEAD_DAYS});
    const secondaryConfig=await readSecondarySource(db);
+   const footballDataConfig=await readFootballDataSource(db);
    res.json({calendar_diagnostic,engine:'N-FORCE',model_version:MODEL_VERSION,configured:true,auto_import:process.env.FOOTBALL_AUTO_IMPORT!=='false',
     scan_lookahead_days:NFORCE_SCAN_LOOKAHEAD_DAYS,scan_fixture_limit:NFORCE_SCAN_FIXTURE_LIMIT,
     auto_scan:process.env.FOOTBALL_AUTO_SCAN==='true',auto_publish:process.env.FOOTBALL_AUTO_PUBLISH==='true'&&process.env.NFORCE_LIVE_RELEASE_ACK==='true',
@@ -439,7 +493,8 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     scheduled_retry_reason:'Control local cada hora',manual_scan:{available:!scanning,remaining:'Ilimitados con pausa de 5 min',daily_limit:'—'},
     configured_competitions:LEAGUES.length+NATIONAL_COMPETITIONS.length,national_competitions_configured:NATIONAL_COMPETITIONS.length,live_schedule_supported_competitions:LIVE_VERIFICATION_LEAGUES.length,loaded_competitions:Number(stats.loaded_competitions||0),loaded_national_competitions:Number(stats.loaded_national_competitions||0),national_matches:Number(stats.national_matches||0),
     total_matches:Number(stats.total_matches||0),complete_matches:Number(stats.complete_matches||0),source_import:lastImport||null,next_import_at:retry.next,
-    secondary_enabled:secondaryConfig.enabled,secondary_competitions:SECONDARY_COMPETITIONS.length,secondary_fixtures:Number(stats.secondary_fixtures||0),
+    football_data_enabled:footballDataConfig.enabled,football_data_configured:Boolean(process.env.FOOTBALL_DATA_ORG_KEY),football_data_fixtures:Number(stats.football_data_fixtures||0),
+    secondary_enabled:secondaryConfig.enabled,secondary_competitions:SECONDARY_COMPETITIONS.length,secondary_fixtures:Number(stats.secondary_fixtures||0),verified_club_fixtures:Number(stats.verified_club_fixtures||0),
     settlement:settlement.getStatus(),
     backtest:lastBacktest?{evaluated:lastBacktest.evaluated,accuracy:lastBacktest.accuracy,brier:lastBacktest.brier,validated:Number(lastBacktest.evaluated)>=40&&validation.model===MODEL_VERSION&&now().getTime()-asUtc(lastBacktest.created_at).getTime()<=8*DAY,
     model_version:validation.model,segments:validation.segments||null,by_market:validation.by_market||null,calibration:validation.calibration||null,comparison_previous:validation.comparison_previous||null}:null});
@@ -544,6 +599,24 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
   if(importing)return res.status(409).json({error:'Importación en curso'});
   importData({force:true}).catch(e=>{lastError=safeError(e);console.warn('nforce manual import:',lastError);});
   res.status(202).json({accepted:true,message:'Importación de datos deportivos iniciada; consulta el estado para ver el resultado.'});
+ });
+ // One-click owner workflow. Do not start the scan until the importer has
+ // finished, avoiding misleading zero-candidate scans on an empty calendar.
+ app.post(api('import-scan'),authenticate,async(req,res)=>{
+  if(!owner(req))return res.status(403).json({error:'Solo creador'});
+  if(combinedRunning||importing||scanning)return res.status(409).json({error:'Hay una importación o búsqueda en curso'});
+  combinedRunning=true;
+  (async()=>{
+   try{
+    const imported=await importData({force:true});
+    if(imported?.busy)throw Error('Importación ocupada por otra instancia');
+    const result=await scan({manual:true,days:NFORCE_SCAN_LOOKAHEAD_DAYS});
+    if(result?.busy||result?.cooldown)lastSchedulerMessage='No se ejecutó el análisis automático posterior: '+(result.message||'pausa de seguridad');
+    else lastSchedulerMessage='Importación y análisis del propietario finalizados';
+   }catch(e){lastError=safeError(e);console.warn('nforce combined import/scan:',lastError);}
+   finally{combinedRunning=false;}
+  })();
+  res.status(202).json({accepted:true,message:'Búsqueda de partidos iniciada. El análisis comenzará cuando termine la importación; consulta «Análisis automático» para ver los resultados.'});
  });
  app.post(api('settle'),authenticate,async(req,res)=>{
   if(!owner(req))return res.status(403).json({error:'Solo creador'});

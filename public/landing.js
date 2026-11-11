@@ -135,3 +135,18 @@ async function loadPublicPerformance(){
 }
 for(const id of ['performancePeriod','performanceVisibility'])el(id)?.addEventListener('change',loadPublicPerformance);
 loadPublicPerformance();
+
+// Show provider-mandated attribution only while the owner has enabled and
+// configured the optional third calendar source. Never expose credentials.
+(async()=>{
+ try{
+  const response=await fetch('/api/public/data-credit',{cache:'no-store'});
+  if(!response.ok)return;
+  const data=await response.json();
+  if(data.active&&typeof data.credit==='string'&&data.credit.length<120){
+   const footer=document.querySelector('footer');if(!footer)return;
+   const credit=document.createElement('small');credit.className='fe-data-credit';credit.textContent=data.credit;
+   footer.append(credit);
+  }
+ }catch{}
+})();

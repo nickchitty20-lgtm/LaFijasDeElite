@@ -1,3 +1,23 @@
+# Versión 3.6.4 — Tercera fuente deportiva configurable
+
+En Railway configura una clave válida `FOOTBALL_DATA_ORG_KEY` obtenida de https://www.football-data.org/ (no la agregues al repositorio). En el panel del propietario, abre **Fuentes deportivas**, activa **Calendario ampliado · Fuente III** y ejecuta **Importar y analizar al terminar**. El panel identifica los encuentros nuevos y los que carecen de horario.
+
+El servicio requiere una atribución visible cuando se activa, por contrato: https://www.football-data.org/about. La portada añade esa atribución solo al activarse. Si deseas ocultar todas las referencias a fuentes externas al público, **deja este interruptor desactivado** y usa una alternativa cuyo contrato lo permita; API-Football (ya soportada en verificación) ofrece más cobertura al contar con el plan y la clave necesarios. La búsqueda adicional no es una integración de ESPN y no garantiza propuestas GOLD/VIP: el histórico, los filtros y las comprobaciones vigentes de horarios siguen siendo obligatorios.
+
+---
+
+# Versión 3.6.3 — Detección deportiva por fecha y liga
+
+Para ampliar el calendario de Fijas de Élite, ve a **Fuentes deportivas** y activa **Calendario complementario**. Al pulsar **Importar datos ahora**, el sistema consulta también siete días por fecha y las 22 ligas/torneos conocidos. El servicio gratuito de TheSportsDB limita la respuesta a 3 eventos por día y 1 por liga; no equivale a copiar el calendario total de ESPN.
+
+En **Ver próximos partidos detectados en MySQL (21 días)** puedes comprobar los equipos importados, si tienen horario y si el estado está verificado. Después ejecuta **Analizar ahora**: un partido descubierto sin suficientes resultados históricos o sin superar los filtros no producirá un pronóstico.
+
+Si ya utilizas el verificador independiente con `FOOTBALL_SCHEDULE_LIVE=true` y `FOOTBALL_API_KEY` válida, ahora también detecta partidos de clubes en ligas admitidas, además de selecciones, dentro de la ventana temporal de tu plan. Las fuentes de descubrimiento no sustituyen la comprobación de estado NS antes de publicar. No se añaden automáticamente ligas femeninas, menores o torneos sin histórico compatible.
+
+No se ejecutan migraciones destructivas. Ver VERSION.md para detalles y límites.
+
+---
+
 ## Control de APIs desde el panel (v3.6.2)
 
 En **Panel de administración → Fuentes deportivas** (solo propietario) puedes activar o desactivar la búsqueda complementaria, consultar el estado del verificador y solicitar una importación. Los cambios quedan guardados en MySQL y sobreviven reinicios/despliegues de Railway. Para conocer si aporta nuevos partidos, revisa las métricas de **Análisis automático** después de importar. La antigua variable `FOOTBALL_SECONDARY_SCHEDULE` solo determina el estado inicial una vez creada la tabla; no sobreescribe una preferencia guardada en MySQL.

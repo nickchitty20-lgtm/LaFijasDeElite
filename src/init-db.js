@@ -152,6 +152,8 @@ export async function initializeDatabase() {
     ) ENGINE=InnoDB`);
     await connection.execute('INSERT IGNORE INTO nforce_source_settings(source_id,enabled) VALUES (?,?)',
       ['thesportsdb',process.env.FOOTBALL_SECONDARY_SCHEDULE==='true'?1:0]);
+    await connection.execute('INSERT IGNORE INTO nforce_source_settings(source_id,enabled) VALUES (?,?)',
+      ['footballdata',process.env.FOOTBALL_DATA_ORG_ENABLED==='true'?1:0]);
     await connection.query(`CREATE TABLE IF NOT EXISTS nforce_import_runs (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
       status ENUM('running','completed','failed') NOT NULL DEFAULT 'running',

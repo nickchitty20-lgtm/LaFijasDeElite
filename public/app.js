@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 let currentAdminRole='';
-const ADMIN_PANEL_BUILD='3.6.2';
+const ADMIN_PANEL_BUILD='3.6.4';
 // Diagnose a partial/old Railway deployment instead of silently rendering stale UI.
 async function checkAdminBuild(){
  const label=$('adminBuildVersion'),status=$('adminBuildStatus');
@@ -576,21 +576,34 @@ $('myTelegramChangeForm')?.addEventListener('submit',async event=>{
 async function loadSportsSources(){
  if(currentAdminRole!=='owner'||!$('sportsSourcesPanel'))return;
  const toggle=$('sportsSecondaryToggle'),state=$('sportsSecondaryState'),info=$('sportsSecondaryInfo'),live=$('sportsLiveState'),notice=$('sportsSourcesNotice');
- toggle.disabled=true;
+ const dataToggle=$('sportsFootballDataToggle');
+ toggle.disabled=true;if(dataToggle)dataToggle.disabled=true;
  try{
   const data=await api('/api/admin/football/sources');
   toggle.checked=Boolean(data.secondary.enabled);
   state.textContent=toggle.checked?'Activada':'Desactivada';
   state.classList.toggle('enabled',toggle.checked);
   state.classList.toggle('disabled',!toggle.checked);
-  info.textContent=`${data.secondary.competition_count} competiciones consultables · Configuración persistente en MySQL. Sin clave propia adicional con el acceso público.`;
+  info.textContent=`${data.secondary.competition_count} competiciones por liga + búsqueda diaria 7 días · El acceso gratuito devuelve hasta 1 por liga y 3 por día; no es el calendario completo de ESPN.`;
   const last=$('sportsSecondaryLastImport'),run=data.secondary.last_import;
-  if(last)last.textContent=run?`Última importación: ${run.requests||0} consultas · ${run.discovered||0} partidos detectados · ${run.inserted||0} nuevos · ${run.matched||0} vinculados${run.errors?.length?' · Incidencias: '+run.errors.slice(0,2).join(' / '):''}.`:'Sin resultados de importación en este proceso. Importa datos para comprobar la cobertura.';
+  if(last)last.textContent=run?`Última importación: ${run.requests||0} consultas · ${run.discovered||0} partidos detectados · ${run.inserted||0} nuevos · ${run.matched||0} vinculados · ${run.daily?.unmapped||0} de competiciones no admitidas · ${run.daily?.limit_days||0} días llegaron al límite gratis${run.errors?.length?' · Incidencias: '+run.errors.slice(0,2).join(' / '):''}.`:'Sin resultados de importación en este proceso. Importa datos para comprobar la cobertura.';
   live.textContent=data.live_schedule.configured?'Configurado':'No configurado';
   live.classList.toggle('enabled',data.live_schedule.configured);
   live.classList.toggle('disabled',!data.live_schedule.configured);
+  const footballData=data.football_data;
+  if(footballData&&dataToggle){
+   const dataState=$('sportsFootballDataState'),keyState=$('sportsFootballDataKeyState'),lastData=$('sportsFootballDataLastImport');
+   dataToggle.checked=Boolean(footballData.enabled);
+   dataToggle.disabled=false;
+   dataState.textContent=footballData.enabled?(footballData.configured?'Activada':'Sin clave'):'Desactivada';
+   dataState.classList.toggle('enabled',Boolean(footballData.enabled&&footballData.configured));
+   dataState.classList.toggle('disabled',!footballData.enabled||!footballData.configured);
+   keyState.textContent=footballData.configured?'Clave configurada en Railway · Lista para consultar':'Falta FOOTBALL_DATA_ORG_KEY en Railway. Puedes activar el interruptor, pero no se descargarán partidos hasta configurar la clave.';
+   const run=footballData.last_import;
+   lastData.textContent=run?`Última consulta: ${run.requests||0} solicitudes · ${run.received||0} recibidos · ${run.discovered||0} compatibles · ${run.inserted||0} nuevos · ${run.matched||0} vinculados · ${run.without_time||0} sin hora exacta${run.errors?.length?' · '+run.errors.slice(0,2).join(' / '):''}`:'Sin importación registrada en este proceso.';
+  }
   toggle.disabled=false;
- }catch(error){state.textContent='Error de lectura';notice.textContent='No se pudo cargar la configuración: '+error.message;}
+ }catch(error){state.textContent='Error de lectura';notice.textContent='No se pudo cargar la configuración: '+error.message;if(dataToggle)dataToggle.disabled=false;}
 }
 $('sportsSecondaryToggle')?.addEventListener('change',async()=>{
  const toggle=$('sportsSecondaryToggle'),notice=$('sportsSourcesNotice'),state=$('sportsSecondaryState');
@@ -603,7 +616,53 @@ $('sportsSecondaryToggle')?.addEventListener('change',async()=>{
  }catch(error){toggle.checked=!enabled;notice.textContent='No se pudo guardar: '+error.message;}
  finally{toggle.disabled=false;}
 });
+$('sportsFootballDataToggle')?.addEventListener('change',async()=>{
+ const toggle=$('sportsFootballDataToggle'),notice=$('sportsSourcesNotice'),state=$('sportsFootballDataState');
+ const enabled=toggle.checked;toggle.disabled=true;notice.textContent='Guardando el calendario ampliado…';
+ try{
+  const saved=await api('/api/admin/football/sources/football-data',{method:'POST',body:JSON.stringify({enabled})});
+  state.textContent=saved.enabled?(saved.configured?'Activada':'Sin clave'):'Desactivada';
+  state.classList.toggle('enabled',saved.enabled&&saved.configured);
+  state.classList.toggle('disabled',!saved.enabled||!saved.configured);
+  notice.textContent=saved.message;
+ }catch(error){toggle.checked=!enabled;notice.textContent='No se pudo guardar la fuente: '+error.message;}
+ finally{toggle.disabled=false;}
+});
+async function loadSportsFixturePreview(){
+ const list=$('sportsFixturesList'),notice=$('sportsFixturesNotice');
+ if(currentAdminRole!=='owner'||!list||!notice)return;
+ notice.textContent='Consultando los partidos importados…';
+ try{
+  const data=await api('/api/admin/football/fixtures');
+  list.replaceChildren();
+  if(!data.fixtures.length){notice.textContent='No hay partidos futuros importados. Revisa la última importación, que la fuente complementaria esté activada y los límites de cobertura.';return;}
+  const withTime=data.fixtures.filter(x=>x.scheduled_time_known&&x.kick_off).length;
+  notice.textContent=`${data.fixtures.length} partidos cargados · ${withTime} con hora · ${data.fixtures.length-withTime} sin hora (21 días). Aún no son pronósticos.`;
+  for(const fixture of data.fixtures.slice(0,35)){
+   const item=document.createElement('article');item.className='sports-fixture-item';
+   const title=document.createElement('strong');title.textContent=`${fixture.home_team} vs ${fixture.away_team}`;
+   const row=document.createElement('small');
+   let date='Sin hora confirmada';
+   if(fixture.scheduled_time_known&&fixture.kick_off){
+    const d=new Date(fixture.kick_off);
+    if(Number.isFinite(d.getTime()))date=d.toLocaleString('es-PE',{timeZone:'America/Lima',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+   }
+   row.textContent=`${fixture.league} · ${date} · ${fixture.source==='verificador'?'Horario verificado':fixture.source==='complementaria'?'Calendario adicional':fixture.source==='football-data'?'Calendario ampliado':'Histórico'}${fixture.verified_status?' · Verificado: '+fixture.verified_status:' · Estado no comprobado en vivo'}`;
+   item.append(title,row);list.append(item);
+  }
+ }catch(error){notice.textContent='Error al consultar los partidos: '+error.message;}
+}
+$('sportsFixturesRefresh')?.addEventListener('click',loadSportsFixturePreview);
+$('sportsFixturePreview')?.addEventListener('toggle',()=>{if($('sportsFixturePreview').open)loadSportsFixturePreview();});
 $('sportsSourcesRefresh')?.addEventListener('click',loadSportsSources);
+$('sportsSourcesImportScan')?.addEventListener('click',async()=>{
+ const button=$('sportsSourcesImportScan'),notice=$('sportsSourcesNotice');
+ button.disabled=true;notice.textContent='Solicitando búsqueda de partidos y análisis al terminar…';
+ try{const result=await api('/api/admin/football/import-scan',{method:'POST',body:'{}'});
+  notice.textContent=result.message||'Búsqueda iniciada. Consulta Análisis automático para el resultado.';
+ }catch(e){notice.textContent='Error al buscar y analizar: '+e.message;}
+ finally{button.disabled=false;}
+});
 $('sportsSourcesImport')?.addEventListener('click',async()=>{
  const button=$('sportsSourcesImport'),notice=$('sportsSourcesNotice');
  button.disabled=true;notice.textContent='Solicitando importación de datos deportivos…';
@@ -633,7 +692,7 @@ async function loadFootballEngine(){
   const stats=[
    ['Motor de análisis',status.engine?'N-FORCE':(status.configured?'Motor clásico':'Sin configurar')],
    ...(status.engine?[['Cotejo automático de resultados',status.settlement?.working?'Comprobando…':status.settlement?.last?`${status.settlement.last.settled} actualizados · ${status.settlement.last.won} ganados · ${status.settlement.last.lost} perdidos · ${status.settlement.last.void} anulados`:'Pendiente del siguiente control'],['Sin cotejar: sin FT / mercado desconocido',status.settlement?.last?`${status.settlement.last.invalid_source} / ${status.settlement.last.unsupported}`:'—']]:[]),
-   ...(status.engine?[['Partidos importados',status.total_matches||0],['Resultados históricos',status.complete_matches||0],['Calendario complementario',status.secondary_enabled?'Activado (Fuentes deportivas)':'Desactivado (actívalo en Fuentes deportivas)'],['Torneos del calendario complementario',status.secondary_competitions??'—'],['Partidos exclusivos de la fuente adicional',status.secondary_fixtures??0],['Errores del calendario complementario',status.last_import_report?.secondary?.errors?.slice(0,2).join(' · ')||'Sin errores reportados'],['Último rastreo complementario',status.last_import_report?.secondary?`${status.last_import_report.secondary.requests||0} consultas · ${status.last_import_report.secondary.discovered||0} detectados · ${status.last_import_report.secondary.inserted||0} nuevos · ${status.last_import_report.secondary.matched||0} vinculados${status.last_import_report.secondary.errors?.length?' · Algunas consultas fallaron':''}`:'Pendiente de importar datos'],['Última importación',status.source_import?`${status.source_import.status} · ${status.source_import.sources} registros de competición · ${status.source_import.records} partidos`:'Pendiente'],['Competiciones cargadas en MySQL',status.loaded_competitions!=null?`${status.loaded_competitions} de ${status.configured_competitions||20} configuradas`:'No disponible'],['Competiciones con verificación de horarios independiente',status.live_schedule_supported_competitions!=null?`${status.live_schedule_supported_competitions} de ${status.configured_competitions||20} (según cobertura del sincronizador)`:'No disponible'],['Competiciones de la última importación',status.last_import_report?.competitions_imported!=null?`${status.last_import_report.competitions_imported} con datos en la última importación`:'Ejecuta «Importar datos» para comprobar la cobertura'],['Torneos de selecciones configurados',status.national_competitions_configured??'—'],['Torneos de selecciones cargados',status.loaded_national_competitions??'—'],['Partidos de selecciones en MySQL',status.national_matches??'—'],['Temporadas aún sin datos',status.last_import_report?.datasets_missing??'—'],['Backtesting',status.backtest?`${status.backtest.evaluated} evaluados · ${status.backtest.accuracy??'—'}% precisión observada${status.backtest.validated?'':' (muestra insuficiente, antigua o de otra versión)'}`:'Aún sin validar'],
+   ...(status.engine?[['Partidos importados',status.total_matches||0],['Resultados históricos',status.complete_matches||0],['Calendario complementario',status.secondary_enabled?'Activado (Fuentes deportivas)':'Desactivado (actívalo en Fuentes deportivas)'],['Torneos del calendario complementario',status.secondary_competitions??'—'],['Partidos exclusivos de la fuente adicional',status.secondary_fixtures??0],['Calendario ampliado',status.football_data_enabled?(status.football_data_configured?'Activado':'Activado sin clave'):'Desactivado'],['Partidos exclusivos del calendario ampliado',status.football_data_fixtures??0],['Última importación del calendario ampliado',status.last_import_report?.football_data?`${status.last_import_report.football_data.received||0} recibidos · ${status.last_import_report.football_data.discovered||0} compatibles · ${status.last_import_report.football_data.inserted||0} nuevos · ${status.last_import_report.football_data.without_time||0} sin hora · ${(status.last_import_report.football_data.errors||[]).join(' / ')}`:'Pendiente'],['Partidos de clubes incorporados por el verificador',status.verified_club_fixtures??0],['Errores del calendario complementario',status.last_import_report?.secondary?.errors?.slice(0,2).join(' · ')||'Sin errores reportados'],['Último rastreo complementario',status.last_import_report?.secondary?`${status.last_import_report.secondary.requests||0} consultas · ${status.last_import_report.secondary.discovered||0} detectados · ${status.last_import_report.secondary.inserted||0} nuevos · ${status.last_import_report.secondary.matched||0} vinculados${status.last_import_report.secondary.errors?.length?' · Algunas consultas fallaron':''}`:'Pendiente de importar datos'],['Última importación',status.source_import?`${status.source_import.status} · ${status.source_import.sources} registros de competición · ${status.source_import.records} partidos`:'Pendiente'],['Competiciones cargadas en MySQL',status.loaded_competitions!=null?`${status.loaded_competitions} de ${status.configured_competitions||20} configuradas`:'No disponible'],['Competiciones con verificación de horarios independiente',status.live_schedule_supported_competitions!=null?`${status.live_schedule_supported_competitions} de ${status.configured_competitions||20} (según cobertura del sincronizador)`:'No disponible'],['Competiciones de la última importación',status.last_import_report?.competitions_imported!=null?`${status.last_import_report.competitions_imported} con datos en la última importación`:'Ejecuta «Importar datos» para comprobar la cobertura'],['Torneos de selecciones configurados',status.national_competitions_configured??'—'],['Torneos de selecciones cargados',status.loaded_national_competitions??'—'],['Partidos de selecciones en MySQL',status.national_matches??'—'],['Temporadas aún sin datos',status.last_import_report?.datasets_missing??'—'],['Backtesting',status.backtest?`${status.backtest.evaluated} evaluados · ${status.backtest.accuracy??'—'}% precisión observada${status.backtest.validated?'':' (muestra insuficiente, antigua o de otra versión)'}`:'Aún sin validar'],
    ['Resultados retrospectivos del perfil GOLD / VIP',status.backtest?.segments?`Abierto: ${status.backtest.segments.free?.evaluated||0} pruebas · ${status.backtest.segments.free?.accuracy??'—'}% | VIP: ${status.backtest.segments.vip?.evaluated||0} pruebas · ${status.backtest.segments.vip?.accuracy??'—'}%`:'Pendiente de backtesting'],
    ['Evaluación por mercado',status.backtest?.by_market?Object.entries(status.backtest.by_market).map(([market,v])=>`${market}: ${v.evaluated} pruebas · ${v.accuracy}%`).join(' | ')||'Sin selecciones históricas validadas':'Pendiente'],
    ['Comparación con el motor anterior (Brier)',status.backtest?.comparison_previous?.paired_evaluated?

@@ -1,3 +1,27 @@
+# Fijas de Élite 3.6.4 — Calendario ampliado configurable
+
+- Integra una tercera fuente opcional: **football-data.org v4** (no es ESPN). Consulta encuentros de 21 días mediante una solicitud de fecha inicial y final, en lugar del tope de 1 por liga y 3 por día de TheSportsDB gratuito.
+- El plan gratuito admite 12 competiciones, pero solo **11** están homologadas con el historial que posee actualmente N-FORCE. La Champions League no entra hasta disponer de una base de resultados compatible. La cantidad efectiva depende del proveedor, su plan y las fechas.
+- Los encuentros con estado `SCHEDULED` o una hora 00:00 UTC se guardan **sin hora confirmada**, útiles para observación, pero nunca como candidatos publicables. Solo `TIMED` con hora UTC válida obtiene la marca de horario conocido. Ningún calendario complementario afirma estado NS verificado en vivo.
+- Unifica partidos mediante código de competición, nombres y fecha, mantiene un ID estable del proveedor, conserva las comprobaciones independientes ya realizadas y no inventa goles, cuotas ni probabilidades.
+- N-FORCE tiene ahora un interruptor exclusivo de propietario en **Fuentes deportivas**, guardado en MySQL con auditoría. Requiere `FOOTBALL_DATA_ORG_KEY` en Railway y aprobación de las condiciones del proveedor. Se puede desactivar sin borrar partidos existentes.
+- El panel muestra cuántos partidos devolvió la API, cuántos son compatibles, cuántos se insertaron o enlazaron, cuántos carecen de hora confirmada, y los fallos de autenticación o cuota.
+- **Atribución obligatoria:** cuando esta tercera fuente está habilitada y configurada, la portada muestra la frase de crédito exigida por su contrato. La fuente está apagada por defecto, respetando el diseño original. Si no se desea mostrar fuentes públicamente, no activar este proveedor y usar uno cuyo contrato lo permita.
+- No se ha comprado ni activado ningún plan. Es preciso confirmar la habilitación comercial de la cuenta y su licencia antes de operar. Integración cubierta por pruebas con respuestas simuladas; hace falta validarla en Railway con la clave real.
+- Conserva fuentes anteriores, MySQL, GOLD, VIP, Telegram, las propuestas existentes y las barreras antes de publicar.
+
+# Fijas de Élite 3.6.3 — Cobertura diaria y diagnóstico del calendario importado
+
+- **Causa diagnosticada:** TheSportsDB v1 gratuito solo devuelve 1 próximo partido por liga en `eventsnextleague.php`; esto no equivale al calendario completo. Los partidos televisados por ESPN no se encuentran todos en las 22 competiciones habilitadas y hay torneos (como Champions femenina) para los cuales el motor aún no posee historial.
+- El verificador independiente, cuando está configurado con la clave y plan correspondientes, ahora puede incorporar también partidos futuros de clubes dentro de ligas reconocidas (antes solo incorporaba selecciones si el encuentro no existía localmente). Exige kickoff real y estado NS; no genera propuestas sin historial válido.
+- El importador complementario hace 7 consultas adicionales por fecha UTC (`eventsday.php?d=...&s=Soccer`) y conserva las 22 consultas por liga: **29 consultas en total** por importación completa; el plan gratuito limita cada día a 3 eventos, de los cuales solo entran en el análisis las ligas con identificador homologado. Los 7 días son una cobertura adicional, NO una garantía de encontrar todos los partidos.
+- Nuevo botón **Importar y analizar al terminar** para evitar que un escaneo inmediato se ejecute antes de haber recibido los nuevos partidos. Respeta los bloqueos y pausas existentes.
+- Indicadores detallados: consultas diarias, eventos recibidos, partidos de competiciones sin correspondencia, fechas que alcanzaron la cuota gratis, errores por fecha y por liga. No se inventan horarios ni se eluden filtros para crear propuestas.
+- Nuevo panel privado «Ver próximos partidos detectados en MySQL (21 días)» muestra exactamente qué encuentros han entrado al sistema, con fuente, hora y condición de verificación.
+- Mantiene fuentes configurables, GOLD, VIP, Telegram, MySQL, propuestas existentes y los bloqueos de publicación.
+- Importar datos y después analizar. Comprobar resultados en Railway; el test usa respuestas simuladas, no acredita conexión en producción. El calendario ESPN se utilizó solo como contraste público; no se extraen ni redistribuyen automáticamente sus datos.
+- Importante: TheSportsDB documenta límites 1 por liga y 3 por día en el plan gratuito; una fuente autorizada con cobertura más amplia podría ser necesaria para detectar todas las competiciones.
+
 # Fijas de Élite 3.6.2 — Panel de fuentes deportivas
 
 - Nueva pestaña **Fuentes deportivas** disponible exclusivamente para la cuenta propietaria, dentro del panel N-FORCE.

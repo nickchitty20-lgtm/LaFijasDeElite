@@ -114,9 +114,36 @@ export async function fetchSecondaryLeague(competition,{fetcher=fetch,key='123',
  if((json?.events||[]).length>100)throw Error('Respuesta con demasiados eventos');
  return (json?.events||[]).map(e=>normalizeSecondaryEvent(e,competition,now,days)).filter(Boolean);
 }
-export async function importSecondaryFixtures({conn,now=new Date(),fetchLeague=fetchSecondaryLeague,env=process.env,enabled}={}){
+/** Day-based fallback: the free provider has an independent 3-events/day cap.
+ * Query seven UTC dates in addition to next-per-league. This is discovery,
+ * not a reliable exhaustive calendar or proof of live NS status.
+ * 7 day calls + 22 league calls = 29 requests per manual import (<30/min).
+ */
+const byLeagueId=new Map(SECONDARY_COMPETITIONS.map(x=>[String(x.id),x.code]));
+export const SECONDARY_DAILY_LOOKAHEAD_DAYS=7;
+export const SECONDARY_REQUESTS_PER_IMPORT=SECONDARY_COMPETITIONS.length+SECONDARY_DAILY_LOOKAHEAD_DAYS;
+export async function fetchSecondaryDay(date,{fetcher=fetch,key='123',now=new Date(),days=21}={}){
+ if(!/^\d{4}-\d\d-\d\d$/.test(String(date))||!Number.isFinite(Date.parse(date+'T00:00:00Z')))
+  throw Error('Fecha de consulta inválida');
+ if(!/^\d{1,20}$/.test(String(key)))throw Error('Clave secundaria inválida');
+ const url=`https://www.thesportsdb.com/api/v1/json/${key}/eventsday.php?d=${date}&s=Soccer`;
+ const response=await fetcher(url,{headers:{Accept:'application/json','User-Agent':'FijasDeElite-NForceFootball/3.6'},signal:AbortSignal.timeout(8000)});
+ if(!response.ok)throw Error(`Calendario diario: HTTP ${response.status}`);
+ if(Number(response.headers?.get?.('content-length')||0)>1_000_000)throw Error('Respuesta diaria demasiado grande');
+ const text=await response.text();
+ if(Buffer.byteLength(text)>1_000_000)throw Error('Respuesta diaria demasiado grande');
+ let json;try{json=JSON.parse(text);}catch{throw Error('Respuesta diaria sin JSON válido');}
+ if(json?.events!=null&&!Array.isArray(json.events))throw Error('Respuesta diaria inválida');
+ if((json?.events||[]).length>1500)throw Error('Respuesta diaria demasiado grande');
+ const raw=json?.events||[];
+ const events=raw.map(e=>normalizeSecondaryEvent(e,byLeagueId.get(String(e?.idLeague)),now,days)).filter(Boolean);
+ return {events,received:raw.length,unmapped:raw.filter(e=>!byLeagueId.has(String(e?.idLeague))).length,
+  limit_reached:raw.length===(key==='123'?3:1500)};
+}
+export async function importSecondaryFixtures({conn,now=new Date(),fetchLeague=fetchSecondaryLeague,fetchDay=fetchSecondaryDay,env=process.env,enabled}={}){
  if((enabled===undefined?env.FOOTBALL_SECONDARY_SCHEDULE==='true':enabled)!==true)return {enabled:false,requests:0,discovered:0,inserted:0,matched:0,errors:[]};
- const report={enabled:true,requests:0,discovered:0,inserted:0,matched:0,ambiguous:0,errors:[],by_competition:{}};
+ const report={enabled:true,requests:0,discovered:0,inserted:0,matched:0,ambiguous:0,errors:[],by_competition:{},
+  daily:{requests:0,received:0,unmapped:0,discovered:0,limit_days:0,days_checked:[],by_date:{}}};
  // The public free key is 123; the value can be overridden by an official paid V1 key.
  const key=env.FOOTBALL_SECONDARY_API_KEY||'123';
  const [locals]=await conn.query(`SELECT id,source_key,competition,home_team,away_team,match_date,kickoff,home_goals,away_goals
@@ -124,28 +151,17 @@ export async function importSecondaryFixtures({conn,now=new Date(),fetchLeague=f
      AND match_date<=DATE_ADD(UTC_DATE(),INTERVAL 24 DAY) AND home_goals IS NULL LIMIT 3500`);
  const seenEvents=new Set();
  let failures=0;
- // Max 22 calls per import, lower than the documented free limit of 30/min.
- // One import runs at most every 30 minutes manually or every 2h automatically.
- for(const competition of SECONDARY_COMPETITIONS){
-  report.requests++;
-  let items;
-  try{items=await fetchLeague(competition.code,{key,now,days:21});failures=0;}
-  catch(error){
-   failures++;
-   report.errors.push(`${competition.code}: ${String(error?.message||error).slice(0,110)}`);
-   if(failures>=3){report.errors.push('Se interrumpió por fallos consecutivos');break;}
-   continue;
-  }
+ // Process seven dates first: the nearest games are the most actionable.
+ // Add league fallback afterwards, keeping the free 30 requests/min budget.
+ async function ingest(items,tag){
   const events=items.filter(e=>!seenEvents.has(e.source_key));
   events.forEach(e=>seenEvents.add(e.source_key));
   report.discovered+=events.length;
   const result=reconcileSecondaryEvents(events,locals);
   report.ambiguous+=result.ambiguous.length;
-  report.by_competition[competition.code]={found:events.length,matched:result.updates.length,new:result.inserts.length};
+  if(tag?.code)report.by_competition[tag.code]={found:events.length,matched:result.updates.length,new:result.inserts.length};
+  if(tag?.date){report.daily.discovered+=events.length;report.daily.by_date[tag.date]={found:events.length,matched:result.updates.length,new:result.inserts.length};}
   for(const {event,local} of result.updates){
-   // Do not override an independent verifier's schedule or a recorded result.
-   // Preserve original team names (same names as the model's historic corpus).
-   // Refresh known kickoff only for an unverified/secondary-local record.
    await conn.execute(`UPDATE nforce_matches m SET m.kickoff=?,m.match_date=?,m.scheduled_time_known=1,m.source_checked_at=UTC_TIMESTAMP()
      WHERE m.id=? AND m.home_goals IS NULL AND m.away_goals IS NULL
        AND NOT EXISTS (SELECT 1 FROM nforce_fixture_schedules s WHERE s.nforce_match_id=m.id
@@ -154,19 +170,51 @@ export async function importSecondaryFixtures({conn,now=new Date(),fetchLeague=f
    report.matched++;
   }
   for(const event of result.inserts){
-   // Stable provider ID enables retries without duplicate rows. Do not write
-   // status NS to the independent schedule table: this feed is discovery only.
-   await conn.execute(`INSERT IGNORE INTO nforce_matches
+   const [inserted]=await conn.execute(`INSERT IGNORE INTO nforce_matches
      (id,source_key,competition,league,season,round_name,home_team,away_team,match_date,kickoff,scheduled_time_known,home_goals,away_goals,source_path,source_checked_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,1,NULL,NULL,?,UTC_TIMESTAMP())`,
      [event.id,event.source_key,event.competition,event.league,event.season,event.round,
        event.home,event.away,event.date,toSql(new Date(event.kickoff)),event.source_path]);
-   report.inserted++;
-   // Include new event to avoid the same match being inserted twice under
-   // different provider identifiers in the current import cycle.
-   locals.push({id:event.id,competition:event.competition,home_team:event.home,away_team:event.away,
-     match_date:event.date,kickoff:event.kickoff,home_goals:null});
+   if(Number(inserted.affectedRows||0)>0){
+    report.inserted++;
+    locals.push({id:event.id,source_key:event.source_key,competition:event.competition,home_team:event.home,away_team:event.away,
+      match_date:event.date,kickoff:event.kickoff,home_goals:null});
+   }
   }
  }
+ const midnight=Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate());
+ for(let offset=0;offset<SECONDARY_DAILY_LOOKAHEAD_DAYS;offset++){
+  const date=new Date(midnight+offset*86400000).toISOString().slice(0,10);
+  report.requests++;report.daily.requests++;report.daily.days_checked.push(date);
+  try{
+   const daily=await fetchDay(date,{key,now,days:21});
+   // Fixtures with unknown leagues do not enter N-FORCE without a known
+   // competition mapping and adequate historical statistics.
+   const payload=Array.isArray(daily)?{events:daily,received:daily.length,unmapped:0,limit_reached:false}:daily;
+   report.daily.received+=payload.received||0;
+   report.daily.unmapped+=payload.unmapped||0;
+   if(payload.limit_reached)report.daily.limit_days++;
+   await ingest(payload.events||[],{date});failures=0;
+  }catch(error){
+   failures++;report.errors.push(`día ${date}: ${String(error?.message||error).slice(0,110)}`);
+   if(failures>=3){report.errors.push('Búsqueda diaria detenida: tres fallos seguidos');break;}
+  }
+ }
+ failures=0;
+ for(const competition of SECONDARY_COMPETITIONS){
+  report.requests++;
+  try{
+   const items=await fetchLeague(competition.code,{key,now,days:21});
+   await ingest(items,{code:competition.code});failures=0;
+  }catch(error){
+   failures++;
+   report.errors.push(`${competition.code}: ${String(error?.message||error).slice(0,110)}`);
+   if(failures>=3){report.errors.push('Búsqueda por liga detenida: tres fallos seguidos');break;}
+  }
+ }
+ report.daily.warning=report.daily.limit_days?
+  `El plan gratuito alcanzó su tope de 3 partidos en ${report.daily.limit_days} fechas; no equivale al calendario completo de ESPN.`:null;
+ report.warning=report.daily.unmapped?
+  `${report.daily.unmapped} encuentros diarios pertenecen a competiciones sin modelo histórico habilitado.`:null;
  return report;
 }
