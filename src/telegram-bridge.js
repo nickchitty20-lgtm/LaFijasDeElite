@@ -109,6 +109,37 @@ export function telegramVipPublicPreview(p,base){
  return `🔒 <b>FIJAS DE ÉLITE · ADELANTO VIP</b>\n\n👑 ¡Nuevo pronóstico exclusivo publicado!${fixture}${league}${schedule}\n\n🔐 La selección, cuota, mercados de goles, marcador estimado y análisis están disponibles solo en el canal VIP.\n\n✨ Consulta los planes y tu acceso: ${h(url)}\n\n<i>Pronósticos con riesgo: no hay resultados garantizados.</i>`;
 }
 
+/** Verify ONLY the private VIP destination. Never post as part of this check.
+ * Do not require the public channel to be online: failures there must not stop
+ * sending a private bulletin. Reject destinations that identify as the public
+ * channel, including when the public destination uses @username instead of ID.
+ */
+export async function inspectVipTelegramChannel(env=process.env,{checkPermissions=true,api=telegramApi}={}){
+ const target=String(env.TELEGRAM_VIP_CHAT_ID||'').trim();
+ if(!env.TELEGRAM_BOT_TOKEN)return {ready:false,reason:'Falta TELEGRAM_BOT_TOKEN en Railway.'};
+ if(!/^-100\d{5,16}$/.test(target))return {ready:false,reason:'TELEGRAM_VIP_CHAT_ID debe ser el ID numérico del canal privado, comenzando por -100.'};
+ const official=freeTelegramDestination(env);
+ if(target===String(env.TELEGRAM_FREE_CHANNEL_CHAT_ID||'').trim()||target===official)
+  return {ready:false,reason:'El ID VIP coincide con el canal oficial. Revisa los destinos en Railway.'};
+ try{
+  const chat=await api('getChat',{chat_id:target},env);
+  if(chat?.type!=='channel')return {ready:false,reason:'El destino VIP no corresponde a un canal de Telegram.'};
+  const publicUsername=official.startsWith('@')?official.slice(1).toLowerCase():'';
+  if(publicUsername && String(chat.username||'').toLowerCase()===publicUsername)
+   return {ready:false,reason:'El canal VIP coincide con el canal oficial por su @usuario. No se envía información privada allí.'};
+  if(checkPermissions){
+   const me=await api('getMe',{},env);
+   const member=await api('getChatMember',{chat_id:target,user_id:me.id},env);
+   if(!['administrator','creator'].includes(member?.status))return {ready:false,reason:'El bot no es administrador del canal VIP.'};
+   if(member.status==='administrator'&&member.can_post_messages!==true)
+    return {ready:false,reason:'Al bot le falta el permiso «Publicar mensajes» en el canal VIP.'};
+  }
+  return {ready:true,chat_id:String(chat.id),title:String(chat.title||'Canal VIP'),username:String(chat.username||'')};
+ }catch(error){
+  return {ready:false,reason:'Telegram VIP: '+String(error?.message||'No se pudo verificar el canal.').slice(0,180)};
+ }
+}
+
 /** Resolve and verify the actual FREE destination before posting. Never trust a
  * channel-shaped ID alone: it may be mistyped or belong to a different chat.
  * Telegram's response must identify a channel, and when a public username is

@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 let currentAdminRole='';
-const ADMIN_PANEL_BUILD='3.7.5';
+const ADMIN_PANEL_BUILD='3.7.6';
 // Diagnose a partial/old Railway deployment instead of silently rendering stale UI.
 async function checkAdminBuild(){
  const label=$('adminBuildVersion'),status=$('adminBuildStatus');
@@ -1196,6 +1196,33 @@ $('footballVipRadarRefresh')?.addEventListener('click',async()=>{
   const result=await api('/api/admin/football/import-scan',{method:'POST',body:'{}'});
   label.textContent=result.message||'Actualización iniciada. Vuelve a revisar el radar después de terminar la importación.';
  }catch(err){label.textContent='No se pudo iniciar la actualización: '+err.message;}
+ finally{btn.disabled=false;}
+});
+// Owner-only Telegram diagnostics, separate from bulletin data and reservations.
+$('footballRadarHealth')?.addEventListener('click',async()=>{
+ const node=$('footballRadarTelegramHealth'),btn=$('footballRadarHealth');
+ btn.disabled=true;node.textContent='Comprobando el bot y permisos de cada canal sin publicar mensajes…';
+ try{
+  const data=await api('/api/admin/telegram/channel-health');
+  const describe=(name,status)=>`${name}: ${status?.ready?'✓ Conectado':'⚠ '+(status?.reason||'Sin conexión')}${status?.ready&&status.title?' · '+status.title:''}`;
+  node.textContent=[describe('Bot',data.bot),describe('VIP',data.vip),describe('Oficial',data.official)].join(' | ');
+ }catch(error){node.textContent='⚠ No se pudo comprobar Telegram: '+error.message;}
+ finally{btn.disabled=false;}
+});
+$('footballRadarVipTest')?.addEventListener('click',async()=>{
+ if(!confirm('¿Enviar un MENSAJE DE PRUEBA al canal VIP? No contiene pronósticos.'))return;
+ const btn=$('footballRadarVipTest'),node=$('footballRadarTelegramHealth');btn.disabled=true;node.textContent='Probando envío al canal VIP…';
+ try{const r=await api('/api/admin/telegram/vip-channel/test',{method:'POST',body:'{}'});
+  node.textContent=`✓ Prueba enviada a VIP (${r.title}), mensaje #${r.message_id}.`;
+ }catch(error){node.textContent='⚠ Prueba VIP fallida: '+error.message;}
+ finally{btn.disabled=false;}
+});
+$('footballRadarOfficialTest')?.addEventListener('click',async()=>{
+ if(!confirm('¿Enviar un MENSAJE DE PRUEBA al canal OFICIAL? Será visible para todos.'))return;
+ const btn=$('footballRadarOfficialTest'),node=$('footballRadarTelegramHealth');btn.disabled=true;node.textContent='Probando envío al canal oficial…';
+ try{const r=await api('/api/admin/telegram/free-channel/test',{method:'POST',body:'{}'});
+  node.textContent=`✓ Prueba enviada al oficial (${r.title}), mensaje #${r.message_id}.`;
+ }catch(error){node.textContent='⚠ Prueba oficial fallida: '+error.message;}
  finally{btn.disabled=false;}
 });
 $('footballVipRadarSend')?.addEventListener('click',async()=>{

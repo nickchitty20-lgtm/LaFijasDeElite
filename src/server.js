@@ -20,7 +20,7 @@ import {publishGoldTelegram} from './gold-public-announcement.js';
 import {manualVipPeriod} from './manual-vip.js';
 import {evaluateMembershipArchive} from './membership-archive-policy.js';
 import {paypalReadiness,validatePaypalCapture,refundState,usdCents,captureIdFromRefund} from './paypal-rules.js';
-import {sendPredictionToTelegram,telegramApi,inspectFreeTelegramChannel} from './telegram-bridge.js';
+import {sendPredictionToTelegram,telegramApi,inspectFreeTelegramChannel,inspectVipTelegramChannel} from './telegram-bridge.js';
 import {safeTelegramPublicUrl} from './telegram-public.js';
 import {canRemovePrediction,validPredictionId,removePredictionTelegramMessages} from './prediction-removal.js';
 import {installTelegramRoutes} from './telegram-routes.js';
@@ -34,7 +34,7 @@ import {publicAnalysisText} from './public-branding.js';
 import {publicPerformanceFilters,performanceWhere,summaryFromGroups,publicRecentResults} from './performance-stats.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
-const APP_VERSION = '3.7.5';
+const APP_VERSION = '3.7.6';
 const app = express();
 let telegramVipControl=null;
 let notificationControl=null;
@@ -269,6 +269,32 @@ app.post('/api/admin/telegram/free-channel/test',authenticate,channelTestLimit,a
   const sent=await telegramApi('sendMessage',{chat_id:result.chat_id,text:'✅ Prueba de publicación · Fijas de Élite\nEl canal oficial está conectado. Este mensaje no es un pronóstico.',disable_web_page_preview:true});
   return res.json({sent:true,title:result.title,chat_id:result.chat_id,message_id:sent.message_id});
  }catch(error){return res.status(502).json({error:'Telegram rechazó el mensaje de prueba: '+String(error.message||'Error desconocido').slice(0,175),sent:false});}
+});
+
+// Read-only checks for each Telegram destination: NEVER sends or reserves a bulletin.
+app.get('/api/admin/telegram/channel-health',authenticate,async(req,res)=>{
+ if(req.admin?.role!=='owner')return res.status(403).json({error:'Solo el creador puede diagnosticar Telegram.'});
+ const tokenConfigured=Boolean(process.env.TELEGRAM_BOT_TOKEN);
+ let bot={ready:false,reason:'Falta TELEGRAM_BOT_TOKEN.'};
+ if(tokenConfigured){
+  try{const me=await telegramApi('getMe');bot={ready:true,username:me.username||'Sin usuario'};}
+  catch(error){bot={ready:false,reason:String(error.message||'No se pudo conectar al bot.').slice(0,170)};}
+ }
+ const [vip,official]=await Promise.all([
+  inspectVipTelegramChannel(process.env,{checkPermissions:true}),
+  inspectFreeTelegramChannel(process.env,{checkPermissions:true})
+ ]);
+ res.set('Cache-Control','no-store').json({bot,vip,official,note:'La comprobación no publica mensajes ni cambia el estado del boletín.'});
+});
+// Manual owner-approved test: one short message ONLY to the verified VIP channel.
+app.post('/api/admin/telegram/vip-channel/test',authenticate,channelTestLimit,async(req,res)=>{
+ if(req.admin?.role!=='owner')return res.status(403).json({error:'Solo el creador puede enviar mensajes de prueba.'});
+ const vip=await inspectVipTelegramChannel(process.env,{checkPermissions:true});
+ if(!vip.ready)return res.status(422).json({sent:false,error:vip.reason});
+ try{
+  const sent=await telegramApi('sendMessage',{chat_id:vip.chat_id,text:'✅ PRUEBA DE ENVÍO · FIJAS DE ÉLITE\nEl canal VIP está conectado. Este mensaje no es un pronóstico.',disable_web_page_preview:true});
+  return res.json({sent:true,title:vip.title,message_id:sent.message_id});
+ }catch(error){return res.status(502).json({sent:false,error:String(error.message||'Telegram rechazó el envío.').slice(0,180)});}
 });
 
 // Only authorized owners can inspect GOLD queue status; no subscriber identities are disclosed.

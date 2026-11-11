@@ -1,3 +1,12 @@
+# Fijas de Élite v3.7.6 — Diagnóstico real de Telegram y separación de canales
+
+- El envío del boletín VIP **no espera ni exige** que el canal oficial esté disponible. Verifica exclusivamente el canal VIP y sus permisos de publicación; impide el envío si coincide con el oficial por ID o @usuario.
+- Panel N-FORCE → Radar VIP: **Diagnosticar Telegram (VIP y oficial)** comprueba credenciales, existencia de cada canal y permisos de publicación sin enviar mensajes.
+- Botones independientes **Probar canal VIP** y **Probar canal oficial**: requieren confirmación del propietario y envían solo un mensaje de prueba; los errores de Telegram aparecen en el panel.
+- Recuperaciones tras fallos: hasta tres intentos de recuperación por día, **solo con comprobación y confirmación explícita del propietario**, sin reenvíos automáticos tras resultados inciertos. Los boletines confirmados nunca se duplican.
+- El adelanto oficial sigue dependiendo de que el envío VIP haya sido confirmado. Si falla el oficial, no se reenvía el VIP.
+- No cambia MySQL, las claves ni los controles GOLD/VIP. Si Railway falla, los resultados del diagnóstico permitirán identificar la causa sin compartir tokens.
+
 # Fijas de Élite v3.7.5 — Recuperación segura del boletín VIP
 
 - El botón de envío explica si el boletín de **hoy ya se entregó**, si Telegram lo rechazó o si la entrega quedó incierta; ya no presenta un simple bloqueo ambiguo.

@@ -22,7 +22,7 @@ import {importWideCalendar,WIDE_SUPPORTED_COMPETITIONS} from './api-football-wid
 import {auditTomorrowCalendar} from './nforce-fixture-audit.js';
 import {predictAiForecast,AI_MODEL_VERSION} from './nforce-ml.js';
 import {prepareVipRadar,vipRadarTelegramMessage,vipRadarOfficialTeaser,VIP_RADAR_MIN_LEAD_HOURS,VIP_RADAR_MAX_DAYS} from './nforce-vip-radar.js';
-import {telegramApi,inspectFreeTelegramChannel} from './telegram-bridge.js';
+import {telegramApi,inspectFreeTelegramChannel,inspectVipTelegramChannel} from './telegram-bridge.js';
 
 const DAY=86400000;
 const asUtc=x=>x instanceof Date?x:new Date(String(x||'').replace(' ','T')+(String(x||'').match(/Z|[+-]\d\d:\d\d$/)?'':'Z'));
@@ -46,7 +46,7 @@ export function importDecision(last,now=Date.now(),hours=IMPORT_INTERVAL_HOURS){
  const next=started+interval;
  return {due:!Number.isFinite(next)||now>=next,next:Number.isFinite(next)?new Date(next).toISOString():null};
 }
-export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenFootball,fetchSecondary=importSecondaryFixtures,fetchFootballData=importFootballDataFixtures,fetchWide=importWideCalendar,fetchCalendarAudit=auditTomorrowCalendar,sendTelegram=sendPredictionToTelegram,sendRadarTelegram=async(chat,text,env)=>telegramApi('sendMessage',{chat_id:chat,text,parse_mode:'HTML',disable_web_page_preview:true,protect_content:true},env),sendRadarOfficialTelegram=async(chat,text,env)=>telegramApi('sendMessage',{chat_id:chat,text,parse_mode:'HTML',disable_web_page_preview:true},env),inspectOfficialChannel=inspectFreeTelegramChannel,enqueueEvent=null,now=()=>new Date()}={}){
+export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenFootball,fetchSecondary=importSecondaryFixtures,fetchFootballData=importFootballDataFixtures,fetchWide=importWideCalendar,fetchCalendarAudit=auditTomorrowCalendar,sendTelegram=sendPredictionToTelegram,sendRadarTelegram=async(chat,text,env)=>telegramApi('sendMessage',{chat_id:chat,text,parse_mode:'HTML',disable_web_page_preview:true,protect_content:true},env),sendRadarOfficialTelegram=async(chat,text,env)=>telegramApi('sendMessage',{chat_id:chat,text,parse_mode:'HTML',disable_web_page_preview:true},env),inspectOfficialChannel=inspectFreeTelegramChannel,inspectVipChannel=inspectVipTelegramChannel,enqueueEvent=null,now=()=>new Date()}={}){
  const settlement=createNforceSettlement({db,now});
  let importing=false,scanning=false,publishing=false,combinedRunning=false,radarSending=false,interval=null;
  let lastScanReport=null,lastImportReport=null,lastPublishReport=null,lastSchedulerMessage='',lastError='';
@@ -357,13 +357,11 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
    if(!manual&&!await vipRadarEnabled())return {sent:false,reason:'Radar automático desactivado'};
    if(!process.env.TELEGRAM_BOT_TOKEN||!process.env.TELEGRAM_VIP_CHAT_ID)
     return {sent:false,reason:'Falta configurar el canal VIP o el bot de Telegram.'};
-   const target=String(process.env.TELEGRAM_VIP_CHAT_ID||'').trim(),publicId=String(freeTelegramDestination(process.env)||'').trim();
-   if(!/^-?\d{8,18}$/.test(target)||target===publicId||target===String(process.env.TELEGRAM_FREE_CHANNEL_CHAT_ID||''))
-    return {sent:false,reason:'El canal VIP debe ser un ID numérico distinto al canal oficial.'};
-   if(publicId.startsWith('@')){
-    const verified=await inspectOfficialChannel(process.env);
-    if(!verified.ready||verified.chat_id===target)return {sent:false,reason:'No se pudo confirmar que el destino VIP sea distinto del oficial.'};
-   }
+   // VIP is checked on its OWN. A broken public channel must not stop private
+   // delivery, but we still verify this is not the same physical channel.
+   const verifiedVip=await inspectVipChannel(process.env,{checkPermissions:true});
+   if(!verifiedVip?.ready)return {sent:false,reason:verifiedVip?.reason||'El canal VIP no está disponible.'};
+   const target=String(verifiedVip.chat_id);
    const report=await vipRadarPreview();
    if(!report.items.length)return {sent:false,reason:'No existen partidos con historial suficiente y horario conocido entre 2 horas y 30 días. Revisa el diagnóstico de próximos 7 días.'};
    // Use the customer's local day, not UTC midnight, for a single daily bulletin.
@@ -377,12 +375,12 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     const attempts=Number(previous.recovery_attempts||0);
     // A confirmed Telegram API rejection is safe to retry; a network timeout
     // or an old v3.7.4 failure is ambiguous and requires owner confirmation.
-    const requiresConfirmation=previous.status==='reserved'||previous.private_failure_kind!=='rejected';
-    if(attempts>=1)return {sent:false,day,reason:'Ya se utilizó la recuperación de hoy. Comprueba los mensajes y el error en Railway.'};
+    const requiresConfirmation=true; // After any prior failure, the owner must check VIP before another attempt.
+    if(attempts>=3)return {sent:false,day,reason:'Se alcanzó el límite de tres recuperaciones manuales de hoy. Revisa los permisos y los registros de Railway.'};
     if(requiresConfirmation&&!manual)return {sent:false,day,reason:'Falló el intento anterior. Requiere confirmación manual de que NO llegó a VIP.'};
     if(requiresConfirmation&&!confirmUnsent)return {sent:false,day,needs_confirmation:true,reason:'El intento anterior falló y no sabemos si Telegram lo entregó. Revisa el canal VIP: solo confirma el reintento si NO aparece allí.'};
-    const [retry]=await conn.execute("UPDATE nforce_vip_radar_dispatches SET status='reserved',private_failure_kind=NULL,recovery_attempts=recovery_attempts+1 WHERE dispatch_day=? AND status IN ('failed','reserved') AND sent_at IS NULL AND telegram_message_id IS NULL AND recovery_attempts<1",[day]);
-    if(Number(retry.affectedRows)!==1)return {sent:false,day,reason:'No se pudo reservar un reintento sin riesgo de duplicación. Comprueba el canal VIP.'};
+    const [retry]=await conn.execute("UPDATE nforce_vip_radar_dispatches SET status='reserved',private_failure_kind=NULL,recovery_attempts=recovery_attempts+1 WHERE dispatch_day=? AND status IN ('failed','reserved') AND sent_at IS NULL AND telegram_message_id IS NULL AND recovery_attempts<3",[day]);
+    if(Number(retry.affectedRows)!==1)return {sent:false,day,reason:'No se pudo reservar el reintento. Comprueba que el boletín no haya llegado a VIP.'};
    }
    let sent;
    try{
