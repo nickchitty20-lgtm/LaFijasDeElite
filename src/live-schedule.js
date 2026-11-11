@@ -12,6 +12,19 @@ const sqlUtc=v=>asUtc(v).toISOString().slice(0,19).replace('T',' ');
 const matchDateUTC=v=>{const d=asUtc(v);return Number.isFinite(d.getTime())?d.toISOString().slice(0,10):null;};
 const providerLeague=Object.freeze({39:'en.1',140:'es.1',78:'de.1',135:'it.1',61:'fr.1'});
 export const LIVE_VERIFICATION_LEAGUES=Object.freeze(Object.values(providerLeague));
+/** Scope of the optional independent source. Outside its league/date coverage,
+ * a fresh local calendar is the available evidence; never require a feed that
+ * cannot be queried. This does not claim a live verification occurred. */
+export function independentScheduleCoverage({competition,kickoff}={}, {now=new Date(),env=process.env}={}){
+ const enabled=env.FOOTBALL_SCHEDULE_LIVE==='true'&&Boolean(env.FOOTBALL_API_KEY);
+ const supported=LIVE_VERIFICATION_LEAGUES.includes(String(competition||''));
+ const fixtureDate=matchDateUTC(kickoff);
+ const plan=env.FOOTBALL_SCHEDULE_PLAN==='extended'?'extended':'free';
+ const dates=scheduleDatesForPlan(now,plan).map(r=>r.date);
+ const inWindow=Boolean(fixtureDate&&dates.includes(fixtureDate));
+ return {required:enabled&&supported&&inWindow,enabled,supported,in_window:inWindow,
+  fixture_date:fixtureDate,plan,allowed_from:dates[0]||null,allowed_to:dates.at(-1)||null};
+}
 const STATUS=new Set(['NS','TBD','1H','HT','2H','ET','BT','P','FT','AET','PEN','PST','CANC','ABD','SUSP','INT','AWD','WO','LIVE']);
 const sourceFreshMs=90*MINUTE;
 const safeErr=e=>String(e?.message||e).replace(/(sk_live_|sk_test_|pk_live_|pk_test_)[^\s]+/g,'[redacted]').slice(0,160);
@@ -115,6 +128,50 @@ export function installLiveSchedule(app,{db,authenticate,request=footballApi,now
      },{now:now().getTime(),liveConfigured:configured()})}))});
   }catch(e){res.status(503).json({error:'Los horarios no están disponibles'});}
  });
+ // Owner-only, on-demand verification for a single existing draft. It never
+ // publishes, recalculates markets or invents an NS status.
+ if(typeof app.post==='function')app.post('/api/admin/schedules/verify',authenticate,async(req,res)=>{
+  if(req.admin?.role!=='owner')return res.status(403).json({error:'Solo creador'});
+  const candidateId=String(req.body?.candidate_id??'');
+  if(!/^\d{1,18}$/.test(candidateId))return res.status(400).json({error:'ID de propuesta inválido'});
+  try{
+   const [rows]=await db.query(`SELECT c.id,c.provider,c.status,c.fixture_id,c.kickoff AS candidate_kickoff,
+     m.match_date,m.competition,m.home_goals,m.away_goals,m.source_checked_at,
+     COALESCE(s.kickoff,m.kickoff) AS kickoff,s.status AS live_status,s.checked_at AS schedule_verified_at
+     FROM football_candidates c JOIN nforce_matches m ON m.id=c.fixture_id
+     LEFT JOIN nforce_fixture_schedules s ON s.nforce_match_id=m.id
+     WHERE c.id=? LIMIT 1`,[candidateId]);
+   const candidate=rows[0];
+   if(!candidate||candidate.provider!==NFORCE_PROVIDER||candidate.status!=='draft')
+    return res.status(404).json({error:'La propuesta no existe o ya no está pendiente.'});
+   const coverage=independentScheduleCoverage(candidate,{now:now(),env});
+   if(!coverage.enabled)return res.status(409).json({code:'not_configured',error:'No está activa la verificación independiente. Configura FOOTBALL_SCHEDULE_LIVE=true y FOOTBALL_API_KEY en Railway; mientras tanto, importa el calendario local y reanaliza la propuesta.'});
+   if(!coverage.supported)return res.status(409).json({code:'league_not_covered',error:'Esta liga no está cubierta por el verificador de horarios. Actualiza los datos deportivos y reanaliza la propuesta con el calendario local reciente.'});
+   if(!coverage.in_window)return res.status(409).json({code:'date_outside_plan',error:`El plan ${coverage.plan} solo admite verificaciones del ${coverage.allowed_from} al ${coverage.allowed_to} (UTC). Este partido es del ${coverage.fixture_date||'día no disponible'}. Puedes importar datos deportivos recientes y reanalizar, o comprobarlo cuando la fecha entre en cobertura.`});
+   if(candidate.home_goals!=null||candidate.away_goals!=null||
+       (candidate.live_status&&String(candidate.live_status).toUpperCase()!=='NS'))
+    return res.status(409).json({code:'started_or_finished',error:'El partido figura iniciado, finalizado o aplazado. No se verificará para publicación.'});
+   if(!Number.isFinite(asUtc(candidate.kickoff).getTime())||asUtc(candidate.kickoff).getTime()<=now().getTime()+20*MINUTE)
+    return res.status(409).json({code:'kickoff_passed',error:'El partido comenzó o faltan menos de 20 minutos. No se puede publicar.'});
+   if(providerAllowedWindow&&(coverage.fixture_date<providerAllowedWindow.from||coverage.fixture_date>providerAllowedWindow.to))
+    return res.status(409).json({code:'provider_date_restricted',error:`El verificador ha restringido las consultas al ${providerAllowedWindow.from}–${providerAllowedWindow.to} (UTC). Actualiza datos deportivos recientes o vuelve a verificar cuando el partido entre en cobertura.`});
+   const report=await sync({force:true,targetDate:coverage.fixture_date});
+   const [[verified]]=await db.query(`SELECT s.kickoff,s.status,s.checked_at FROM nforce_fixture_schedules s
+     WHERE s.nforce_match_id=? LIMIT 1`,[candidate.fixture_id]);
+   const fresh=verified?.checked_at&&now().getTime()-asUtc(verified.checked_at).getTime()<=4*3600000&&
+     now().getTime()>=asUtc(verified.checked_at).getTime();
+   if(!fresh){
+    const reason=report.reason||lastError||'No se consiguió asociar el horario del encuentro con una comprobación reciente.';
+    return res.status(409).json({code:'schedule_not_verified',error:`No se pudo confirmar este partido: ${reason}. Sin confirmación, la publicación continúa bloqueada.`,requests:report.requests||0});
+   }
+   if(String(verified.status||'').toUpperCase()!=='NS'||!verified.kickoff)
+    return res.status(409).json({code:'status_not_pre_match',error:'El estado verificado no es «no iniciado» o su horario está sin confirmar; no se puede publicar.'});
+   const changed=Math.abs(asUtc(verified.kickoff).getTime()-asUtc(candidate.candidate_kickoff).getTime())>MINUTE;
+   res.set('Cache-Control','no-store').json({verified:true,changed,requests:report.requests||0,
+    message:changed?'Horario comprobado: cambió respecto a tu propuesta. Reanaliza la misma propuesta antes de aprobarla.':'Horario y estado NS comprobados. Revisa la propuesta; si utiliza un modelo antiguo, reanalízala antes de aprobarla.',
+    checked_at:verified.checked_at});
+  }catch(e){res.status(503).json({error:'No fue posible verificar el calendario: '+safeErr(e)});}
+ });
  app.get('/api/admin/schedules/status',authenticate,async(req,res)=>{
   if(req.admin?.role!=='owner')return res.status(403).json({error:'Solo creador'});
   let latest=null;
@@ -125,12 +182,14 @@ export function installLiveSchedule(app,{db,authenticate,request=footballApi,now
    schedule_plan:plan(),allowed_dates_utc:dates.length?{from:dates[0].date,to:dates.at(-1).date}:null,
    note:configured()?plan()==='free'?'Plan gratuito: solo se verifican las fechas admitidas; los otros horarios son orientativos. No es una señal minuto a minuto.':'Comprobaciones periódicas, no una señal minuto a minuto.':'Activa FOOTBALL_SCHEDULE_LIVE=true y configura FOOTBALL_API_KEY para contrastar horarios.'});
  });
- async function sync({force=false}={}){
+ async function sync({force=false,targetDate=null}={}){
   if(!configured())return {skipped:true,reason:'Sin conexión de calendario verificado'};
+  if(targetDate&&!scheduleDatesForPlan(now(),plan()).some(row=>row.date===targetDate))return {skipped:true,reason:'Fecha fuera de cobertura del plan'};
   if(running)return {skipped:true,reason:'Otra comprobación en marcha'};
   running=true;
-  const conn=await db.getConnection();let locked=false;let matched=0,queried=0;
+  let conn=null,locked=false,matched=0,queried=0;
   try{
+   conn=await db.getConnection();
    const [[lock]]=await conn.query("SELECT GET_LOCK('fijas_live_schedule_sync',1) AS acquired");
    if(Number(lock?.acquired)!==1)return {skipped:true,reason:'Verificación en otra instancia'};
    locked=true;
@@ -145,11 +204,13 @@ export function installLiveSchedule(app,{db,authenticate,request=footballApi,now
    const utcToday=today.toISOString().slice(0,10);
    if(providerAllowedWindow?.asOf!==utcToday)providerAllowedWindow=null;
    let succeeded=0,cycleError=null;
-   for(const {date,frequencyMs} of scheduleDatesForPlan(today,plan())){
+   for(const {date,frequencyMs} of scheduleDatesForPlan(today,plan()).filter(row=>!targetDate||row.date===targetDate)){
     if(remaining<=0)break;
     // Respect a narrower window learned from the provider; refresh this boundary daily.
     if(providerAllowedWindow&&(date<providerAllowedWindow.from||date>providerAllowedWindow.to))continue;
-    if(!force&&today.getTime()-(previous.get(date)||0)<frequencyMs)continue;
+    // A manual single-date request is throttled even if force=true, to avoid
+    // consuming the daily quota through repeated clicks.
+    if((!force||targetDate)&&today.getTime()-(previous.get(date)||0)<(targetDate?5*MINUTE:frequencyMs))continue;
     await conn.execute('INSERT INTO nforce_schedule_requests(day_utc,requested_at) VALUES (?,UTC_TIMESTAMP())',[date]);
     remaining--;queried++;
     try{
@@ -193,8 +254,10 @@ export function installLiveSchedule(app,{db,authenticate,request=footballApi,now
     }
    }
    lastRun=now().toISOString();
-   return {ok:true,requests:queried,matched,remaining};
-  }finally{if(locked)await conn.query("SELECT RELEASE_LOCK('fijas_live_schedule_sync')").catch(()=>{});conn.release();running=false;}
+   return {ok:succeeded>0||queried===0,requests:queried,matched,remaining,
+    reason:queried===0?(remaining===0?'Se agotó el cupo diario o la fecha fue consultada recientemente':'La fecha ya fue consultada recientemente o está restringida'):
+    succeeded===0?(lastError||'Error de consulta del calendario'):matched===0?'El proveedor no encontró una coincidencia unívoca para este partido':null};
+  }finally{if(conn){if(locked)await conn.query("SELECT RELEASE_LOCK('fijas_live_schedule_sync')").catch(()=>{});conn.release();}running=false;}
  }
  function start(){if(interval)return;
   interval=setInterval(()=>sync().catch(e=>{lastError=safeErr(e);console.warn('schedule sync:',lastError);}),5*MINUTE);interval.unref?.();

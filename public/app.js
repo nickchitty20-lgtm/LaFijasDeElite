@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 let currentAdminRole='';
-const ADMIN_PANEL_BUILD='3.5.7';
+const ADMIN_PANEL_BUILD='3.5.8';
 // Diagnose a partial/old Railway deployment instead of silently rendering stale UI.
 async function checkAdminBuild(){
  const label=$('adminBuildVersion'),status=$('adminBuildStatus');
@@ -697,6 +697,20 @@ async function loadFootballEngine(){
      const warning=document.createElement('p');warning.className='football-meta';
      warning.textContent='⚠️ '+c.source_readiness.message;
      item.append(warning);
+     if(c.source_readiness.action==='verify_schedule'){
+      const checkButton=document.createElement('button');checkButton.type='button';checkButton.className='secondary';
+      checkButton.textContent='🕒 Verificar horario y estado del partido';
+      checkButton.addEventListener('click',async()=>{
+       checkButton.disabled=true;feedback.textContent='Consultando el calendario para este partido…';
+       try{
+        const result=await api('/api/admin/schedules/verify',{method:'POST',body:JSON.stringify({candidate_id:c.id})});
+        feedback.textContent=result.message||'Verificación completada.';
+        await loadFootballEngine();
+        message.textContent=result.message||'Estado actualizado. Revisa la propuesta antes de publicarla.';
+       }catch(error){feedback.textContent=error.message;message.textContent=error.message;checkButton.disabled=false;}
+      });
+      actions.append(checkButton);
+     }
      if(c.source_readiness.action==='import_data'){
       const importButton=document.createElement('button');importButton.type='button';importButton.className='secondary';
       importButton.textContent='⬇ Actualizar datos deportivos';

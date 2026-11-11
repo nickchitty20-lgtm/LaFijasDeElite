@@ -8,7 +8,7 @@ import {evaluateVipEvidence,VIP_POLICY} from './nforce-vip-gate.js';
 import {sendPredictionToTelegram} from './telegram-bridge.js';
 import {publishedFootballDetails} from './football-report.js';
 import {createNforceSettlement} from './nforce-settlement.js';
-import {LIVE_VERIFICATION_LEAGUES} from './live-schedule.js';
+import {LIVE_VERIFICATION_LEAGUES,independentScheduleCoverage} from './live-schedule.js';
 import {candidateModelVersion,discardedInBuild,discardReason,reasonForDiscard,canReopenOldDiscard,CANDIDATE_REVIEW_BUILD} from './nforce-candidate-revival.js';
 import {classifyAutomaticCandidate,shouldBlockLegacyFreeDraft,GOLD_ROLLOUT} from './nforce-gold-transition.js';
 import {nforceSourceReadiness} from './nforce-source-readiness.js';
@@ -260,9 +260,9 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
    if(!Number.isFinite(kickoff)||kickoff<now().getTime()+20*60000){
     await conn.rollback();return {refreshed:false,reason:'El partido comenzó o faltan menos de 20 minutos. No se puede aprobar.'};
    }
-   const [[live]]=await conn.execute('SELECT COALESCE(s.kickoff,m.kickoff) AS kickoff,m.home_goals,m.away_goals,m.source_checked_at,s.status AS live_status,s.checked_at AS schedule_verified_at FROM nforce_matches m LEFT JOIN nforce_fixture_schedules s ON s.nforce_match_id=m.id AND s.checked_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 12 HOUR) WHERE m.id=? LIMIT 1',[row.fixture_id]);
+   const [[live]]=await conn.execute('SELECT m.competition,COALESCE(s.kickoff,m.kickoff) AS kickoff,m.home_goals,m.away_goals,m.source_checked_at,s.status AS live_status,s.checked_at AS schedule_verified_at FROM nforce_matches m LEFT JOIN nforce_fixture_schedules s ON s.nforce_match_id=m.id AND s.checked_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 12 HOUR) WHERE m.id=? LIMIT 1',[row.fixture_id]);
    const sourceCheck=nforceSourceReadiness(live,fixture.kickoff,{now:now(),
-    requireLive:process.env.FOOTBALL_SCHEDULE_LIVE==='true'&&Boolean(process.env.FOOTBALL_API_KEY)});
+    requireLive:independentScheduleCoverage({competition:fixture.competition,kickoff:fixture.kickoff},{now:now()}).required});
    if(!sourceCheck.ready){
     await conn.rollback();return {refreshed:false,reason:sourceCheck.message,code:sourceCheck.code,action:sourceCheck.action};
    }
@@ -296,9 +296,9 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
    if(!Number.isFinite(kickoff.getTime())||kickoff.getTime()<now().getTime()+20*60000)throw Error('El partido comenzó o empieza demasiado pronto');
    // Source may have rescheduled or completed this fixture after the candidate
    // was created. Never publish stale proposals as if the calendar were live.
-   const [[liveSource]]=await conn.execute('SELECT COALESCE(s.kickoff,m.kickoff) AS kickoff,m.home_goals,m.away_goals,m.source_checked_at,s.status AS live_status,s.checked_at AS schedule_verified_at FROM nforce_matches m LEFT JOIN nforce_fixture_schedules s ON s.nforce_match_id=m.id AND s.checked_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 12 HOUR) WHERE m.id=? LIMIT 1',[row.fixture_id]);
+   const [[liveSource]]=await conn.execute('SELECT m.competition,COALESCE(s.kickoff,m.kickoff) AS kickoff,m.home_goals,m.away_goals,m.source_checked_at,s.status AS live_status,s.checked_at AS schedule_verified_at FROM nforce_matches m LEFT JOIN nforce_fixture_schedules s ON s.nforce_match_id=m.id AND s.checked_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 12 HOUR) WHERE m.id=? LIMIT 1',[row.fixture_id]);
    const sourceCheck=nforceSourceReadiness(liveSource,row.kickoff,{now:now(),
-    requireLive:process.env.FOOTBALL_SCHEDULE_LIVE==='true'&&Boolean(process.env.FOOTBALL_API_KEY)});
+    requireLive:independentScheduleCoverage(liveSource,{now:now()}).required});
    if(!sourceCheck.ready)throw Error(sourceCheck.message);
    const [existingMatch]=await conn.execute(`SELECT p.id FROM predictions p
       WHERE p.title=? AND p.archived_at IS NULL AND ABS(TIMESTAMPDIFF(MINUTE,p.match_date,?))<=180 LIMIT 1`,
@@ -403,11 +403,11 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
  app.get(api('candidates'),authenticate,async(req,res)=>{
   if(!owner(req))return res.status(403).json({error:'Solo creador'});
   try{
-   const [rows]=await db.query(`SELECT c.id,c.fixture_id,c.visibility,c.home_team,c.away_team,c.league,COALESCE(s.kickoff,m.kickoff,c.kickoff) AS kickoff,c.kickoff AS candidate_kickoff,c.market,c.selection,c.provider_probability,c.odds,c.analysis,c.evidence_json,c.status,c.prediction_id,c.created_at,m.home_goals,m.away_goals,m.source_checked_at,s.status AS live_status,s.checked_at AS schedule_verified_at FROM football_candidates c LEFT JOIN nforce_matches m ON m.id=c.fixture_id LEFT JOIN nforce_fixture_schedules s ON s.nforce_match_id=c.fixture_id AND s.checked_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 12 HOUR) WHERE c.provider=? AND c.status='draft' ORDER BY c.id DESC LIMIT 40`,[NFORCE_PROVIDER]);
+   const [rows]=await db.query(`SELECT c.id,c.fixture_id,c.visibility,c.home_team,c.away_team,c.league,COALESCE(s.kickoff,m.kickoff,c.kickoff) AS kickoff,c.kickoff AS candidate_kickoff,c.market,c.selection,c.provider_probability,c.odds,c.analysis,c.evidence_json,c.status,c.prediction_id,c.created_at,m.competition,m.home_goals,m.away_goals,m.source_checked_at,s.status AS live_status,s.checked_at AS schedule_verified_at FROM football_candidates c LEFT JOIN nforce_matches m ON m.id=c.fixture_id LEFT JOIN nforce_fixture_schedules s ON s.nforce_match_id=c.fixture_id AND s.checked_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 12 HOUR) WHERE c.provider=? AND c.status='draft' ORDER BY c.id DESC LIMIT 40`,[NFORCE_PROVIDER]);
    const [[validation]]=await db.query('SELECT evaluated,model_version,created_at,metrics_json FROM nforce_backtests ORDER BY id DESC LIMIT 1');
    res.json({candidates:rows.map(row=>{const ev=reportLimited(row.evidence_json);const {evidence_json,...r}=row;
     const source_readiness=nforceSourceReadiness(row,row.candidate_kickoff,{now:now(),
-     requireLive:process.env.FOOTBALL_SCHEDULE_LIVE==='true'&&Boolean(process.env.FOOTBALL_API_KEY)});
+     requireLive:independentScheduleCoverage(row,{now:now()}).required});
     const schedule_changed=source_readiness.code==='schedule_changed';
     return {...r,analysis:publicAnalysisText(row.analysis),goal_projection:ev.goals||null,match_context:ev.match_context||null,own_model:ev.model||null,advanced:null,source_readiness,
       needs_refresh:row.status==='draft'&&(ev.model?.model!==MODEL_VERSION||schedule_changed||shouldBlockLegacyFreeDraft(row)),
