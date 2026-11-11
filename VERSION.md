@@ -1,3 +1,11 @@
+# Fijas de Élite 3.5.7 — Reparación de publicación de propuestas antiguas
+
+- Comparación de horario, marcador y frescura del calendario antes de publicar.
+- Las verificaciones recientes e independientes de un encuentro aún no iniciado permiten reanalizar borradores antiguos aunque el fichero comunitario sea viejo; nunca se da por vigente un encuentro sin evidencia suficiente.
+- El dueño puede actualizar datos y reanalizar la misma propuesta sin perder su ID, sin crear borradores duplicados ni publicar automáticamente.
+- El panel presenta un diagnóstico comprensible, bloquea publicar si faltan verificaciones y conserva las salvaguardas existentes.
+- Pruebas de regresión de propuesta de modelo antiguo, cambios de horario, finalizados y datos desactualizados.
+
 # Fijas de Élite 3.5.6 — Recuperación controlada de descartes antiguos
 
 - Añade **Recuperar propuestas descartadas por incompatibilidad** en Análisis automático del panel dueño.

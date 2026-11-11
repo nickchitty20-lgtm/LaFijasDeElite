@@ -1,3 +1,16 @@
+# Fijas de Élite v3.5.7 — Reanálisis de propuestas antiguas y verificación de calendario
+
+## Corrección de la aprobación de borradores antiguos
+
+- Ya no se exige **crear una propuesta nueva** por el solo hecho de que el calendario local sea antiguo: el dueño puede importar resultados y pulsar **Reanalizar esta propuesta**, conservando el mismo registro e ID hasta su revisión.
+- Si está habilitada la verificación independiente del calendario y existe una comprobación reciente del partido **no iniciado (NS)** y horario sin cambios, se admite esa verificación aunque la fecha de la importación comunitaria tenga más de 36 horas. Si no hay verificación independiente disponible, continúa exigiéndose una importación local reciente.
+- **Aprobar y publicar** se inhabilita en el panel si se detecta calendario realmente desactualizado, horario modificado, estado inválido o falta de verificación obligatoria; se muestra un motivo concreto y, cuando corresponde, un botón **Actualizar datos deportivos**.
+- Se mantienen los bloqueos de encuentros ya iniciados o finalizados, versiones de modelo incompatibles, borradores GRATIS pendientes de conversión GOLD, publicaciones duplicadas y controles VIP.
+- Flujo recomendado tras desplegar: **Análisis automático → Actualizar datos deportivos** (si lo pide) → **Reanalizar esta propuesta** → revisar la nueva selección → **Aprobar y publicar**. Si el calendario no puede verificarse o el encuentro ya comenzó, seguirá bloqueada.
+- No requiere migración SQL ni elimina propuestas, membresías ni historial. Las pruebas locales usan datos simulados y no sustituyen la verificación de tu base de datos y canales desplegados.
+
+---
+
 # Fijas de Élite v3.5.6 — Recuperación de descartes incompatibles (panel dueño)
 
 Algunas propuestas descartadas tras mensajes de incompatibilidad se guardaban como `manual` o sin motivo verificable y por eso la recuperación automática 3.5.5 no las reabría. Esta versión añade en el panel **Análisis automático → Recuperar propuestas descartadas por incompatibilidad**.

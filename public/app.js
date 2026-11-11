@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 let currentAdminRole='';
-const ADMIN_PANEL_BUILD='3.5.6';
+const ADMIN_PANEL_BUILD='3.5.7';
 // Diagnose a partial/old Railway deployment instead of silently rendering stale UI.
 async function checkAdminBuild(){
  const label=$('adminBuildVersion'),status=$('adminBuildStatus');
@@ -690,8 +690,26 @@ async function loadFootballEngine(){
     const feedback=document.createElement('p');feedback.className='football-meta';feedback.setAttribute('role','status');item.append(feedback);
     if(c.needs_refresh){
      const explanation=document.createElement('p');explanation.className='football-meta';
-     explanation.textContent=c.schedule_changed?'⚠️ Cambió el horario del partido. Reanaliza la propuesta antes de aprobarla.':'⚠️ Propuesta calculada con una versión anterior de N-FORCE. Debes actualizarla antes de aprobarla.';
+     explanation.textContent=c.schedule_changed?'⚠️ Cambió el horario del partido. Reanaliza la propuesta antes de aprobarla.':'⚠️ Propuesta antigua: reanalízala con el modelo actual antes de aprobarla. Se conserva esta misma propuesta.';
      item.append(explanation);
+    }
+    if(c.source_readiness&&!c.source_readiness.ready){
+     const warning=document.createElement('p');warning.className='football-meta';
+     warning.textContent='⚠️ '+c.source_readiness.message;
+     item.append(warning);
+     if(c.source_readiness.action==='import_data'){
+      const importButton=document.createElement('button');importButton.type='button';importButton.className='secondary';
+      importButton.textContent='⬇ Actualizar datos deportivos';
+      importButton.addEventListener('click',async()=>{
+       importButton.disabled=true;
+       try{
+        const response=await api('/api/admin/football/import',{method:'POST',body:'{}'});
+        feedback.textContent=(response.message||'Importación iniciada.')+' Al completarse, reanaliza esta misma propuesta antes de aprobarla.';
+       }catch(error){feedback.textContent=error.message;}
+       finally{importButton.disabled=false;}
+      });
+      actions.append(importButton);
+     }
     }
     const update=document.createElement('button');update.type='button';update.className='secondary';
     update.textContent='🔄 Reanalizar esta propuesta';
@@ -713,8 +731,8 @@ async function loadFootballEngine(){
      if(action==='publish'&&c.visibility==='vip'&&c.vip_validation&&!c.vip_validation.approved){
       button.disabled=true;button.title='Requiere validación histórica VIP antes de publicar';
      }
-     if(action==='publish'&&c.needs_refresh){
-      button.disabled=true;button.title='Actualiza esta propuesta antes de aprobarla';
+     if(action==='publish'&&(c.needs_refresh||c.source_readiness&&!c.source_readiness.ready)){
+      button.disabled=true;button.title=c.needs_refresh?'Reanaliza esta misma propuesta antes de aprobarla':c.source_readiness.message;
      }
      button.addEventListener('click',async()=>{
       if(!confirm(action==='publish'?`¿Publicar esta selección ${c.visibility.toUpperCase()} en web y Telegram?`:'¿Descartar propuesta?'))return;
