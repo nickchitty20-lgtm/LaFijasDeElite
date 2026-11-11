@@ -27,7 +27,7 @@ test('historial: tres temporadas por liga, sin URL arbitraria ni temporadas futu
 test('modelo usa partido antiguo real dentro de 900 días, pero exige actividad reciente',()=>{
  assert.equal(MODEL_SETTINGS.lookbackDays,900);
  assert.equal(MODEL_SETTINGS.freshDays,90);
- assert.equal(MODEL_VERSION,'nforce-poisson-1.7');
+ assert.equal(MODEL_VERSION,'nforce-poisson-1.8');
  const teams=['A','B','C','D','E','F'];
  const older=Array.from({length:72},(_,i)=>({competition:'en.1',home:teams[i%6],away:teams[(i+1+i%5)%6],
   kickoff:past(820-i*2),home_goals:1+i%3,away_goals:i%2})).filter(x=>x.home!==x.away);

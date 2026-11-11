@@ -18,7 +18,7 @@ test('automatically generated FREE proposal is delivered as GOLD without alterin
  assert.doesNotMatch(classified.analysis,/propuesta gratuita/);
 });
 test('GOLD can pass unchanged statistical publication checks without being mistaken for free or VIP',async()=>{
- const m={model:'nforce-poisson-1.7',sample:{home:20,away:20,league:140},
+ const m={model:'nforce-poisson-1.8',sample:{home:20,away:20,league:140},
   lambda:{home:1.6,away:1.3},previous_lambda:{home:1.568,away:1.326},
   probabilities:{home:45,draw:26,away:29},totals:{over15:78,over25:60,under25:40,btts:65},
   selected:'home',confidence:45,margin:16,quality:78,score:'1-1',score_probability:12,
