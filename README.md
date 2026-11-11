@@ -1,3 +1,26 @@
+# Fijas de Élite 3.6.6 — Diagnóstico de ausencia de VIP
+
+- Nueva sección **Análisis automático → ¿Por qué todavía no aparece ninguna VIP?** (solo propietario).
+- Endpoint de solo lectura `GET /api/admin/football/vip-diagnostic`: consulta las propuestas N-FORCE, el último backtest y el último diagnóstico de escaneo disponible en este proceso.
+- Separa *partidos encontrados*, *modelos calculados*, *clasificados VIP*, *borradores VIP*, *modelo válido* y *backtest VIP aprobado*; incluye ejemplos de bloqueo sin revelar claves.
+- Razones desglosadas: no hay calendario, falta historial, filtros VIP, validación vencida, muestra por mercado insuficiente, mala calibración y configuración del canal.
+- Los rechazos por mercado se identifican explícitamente como **mercados evaluados, no partidos diferentes**. En Railway, la información detallada del último escaneo en memoria se pierde si el proceso se reinicia; los borradores y backtests continúan en MySQL.
+- **No se relajan umbrales, no se prometen VIP, no se generan estadísticas ni pronósticos artificiales.** No cambia el modelo, la publicación, GOLD, la lista blanca ni Telegram.
+- Tras desplegar, abre la sección, pulsa **Diagnosticar candidatas VIP**, ejecuta **Importar datos deportivos → Analizar ahora → Validar modelo** si corresponde, y consulta el motivo real.
+- Pruebas automatizadas locales; faltan datos reales de MySQL/Railway para identificar el bloqueo exacto de la instalación.
+
+## Novedad 3.6.5 — Telegram GOLD con lista blanca y anuncio previo
+
+**Cliente GOLD/VIP:** Mi cuenta → Telegram GOLD / VIP → Lista blanca GOLD. Escribe `@usuario`, confirma el enlace de 10 minutos y pulsa **Iniciar** dentro de la conversación privada con el bot. Telegram envía al servidor un identificador seguro de la cuenta y el username actual. Si ambos corresponden con el registro de la web, el bot responde "Autorizada en la lista blanca GOLD". Es imposible enviar el primer mensaje a una cuenta únicamente a partir de su `@usuario`: Telegram exige que el cliente inicie al bot primero.
+
+**Mensajes privados:** solo nuevas publicaciones GOLD, y solo mientras la membresía GOLD o VIP, la cuenta web, la lista blanca y el vínculo de Telegram sigan vigentes. No hay retransmisiones automáticas de publicaciones antiguas. `/stop` cancela envíos hasta una nueva autorización desde la web. VIP mantiene su acceso propio al canal VIP.
+
+**Propietario:** Panel privado → Telegram → Lista blanca GOLD. Se muestran últimos registros autorizados, pendientes, inactivos y desvinculados. No hay autorización manual sin verificación del bot.
+
+**Canal oficial:** al publicar GOLD se envía un adelanto con datos no privados del partido. La selección, probabilidades, análisis y cuotas no se revelan. Para propuestas creadas manualmente se omiten los títulos por seguridad. No se publica la fija completa en el canal oficial.
+
+**Variables existentes necesarias:** `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `PUBLIC_BASE_URL` (HTTPS). El webhook se activa desde Panel → Telegram. `TELEGRAM_VIP_CHAT_ID` solo es requerido para gestionar el canal VIP. El bot debe ser administrador con permiso de publicar en el canal oficial si se desean adelantos. La base de datos crea la tabla adicional automáticamente al iniciar el servidor con credenciales MySQL.
+
 # Versión 3.6.4 — Tercera fuente deportiva configurable
 
 En Railway configura una clave válida `FOOTBALL_DATA_ORG_KEY` obtenida de https://www.football-data.org/ (no la agregues al repositorio). En el panel del propietario, abre **Fuentes deportivas**, activa **Calendario ampliado · Fuente III** y ejecuta **Importar y analizar al terminar**. El panel identifica los encuentros nuevos y los que carecen de horario.

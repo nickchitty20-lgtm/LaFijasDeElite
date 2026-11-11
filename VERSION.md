@@ -1,3 +1,25 @@
+# Fijas de Élite 3.6.6 — Diagnóstico de ausencia de VIP
+
+- Nueva sección **Análisis automático → ¿Por qué todavía no aparece ninguna VIP?** (solo propietario).
+- Endpoint de solo lectura `GET /api/admin/football/vip-diagnostic`: consulta las propuestas N-FORCE, el último backtest y el último diagnóstico de escaneo disponible en este proceso.
+- Separa *partidos encontrados*, *modelos calculados*, *clasificados VIP*, *borradores VIP*, *modelo válido* y *backtest VIP aprobado*; incluye ejemplos de bloqueo sin revelar claves.
+- Razones desglosadas: no hay calendario, falta historial, filtros VIP, validación vencida, muestra por mercado insuficiente, mala calibración y configuración del canal.
+- Los rechazos por mercado se identifican explícitamente como **mercados evaluados, no partidos diferentes**. En Railway, la información detallada del último escaneo en memoria se pierde si el proceso se reinicia; los borradores y backtests continúan en MySQL.
+- **No se relajan umbrales, no se prometen VIP, no se generan estadísticas ni pronósticos artificiales.** No cambia el modelo, la publicación, GOLD, la lista blanca ni Telegram.
+- Tras desplegar, abre la sección, pulsa **Diagnosticar candidatas VIP**, ejecuta **Importar datos deportivos → Analizar ahora → Validar modelo** si corresponde, y consulta el motivo real.
+- Pruebas automatizadas locales; faltan datos reales de MySQL/Railway para identificar el bloqueo exacto de la instalación.
+
+# Fijas de Élite 3.6.5 — Lista blanca GOLD y adelantos oficiales
+
+- Nueva lista blanca GOLD con registro de @usuario desde el área de clientes. El @usuario NO acredita identidad: el bot exige el enlace de un solo uso y confirma el `from.id` y `from.username` que aporta Telegram.
+- El bot confirma por privado la autorización GOLD después de pulsar Iniciar y verificar una membresía GOLD o VIP vigente. Un Telegram ya vinculado y previamente verificado puede autorizarse de inmediato si coincide su usuario. Telegram no permite iniciar conversaciones privadas solo con un @usuario.
+- Los pronósticos GOLD completos se distribuyen únicamente a usuarios autorizados en la lista blanca, con un vínculo activo a la misma cuenta de Telegram y membresía vigente. El worker revalida permisos antes de enviar. Las publicaciones anteriores NO se reenvían retroactivamente.
+- Se conserva la continuidad de cuentas VIP/GOLD vinculadas con anterioridad mediante una migración aditiva de los vínculos legítimos a la nueva lista blanca; no se modifica MySQL manualmente ni se pierde el canal VIP.
+- El canal oficial recibe un adelanto de cada nuevo GOLD: nombre del encuentro y competición solamente si provienen de una propuesta automática validada, más horario cuando exista. Nunca publica pick, selección, mercado, cuota, porcentaje ni análisis completo. Un anuncio manual no revela títulos potencialmente sensibles.
+- Nuevo panel de auditoría de lista blanca GOLD, exclusivo para el propietario, con autorizados, pendientes, sin membresía y desvinculados. Nadie puede conceder acceso desde el panel sin verificar el Telegram.
+- `/stop` desactiva notificaciones y mensajes GOLD hasta una nueva autorización. Los mensajes privados requieren que cada usuario haya iniciado previamente el bot.
+- Mantiene las fuentes deportivas, GOLD/VIP, la base de datos y los módulos de la v3.6.4.
+
 # Fijas de Élite 3.6.4 — Calendario ampliado configurable
 
 - Integra una tercera fuente opcional: **football-data.org v4** (no es ESPN). Consulta encuentros de 21 días mediante una solicitud de fecha inicial y final, en lugar del tope de 1 por liga y 3 por día de TheSportsDB gratuito.

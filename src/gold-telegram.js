@@ -11,8 +11,8 @@ export function goldPrivateMessage(p){
   '\n🗓 '+new Intl.DateTimeFormat('es-PE',{timeZone:'America/Lima',dateStyle:'medium',timeStyle:'short'}).format(date):'';
  return `💎 <b>FIJAS DE ÉLITE · GOLD</b>\n<b>${h(p.title)}</b>\n🏆 ${h(p.league||'Fútbol')}${when}\n🎯 <b>${h(p.market||'Selección')}:</b> ${h(p.selection||'')}\n\n<b>Análisis y riesgos:</b>\n${h(String(p.analysis||'').slice(0,2200))}\n\n<i>Estimación estadística, sin garantías de acierto o ganancias.</i>`;
 }
-export function goldMayReceive({active,linked,entitled,pendingChange,telegramId,archived}){
- return Boolean(active && linked && entitled && !pendingChange && !archived && /^\d{1,16}$/.test(String(telegramId||'')));
+export function goldMayReceive({active,linked,entitled,whitelisted,pendingChange,telegramId,archived}){
+ return Boolean(active && linked && entitled && whitelisted && !pendingChange && !archived && /^\d{1,16}$/.test(String(telegramId||'')));
 }
 
 /** Durable, idempotent fan-out at publication: no user who pays later receives
@@ -25,6 +25,7 @@ export async function queueGoldPrediction(db,predictionId){
   SELECT p.id,u.id,t.telegram_user_id FROM predictions p
   JOIN users u ON u.account_status='active'
   JOIN telegram_links t ON t.user_id=u.id AND t.link_status='active'
+  JOIN telegram_gold_whitelist w ON w.user_id=u.id AND w.status='verified' AND w.telegram_user_id=t.telegram_user_id
   WHERE p.id=? AND p.visibility='gold' AND p.published_at IS NOT NULL AND p.archived_at IS NULL
    AND ${effectiveGoldSql('u')}
    AND NOT EXISTS(SELECT 1 FROM telegram_change_state c WHERE c.user_id=u.id AND c.status='awaiting_new')`,[predictionId]);
@@ -60,9 +61,10 @@ export function installGoldDeliveryWorker({db,env=process.env,api=telegramApi}={
      try{
       const [[a]]=await db.execute(`SELECT u.account_status,t.telegram_user_id,t.link_status,
         EXISTS(SELECT 1 FROM telegram_change_state c WHERE c.user_id=u.id AND c.status='awaiting_new') AS pending_change,
+        EXISTS(SELECT 1 FROM telegram_gold_whitelist w WHERE w.user_id=u.id AND w.status='verified' AND w.telegram_user_id=t.telegram_user_id) AS whitelisted,
         ${effectiveGoldSql('u')} AS entitled
        FROM users u LEFT JOIN telegram_links t ON t.user_id=u.id WHERE u.id=?`,[n.user_id]);
-      const ok=goldMayReceive({active:a?.account_status==='active',linked:a?.link_status==='active'&&String(a.telegram_user_id)===String(n.telegram_user_id),entitled:a?.entitled,pendingChange:a?.pending_change,telegramId:n.telegram_user_id,archived:n.archived_at});
+      const ok=goldMayReceive({active:a?.account_status==='active',linked:a?.link_status==='active'&&String(a.telegram_user_id)===String(n.telegram_user_id),entitled:a?.entitled,whitelisted:a?.whitelisted,pendingChange:a?.pending_change,telegramId:n.telegram_user_id,archived:n.archived_at});
       if(!ok){await db.execute("UPDATE telegram_gold_deliveries SET status='skipped',lease_id=NULL,last_error='Sin acceso GOLD o Telegram desvinculado' WHERE id=? AND status='sending'",[n.id]);skipped++;continue;}
       const output=goldPrivateMessage(n);
       await api('sendMessage',{chat_id:String(n.telegram_user_id),text:output,parse_mode:'HTML',disable_web_page_preview:true,protect_content:true},env);

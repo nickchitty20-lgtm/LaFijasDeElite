@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 let currentAdminRole='';
-const ADMIN_PANEL_BUILD='3.6.4';
+const ADMIN_PANEL_BUILD='3.6.6';
 // Diagnose a partial/old Railway deployment instead of silently rendering stale UI.
 async function checkAdminBuild(){
  const label=$('adminBuildVersion'),status=$('adminBuildStatus');
@@ -437,7 +437,7 @@ async function loadTelegramAdmin(){
   $('telegramAdminSetup').textContent=[s.bot_configured?'Bot ✓':'Falta bot',s.vip_channel_configured?'VIP ✓':'Falta VIP',s.free_channel_configured?'Canal oficial ✓':'Falta canal oficial',s.free_group_configured?'Grupo extra ✓':'Grupo extra sin configurar',s.webhook_secret_configured?'Secreto ✓':'Falta secreto'].join(' · ');
   $('telegramAdminLinked').textContent=String(s.linked);
   $('telegramAdminMembers').textContent=String(s.vip_members);
-  await refreshGoldDeliveryStatus();
+  await Promise.allSettled([refreshGoldDeliveryStatus(),refreshGoldWhitelistAdmin()]);
   $('telegramCoverage').textContent=`Telegram informa ${s.telegram_member_count??'—'} miembros; IDs de miembros conocidos: ${s.tracked_members}. Desvinculados pendientes de salida: ${s.detached_pending}. Telegram anteriores conservados por el creador: ${s.creator_preserved??0}. El bot no puede descargar la lista total: revisa manualmente usuarios antiguos no registrados.`;
  }catch(error){$('telegramAdminResult').textContent=error.message;}
 }
@@ -447,6 +447,25 @@ async function refreshGoldDeliveryStatus(){
   node.textContent=`En cola: ${c.pending||0} · Enviadas: ${c.sent||0} · Fallidas: ${c.failed||0} · Interrumpidas: ${c.sending||0} · No enviadas por permisos: ${c.skipped||0}. ${r.bot_configured?'Bot conectado':'Falta token del bot'}.`;
  }catch(e){node.textContent='No se pudo consultar las entregas GOLD: '+e.message;}
 }
+async function refreshGoldWhitelistAdmin(){
+ const root=$('telegramGoldWhitelistAdminResults');if(!root)return;
+ try{
+  const data=await api('/api/admin/telegram/gold-whitelist');root.replaceChildren();
+  if(!data.members?.length){root.textContent='Todavía no hay usuarios registrados en la lista blanca GOLD.';return;}
+  const summary=document.createElement('p');
+  summary.textContent=`Verificados y vigentes: ${data.members.filter(x=>x.state==='authorized').length} · Pendientes: ${data.members.filter(x=>x.state==='pending').length} · Mostrando ${data.members.length} registros.`;
+  root.append(summary);
+  const list=document.createElement('div');list.className='gold-whitelist-admin-list';
+  for(const m of data.members){
+   const line=document.createElement('div');line.className='gold-whitelist-admin-row';
+   const name=document.createElement('strong');name.textContent=`${m.display_name} · ${m.username?'@'+m.username:'Telegram sin @usuario'} · #${m.user_id}`;
+   const state=document.createElement('span');state.textContent=({authorized:'✓ GOLD autorizado',pending:'⌛ Pendiente de /start',inactive:'Sin membresía activa o sin vinculación',revoked:'Desvinculado'})[m.state]||m.state;
+   line.append(name,state);list.append(line);
+  }
+  root.append(list);
+ }catch(error){root.textContent='No se pudo actualizar la lista blanca GOLD: '+error.message;}
+}
+$('telegramGoldWhitelistRefresh')?.addEventListener('click',refreshGoldWhitelistAdmin);
 $('telegramGoldRefresh')?.addEventListener('click',refreshGoldDeliveryStatus);
 $('telegramFreeChannelCheck')?.addEventListener('click',async()=>{
  const msg=$('telegramFreeChannelResult');msg.textContent='Verificando el canal oficial…';
@@ -931,6 +950,35 @@ $('footballTestButton')?.addEventListener('click',async()=>{
  try{const report=await api('/api/admin/football/test',{method:'POST',body:'{}'});footballDiagnosticSummary(report);$('footballEngineMsg').textContent=report.cached?'Mostrando la última prueba (sin gastar más consultas).':'Prueba completada. Revisa los resultados debajo.';}
  catch(err){$('footballEngineMsg').textContent=err.message;}finally{btn.disabled=false;}
 });
+async function loadFootballVipAudit(){
+ const target=$('footballVipAuditResult'),status=$('footballVipAuditStatus'),button=$('footballVipAuditButton');
+ if(!target||!status||!button||currentAdminRole!=='owner')return;
+ button.disabled=true;status.textContent='Leyendo datos VIP y comprobaciones retrospectivas…';target.hidden=true;target.replaceChildren();
+ const add=(heading,value)=>{const p=document.createElement('p'),b=document.createElement('strong');b.textContent=heading+': ';p.append(b,document.createTextNode(String(value)));target.append(p);};
+ try{
+  const r=await api('/api/admin/football/vip-diagnostic');
+  add('Diagnóstico',r.diagnosis);
+  add('Siguiente paso',r.next_step);
+  add('Borradores VIP / GOLD',`${r.total_vip_drafts} / ${r.total_gold_drafts}`);
+  add('VIP N-FORCE publicadas históricamente',r.total_vip_published);
+  add('VIP que pasan el modelo / la validación',`${r.publishable_by_model} / ${r.validated}`);
+  add('VIP bloqueadas por modelo / validación',`${r.blocked_by_model} / ${r.blocked_by_backtest}`);
+  add('Canal Telegram VIP',r.telegram_vip_ready?'Configurado':'Falta token o ID de canal');
+  add('Backtest',r.backtest?`${r.backtest.evaluated} partidos · modelo ${r.backtest.model_version||'sin versión'} · ${r.backtest.created_at||'sin fecha'}`:'Aún no ejecutado');
+  if(r.backtest?.by_market?.length)for(const market of r.backtest.by_market.slice(0,10))add(`Mercado ${market.market}`,`${market.evaluated} pruebas · ${market.accuracy??'—'}% observado`);
+  if(r.scan.available){
+   add('Último escaneo: partidos / con modelo / VIP',`${r.scan.fixtures_in_window} / ${r.scan.modeled} / ${r.scan.eligible_vip}`);
+   for(const reason of r.scan.rejection_by_market.slice(0,6))add(`Filtro VIP: ${reason.label}`,`${reason.count} mercados evaluados (no partidos únicos)`);
+  }else add('Escaneo reciente',r.scan.reason);
+  for(const [reason,count] of Object.entries(r.validation_reasons))add(`Validación: ${reason}`,`${count} borradores VIP`);
+  for(const example of r.examples)add('Ejemplo bloqueado',`${example.match} · ${example.market}: ${example.reason}`);
+  if(r.partial)add('Aviso','La lista de borradores se limitó para evitar sobrecargar MySQL.');
+  target.hidden=false;status.textContent='Diagnóstico actualizado. Ninguna comprobación modifica pronósticos ni publica partidos.';
+ }catch(e){status.textContent='No se pudo completar el diagnóstico VIP: '+e.message;}
+ finally{button.disabled=false;}
+}
+$('footballVipAuditButton')?.addEventListener('click',loadFootballVipAudit);
+$('nforceVipAudit')?.addEventListener('toggle',()=>{if($('nforceVipAudit').open)loadFootballVipAudit();});
 function showFootballScanReport(r){
  const report=$('footballScanReport');if(!report)return;
  report.hidden=false;report.replaceChildren();

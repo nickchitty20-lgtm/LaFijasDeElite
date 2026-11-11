@@ -7,7 +7,7 @@
    <button type="button" data-client-tab="predictions">⚽ Pronósticos</button>
    <button type="button" data-client-tab="membership">♛ Mi membresía</button>
    <button type="button" data-client-tab="payments">▣ Comprar VIP</button>
-   <button type="button" data-client-tab="telegram">✈ Telegram VIP</button><button type="button" data-client-tab="notices">♧ Notificaciones</button>
+   <button type="button" data-client-tab="telegram">✈ Telegram GOLD / VIP</button><button type="button" data-client-tab="notices">♧ Notificaciones</button>
   </nav><div class="client-side-footer"><span>✦ N-FORCE · ANÁLISIS DEPORTIVO</span><small>ACCESO SEGURO · FIJAS DE ÉLITE</small></div>
  </aside>
  <div class="client-content">
@@ -56,6 +56,19 @@
    <div class="client-section-heading"><h3>Telegram · Comunidad, GOLD y VIP</h3><p>Las selecciones GOLD llegan a tu chat privado con el bot tras vincular tu cuenta. Las VIP completas se publican únicamente en el canal VIP.</p></div>
    <div class="telegram-client-grid">
     <article class="telegram-client-card"><span class="eyebrow">COMUNIDAD PÚBLICA</span><h4>⚽ Fijas de Élite | Canal oficial</h4><p>El canal oficial comunica novedades y el grupo funciona como comunidad adicional. Las selecciones GOLD y VIP se gestionan desde la membresía y el panel web.</p><div id="telegramPublicLink"></div></article>
+    <article class="telegram-client-card telegram-gold-card">
+     <span class="eyebrow">💎 ACCESO PERSONAL · GOLD</span>
+     <h4>Lista blanca GOLD</h4>
+     <p>Registra tu <b>@usuario de Telegram</b>. El bot verificará que eres el titular y te confirmará por privado cuando estés autorizado. Recibirás los siguientes pronósticos GOLD mientras tu plan esté activo.</p>
+     <p id="telegramGoldWhitelistStatus" role="status" aria-live="polite">Comprobando acceso GOLD…</p>
+     <form id="telegramGoldWhitelistForm" class="telegram-gold-whitelist-form" hidden>
+      <label for="telegramGoldUsername">Tu usuario de Telegram (no es el nombre que se muestra)</label>
+      <input id="telegramGoldUsername" name="username" type="text" placeholder="@tu_usuario" inputmode="text" autocomplete="off" maxlength="33" required pattern="@?[A-Za-z][A-Za-z0-9_]{4,31}" title="Escribe @ seguido de tu usuario de Telegram (5 a 32 caracteres)">
+      <button type="submit">Verificar y autorizar GOLD</button>
+     </form>
+     <div id="telegramGoldWhitelistResult" role="status" aria-live="polite"></div>
+     <p class="telegram-gold-note">Por seguridad, Telegram requiere que pulses <b>Iniciar</b> en el bot una vez. No enviamos pronósticos sin membresía GOLD/VIP vigente.</p>
+    </article>
     <article class="telegram-client-card telegram-client-vip"><span class="eyebrow">♛ CANAL PRIVADO</span><h4>Fijas de Élite | GOLD por privado + canal VIP</h4><p>GOLD y VIP reciben selecciones GOLD por mensaje privado; VIP también tiene acceso a su canal. Primero vincula tu cuenta e inicia el bot.</p><p id="telegramAccountStatus" role="status">Comprobando estado…</p><button id="telegramLinkButton" type="button">Vincular mi Telegram</button><button id="telegramInviteButton" type="button" hidden>Solicitar acceso al canal VIP</button>
      <button id="telegramChangeButton" type="button" class="secondary" hidden>Cambiar mi cuenta Telegram</button>
      <button id="telegramUnlinkButton" type="button" class="secondary" hidden>Desvincular sin expulsar</button>
@@ -100,4 +113,4 @@
    <div id="vip-notices" class="vip-notices" aria-live="polite"></div>
   </section>
  </div>
-</div></section></main><script src="/match-schedule.js?v=3.3.2" defer></script><script src="/pick-report.js?v=3.2.5" defer></script><script src="/clientes.js?v=3.6.0" defer></script><script src="/ui-motion.js?v=3.2.5" defer></script><script src="/scroll-text.js?v=3.2.5" defer></script></body></html>
+</div></section></main><script src="/match-schedule.js?v=3.3.2" defer></script><script src="/pick-report.js?v=3.2.5" defer></script><script src="/clientes.js?v=3.6.6" defer></script><script src="/ui-motion.js?v=3.2.5" defer></script><script src="/scroll-text.js?v=3.2.5" defer></script></body></html>

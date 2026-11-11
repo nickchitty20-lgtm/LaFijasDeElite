@@ -249,10 +249,19 @@ async function refreshTelegramStatus(){
  if(!status)return;
  try{
   const r=await call('/api/customers/telegram');
+  const goldForm=$('telegramGoldWhitelistForm'),goldStatus=$('telegramGoldWhitelistStatus');
+  goldForm.hidden=!r.configured||!r.has_gold||r.gold_whitelisted||r.detached_pending||r.change_pending||r.change_cooldown_minutes>0;
+  goldStatus.textContent=!r.configured?'El bot todavía no está disponible.':
+   !r.has_gold?'Activa un plan GOLD o VIP para obtener acceso a los pronósticos privados.':
+   r.gold_whitelisted?`✓ Autorizado en la lista blanca GOLD${r.telegram_username?' · @'+r.telegram_username:''}. Recibirás los nuevos pronósticos por privado.`:
+   r.detached_pending?'Tienes un Telegram anterior reservado. Comprueba su salida antes de solicitar un nuevo acceso.':
+   r.gold_registration_pending?`⏳ Verificación pendiente para @${r.gold_registered_username}. Abre el bot con ese usuario y pulsa Iniciar.`:
+   'Tu membresía está activa. Introduce tu @usuario y confirma la vinculación con el bot.';
+  if(r.gold_registered_username&&!$('telegramGoldUsername').value)$('telegramGoldUsername').value='@'+r.gold_registered_username;
   $('telegramLinkButton').hidden=!r.configured||r.linked||r.detached_pending||r.change_cooldown_minutes>0;
   $('telegramUnlinkButton').hidden=!r.linked||r.change_pending;
   $('telegramCheckDeparture').hidden=!r.detached_pending;
-  $('telegramInviteButton').hidden=!r.configured||!r.linked||!r.has_vip||r.change_pending;
+  $('telegramInviteButton').hidden=!r.vip_channel_configured||!r.linked||!r.has_vip||r.change_pending;
   $('telegramInviteButton').disabled=Boolean(r.is_member);
   $('telegramInviteButton').textContent=r.is_member?'✓ Ya perteneces al canal VIP':'Solicitar acceso al canal VIP';
   const changeButton=$('telegramChangeButton');
@@ -279,6 +288,24 @@ async function refreshTelegramStatus(){
   if(!group.childElementCount)group.textContent='Los enlaces públicos aparecerán cuando el dueño los configure.';
  }catch(error){status.textContent=error.message;}
 }
+$('telegramGoldWhitelistForm').addEventListener('submit',async(event)=>{
+ event.preventDefault();
+ const btn=event.currentTarget.querySelector('button[type="submit"]');
+ const out=$('telegramGoldWhitelistResult');
+ btn.disabled=true;out.textContent='Registrando tu usuario y preparando la verificación…';
+ try{
+  const data=await call('/api/customers/telegram/gold/authorize',{username:$('telegramGoldUsername').value.trim()},true);
+  out.replaceChildren();
+  const msg=document.createElement('p');msg.textContent=data.message||'Solicitud recibida.';out.append(msg);
+  if(data.url){
+   const a=document.createElement('a');a.href=data.url;a.target='_blank';a.rel='noopener noreferrer';a.className='telegram-action';
+   a.textContent='Abrir bot y pulsar Iniciar ↗';
+   out.append(a,document.createTextNode(' El enlace es personal y vence en 10 minutos. Después, pulsa «Actualizar estado».'));
+  }
+  await refreshTelegramStatus();
+ }catch(error){out.textContent=error.message;}
+ finally{btn.disabled=false;}
+});
 $('telegramLinkButton').addEventListener('click',async()=>{
  const button=$('telegramLinkButton');button.disabled=true;$('telegramClientResult').textContent='Preparando enlace de vinculación…';
  try{

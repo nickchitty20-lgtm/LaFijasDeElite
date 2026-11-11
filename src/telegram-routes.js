@@ -3,14 +3,16 @@ import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import {sha256,safeTelegramId,telegramApi,telegramLinkStart,telegramWebhookSecretValid} from './telegram-bridge.js';
 import {canApproveJoinRequest} from './telegram-invite-policy.js';
-import {effectiveVipSql,getVipEntitlement,getGoldEntitlement} from './vip-access.js';
+import {effectiveVipSql,effectiveGoldSql,getVipEntitlement,getGoldEntitlement} from './vip-access.js';
+import {normalizeTelegramUsername,telegramGoldUsernameMatches,goldAuthorizationText} from './gold-whitelist.js';
 import {rank0ActionMatchesStatus,rank0DesiredAction} from './telegram-rank0-policy.js';
 import {shouldPreserveDetachedMember,shouldReleaseDetachedReservation,canBeginNewTelegramLink,shouldPreserveOwnerMember,ownerForceCanProceed} from './telegram-detach-policy.js';
 
 const BOT_ENDPOINT='/api/telegram/webhook';
 const VIP_SQL=`SELECT ${effectiveVipSql('u')} AS vip FROM users u WHERE u.id=? AND u.account_status='active'`;
 const validWebhookSecret=()=>/^[A-Za-z0-9_-]{24,256}$/.test(process.env.TELEGRAM_WEBHOOK_SECRET||'');
-const telegramEnabled=()=>Boolean(process.env.TELEGRAM_BOT_TOKEN&&process.env.TELEGRAM_VIP_CHAT_ID&&validWebhookSecret());
+const botLinkEnabled=()=>Boolean(process.env.TELEGRAM_BOT_TOKEN&&validWebhookSecret());
+const telegramEnabled=()=>Boolean(botLinkEnabled()&&process.env.TELEGRAM_VIP_CHAT_ID);
 
 export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
  let cachedBotUsername='';
@@ -75,6 +77,7 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
    }
    const [[invite]]=await conn.execute('SELECT invite_link FROM telegram_vip_invites WHERE user_id=? FOR UPDATE',[userId]);
    await conn.execute("UPDATE telegram_links SET link_status='detached' WHERE user_id=? AND link_status='active'",[userId]);
+   await conn.execute("UPDATE telegram_gold_whitelist SET status='revoked',telegram_user_id=NULL,verified_at=NULL WHERE user_id=?",[userId]);
    await conn.execute('DELETE FROM telegram_vip_invites WHERE user_id=?',[userId]);
    await conn.execute('DELETE FROM telegram_link_tokens WHERE user_id=?',[userId]);
    await conn.execute(`INSERT INTO telegram_change_state(user_id,status,cooldown_until)
@@ -251,6 +254,7 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
  app.get('/api/customers/telegram',customerAuth,async(req,res)=>{
   try{
    const [[link]]=await db.execute('SELECT telegram_user_id,telegram_username,is_member,linked_at,link_status FROM telegram_links WHERE user_id=?',[req.customer.id]);
+   const [[goldClaim]]=await db.execute('SELECT requested_username,telegram_user_id,status,verified_at FROM telegram_gold_whitelist WHERE user_id=?',[req.customer.id]);
    const entitlement=await getVipEntitlement(db,req.customer.id);
    const vip=entitlement.hasVip;
    const gold=(await getGoldEntitlement(db,req.customer.id)).hasGold;
@@ -259,15 +263,65 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
      GREATEST(0,CEIL(TIMESTAMPDIFF(SECOND,UTC_TIMESTAMP(),DATE_ADD(last_issue_at,INTERVAL 30 MINUTE))/60)) AS reissue_minutes,
      GREATEST(0,CEIL(TIMESTAMPDIFF(SECOND,UTC_TIMESTAMP(),pending_expires_at)/60)) AS expires_minutes
      FROM telegram_change_state WHERE user_id=?`,[req.customer.id]);
-   res.json({configured:telegramEnabled(),linked:Boolean(link)&&link.link_status==='active',detached_pending:link?.link_status==='detached',telegram_username:link?.link_status==='active'?link.telegram_username:null,
+   const whitelisted=Boolean(gold && link?.link_status==='active' && goldClaim?.status==='verified'
+    && String(goldClaim.telegram_user_id)===String(link.telegram_user_id) && (!change||change.status!=='awaiting_new'));
+   res.json({configured:botLinkEnabled(),vip_channel_configured:telegramEnabled(),linked:Boolean(link)&&link.link_status==='active',detached_pending:link?.link_status==='detached',telegram_username:link?.link_status==='active'?link.telegram_username:null,
     telegram_user_id:link?.telegram_user_id?String(link.telegram_user_id):null,
-    is_member:link?.link_status==='active'&&(!change||change.status!=='awaiting_new')?Boolean(link?.is_member):false,has_vip:vip,has_gold:gold,gold_private_dm:gold && link?.link_status==='active',gold_whitelisted:Boolean(gold && link?.link_status==='active' && (!change||change.status!=='awaiting_new')),
+    is_member:link?.link_status==='active'&&(!change||change.status!=='awaiting_new')?Boolean(link?.is_member):false,has_vip:vip,has_gold:gold,gold_private_dm:whitelisted,gold_whitelisted:whitelisted,
+    gold_registered_username:goldClaim?.requested_username==='sin_usuario'?null:goldClaim?.requested_username||null,gold_registration_pending:Boolean(gold && goldClaim?.status==='pending'),
     staff_vip:entitlement.staff,access_reason:entitlement.staff?'staff':entitlement.paid?'paid':null,
     change_pending:change?.status==='awaiting_new',change_cooldown_minutes:Number(change?.cooldown_minutes||0),
     change_reissue_minutes:Number(change?.reissue_minutes||0),change_expires_minutes:Number(change?.expires_minutes||0),
     public_channel_url:safeTelegramPublicUrl(process.env.TELEGRAM_FREE_CHANNEL_URL),
     public_group_url:safeTelegramPublicUrl(process.env.TELEGRAM_FREE_GROUP_URL)});
   }catch(error){console.error('telegram customer status',error.code||error.message);res.status(503).json({error:'No se pudo cargar Telegram'});}
+ });
+ // Register @username on the GOLD whitelist, then require a verified /start
+ // from that EXACT username. A typed username alone never authorizes or triggers a DM.
+ app.post('/api/customers/telegram/gold/authorize',limit,customerAuth,async(req,res)=>{
+  if(!botLinkEnabled())return res.status(503).json({error:'Falta configurar el bot o su webhook en Railway.'});
+  const requested=normalizeTelegramUsername(req.body?.username);
+  if(!requested)return res.status(400).json({error:'Escribe un usuario válido, por ejemplo @tu_usuario (5 a 32 caracteres).'});
+  let conn;
+  try{
+   const gold=await getGoldEntitlement(db,req.customer.id);
+   if(!gold.hasGold)return res.status(403).json({error:'Necesitas GOLD o VIP activo para entrar a la lista blanca GOLD.'});
+   const bot=await botUsername();
+   conn=await db.getConnection();await conn.beginTransaction();
+   const [[link]]=await conn.execute('SELECT telegram_user_id,telegram_username,link_status FROM telegram_links WHERE user_id=? FOR UPDATE',[req.customer.id]);
+   if(link?.link_status==='detached'){
+    await conn.rollback();return res.status(409).json({error:'El Telegram anterior sigue reservado. Completa la salida antes de vincular otro.'});
+   }
+   const [[change]]=await conn.execute('SELECT status,cooldown_until>UTC_TIMESTAMP() AS cooldown FROM telegram_change_state WHERE user_id=?',[req.customer.id]);
+   if(change?.status==='awaiting_new'||(!link&&change?.cooldown)){
+    await conn.rollback();return res.status(409).json({error:'Hay un cambio de Telegram pendiente o un plazo de seguridad vigente.'});
+   }
+   if(link && telegramGoldUsernameMatches(requested,link.telegram_username)){
+    // A /start in an older version already proved this Telegram ID.
+    await conn.execute(`INSERT INTO telegram_gold_whitelist (user_id,requested_username,telegram_user_id,status,verified_at)
+     VALUES (?,?,?,'verified',UTC_TIMESTAMP()) ON DUPLICATE KEY UPDATE
+     requested_username=VALUES(requested_username),telegram_user_id=VALUES(telegram_user_id),
+     status='verified',verified_at=UTC_TIMESTAMP()`,[req.customer.id,requested,String(link.telegram_user_id)]);
+    await conn.execute('DELETE FROM telegram_link_tokens WHERE user_id=?',[req.customer.id]);
+    await conn.commit();
+    let delivered=true;
+    try{await api('sendMessage',{chat_id:String(link.telegram_user_id),text:goldAuthorizationText(requested)});}
+    catch(error){delivered=false;console.error('GOLD authorization notice',error.message);}
+    return res.json({ok:true,authorized:true,message:delivered?'✅ Ya estás autorizado. El bot te confirmó el acceso por privado.':'✅ Lista blanca GOLD activada. Abre tu chat con el bot si no recibes la confirmación.'});
+   }
+   const code=crypto.randomBytes(24).toString('hex');
+   await conn.execute(`INSERT INTO telegram_gold_whitelist (user_id,requested_username,telegram_user_id,status,requested_at,verified_at)
+    VALUES (?,?,NULL,'pending',UTC_TIMESTAMP(),NULL) ON DUPLICATE KEY UPDATE
+    requested_username=VALUES(requested_username),telegram_user_id=NULL,status='pending',requested_at=UTC_TIMESTAMP(),verified_at=NULL`,
+    [req.customer.id,requested]);
+   await conn.execute(`INSERT INTO telegram_link_tokens(user_id,token_hash,expires_at) VALUES(?,?,DATE_ADD(UTC_TIMESTAMP(),INTERVAL 10 MINUTE))
+    ON DUPLICATE KEY UPDATE token_hash=VALUES(token_hash),expires_at=VALUES(expires_at)`,[req.customer.id,sha256(code)]);
+   await conn.commit();
+   return res.json({ok:true,authorized:false,username:requested,url:`https://t.me/${bot}?start=${code}`,
+    expires_in_minutes:10,message:'Usuario registrado. Ahora abre el bot y pulsa Iniciar para verificarlo. El bot confirmará tu autorización por privado.'});
+  }catch(error){if(conn)try{await conn.rollback();}catch{}console.error('GOLD whitelist registration',error.code||error.message);
+   return res.status(503).json({error:'No se pudo preparar la lista blanca GOLD. Inténtalo nuevamente.'});}
+  finally{conn?.release();}
  });
  app.post('/api/customers/telegram/link',limit,customerAuth,async(req,res)=>{
   if(!process.env.TELEGRAM_BOT_TOKEN||!validWebhookSecret())return res.status(503).json({error:'El bot de Telegram todavía no está configurado.'});
@@ -349,8 +403,9 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
   if(users.length){
    await db.execute(`INSERT INTO telegram_notice_prefs(user_id,vip_enabled,expiry_enabled,picks_enabled)
     VALUES (?,0,0,0) ON DUPLICATE KEY UPDATE vip_enabled=0,expiry_enabled=0,picks_enabled=0`,[users[0].user_id]);
+   await db.execute("UPDATE telegram_gold_whitelist SET status='revoked',telegram_user_id=NULL,verified_at=NULL WHERE user_id=?",[users[0].user_id]);
   }
-  await api('sendMessage',{chat_id:String(message.from.id),text:'🔕 Avisos privados desactivados. Puedes volver a activarlos desde Fijas de Élite → Notificaciones.'});
+  await api('sendMessage',{chat_id:String(message.from.id),text:'🔕 Avisos privados y envíos GOLD desactivados. Puedes reactivar los avisos desde la web y solicitar otra vez el acceso GOLD en Lista blanca GOLD.'});
   return true;
  }
  async function handleStart(message){
@@ -379,6 +434,11 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
       await conn.execute(`UPDATE telegram_change_state SET status='idle',pending_token_hash=NULL,pending_expires_at=NULL,
        last_changed_at=UTC_TIMESTAMP(),cooldown_until=DATE_ADD(UTC_TIMESTAMP(),INTERVAL 30 DAY)
        WHERE user_id=?`,[replacement.user_id]);
+      await conn.execute(`INSERT INTO telegram_gold_whitelist (user_id,requested_username,telegram_user_id,status,verified_at)
+       VALUES(?,?,?,'verified',UTC_TIMESTAMP()) ON DUPLICATE KEY UPDATE
+       requested_username=VALUES(requested_username),telegram_user_id=VALUES(telegram_user_id),
+       status='verified',verified_at=UTC_TIMESTAMP()`,
+       [replacement.user_id,normalizeTelegramUsername(message.from.username)||'sin_usuario',String(message.from.id)]);
       await conn.execute('DELETE FROM telegram_vip_invites WHERE user_id=?',[replacement.user_id]);
       await conn.execute(`INSERT INTO telegram_change_events(user_id,event_type,old_telegram_user_id,new_telegram_user_id,detail)
        VALUES(?,'completed',?,?,?)`,[replacement.user_id,String(replacement.old_telegram_user_id),String(message.from.id),'Cambio confirmado por Telegram; enfriamiento de 30 días']);
@@ -386,18 +446,41 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
      }
     }
    }else{
-   const [[token]]=await conn.execute(`SELECT t.user_id,u.account_status FROM telegram_link_tokens t
-    JOIN users u ON u.id=t.user_id WHERE t.token_hash=? AND t.expires_at>UTC_TIMESTAMP() FOR UPDATE`,[sha256(code)]);
+   const [[token]]=await conn.execute(`SELECT t.user_id,u.account_status,w.requested_username,w.status AS gold_whitelist_status
+    FROM telegram_link_tokens t JOIN users u ON u.id=t.user_id
+    LEFT JOIN telegram_gold_whitelist w ON w.user_id=t.user_id
+    WHERE t.token_hash=? AND t.expires_at>UTC_TIMESTAMP() FOR UPDATE`,[sha256(code)]);
    if(!token||token.account_status!=='active'){await conn.rollback();reply='El enlace venció o no está disponible. Solicita otro desde tu panel.';}
-   else{
-    const [[linked]]=await conn.execute('SELECT user_id,telegram_user_id FROM telegram_links WHERE user_id=? OR telegram_user_id=? FOR UPDATE',[token.user_id,String(message.from.id)]);
+   else if(token.gold_whitelist_status==='pending' && !telegramGoldUsernameMatches(token.requested_username,message.from.username)){
+    await conn.rollback();reply='❌ El @usuario no coincide con el registrado en Fijas de Élite. Abre el bot desde la cuenta correcta o actualiza el usuario en tu panel.';
+   }else if(token.gold_whitelist_status==='pending' && !(await conn.execute(`SELECT ${effectiveGoldSql('u')} AS gold FROM users u WHERE u.id=? AND u.account_status='active'`,[token.user_id]))[0][0]?.gold){
+    await conn.rollback();reply='Tu membresía GOLD/VIP no está activa. Solicita autorización de nuevo cuando esté vigente.';
+   }else{
+    const [[linked]]=await conn.execute('SELECT user_id,telegram_user_id,link_status FROM telegram_links WHERE user_id=? OR telegram_user_id=? FOR UPDATE',[token.user_id,String(message.from.id)]);
     const [[preserved]]=await conn.execute('SELECT telegram_user_id FROM telegram_owner_preserved WHERE telegram_user_id=? FOR UPDATE',[String(message.from.id)]);
     const [[cooldown]]=await conn.execute('SELECT cooldown_until>UTC_TIMESTAMP() AS blocked FROM telegram_change_state WHERE user_id=?',[token.user_id]);
-    if(linked||preserved||cooldown?.blocked){await conn.rollback();reply='Este Telegram ya está vinculado o reservado, o tu plazo de seguridad aún no termina. Contacta al dueño si necesitas una excepción.';}
-    else{
-     await conn.execute('INSERT INTO telegram_links(user_id,telegram_user_id,telegram_username,is_member) VALUES(?,?,?,0)',[token.user_id,String(message.from.id),String(message.from.username||'').slice(0,100)||null]);
-     await conn.execute('DELETE FROM telegram_link_tokens WHERE user_id=?',[token.user_id]);
-     await conn.commit();reply='✅ Telegram vinculado. Si tienes GOLD, recibirás sus selecciones aquí; con VIP también puedes solicitar acceso al canal VIP desde tu web.';
+    const sameTelegram=Boolean(linked && String(linked.user_id)===String(token.user_id)
+      && String(linked.telegram_user_id)===String(message.from.id) && linked.link_status==='active');
+    if((linked&&!sameTelegram)||preserved||(!sameTelegram&&cooldown?.blocked)){
+     await conn.rollback();reply='Este Telegram ya está vinculado o reservado, o tu plazo de seguridad aún no termina. Contacta al dueño si necesitas una excepción.';
+    }else{
+     if(sameTelegram){
+      if(token.gold_whitelist_status!=='pending'){await conn.rollback();reply='Esta cuenta ya está vinculada. Revisa tu lista blanca GOLD en la web.';}
+      else await conn.execute('UPDATE telegram_links SET telegram_username=? WHERE user_id=? AND telegram_user_id=?',
+       [String(message.from.username||'').slice(0,100)||null,token.user_id,String(message.from.id)]);
+     }else await conn.execute('INSERT INTO telegram_links(user_id,telegram_user_id,telegram_username,is_member) VALUES(?,?,?,0)',
+      [token.user_id,String(message.from.id),String(message.from.username||'').slice(0,100)||null]);
+     if(!sameTelegram||token.gold_whitelist_status==='pending'){
+      // The bot's message.from.id is the trusted identity, not the website input.
+      await conn.execute(`INSERT INTO telegram_gold_whitelist (user_id,requested_username,telegram_user_id,status,verified_at)
+       VALUES (?,?,?,'verified',UTC_TIMESTAMP()) ON DUPLICATE KEY UPDATE
+       requested_username=VALUES(requested_username),telegram_user_id=VALUES(telegram_user_id),status='verified',verified_at=UTC_TIMESTAMP()`,
+       [token.user_id,normalizeTelegramUsername(message.from.username)||'sin_usuario',String(message.from.id)]);
+      await conn.execute('DELETE FROM telegram_link_tokens WHERE user_id=?',[token.user_id]);
+      await conn.commit();
+      reply=token.gold_whitelist_status==='pending'?goldAuthorizationText(message.from.username)
+       :'✅ Telegram vinculado. Si tienes GOLD, recibirás sus selecciones aquí; con VIP también puedes solicitar acceso al canal VIP desde tu web.';
+     }
     }
    }
    }
@@ -545,6 +628,24 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
    res.json({bot_configured:Boolean(process.env.TELEGRAM_BOT_TOKEN),vip_channel_configured:Boolean(process.env.TELEGRAM_VIP_CHAT_ID),free_channel_configured:Boolean(freeTelegramDestination(process.env)),free_group_configured:Boolean(process.env.TELEGRAM_FREE_CHAT_ID),webhook_secret_configured:validWebhookSecret(),public_base_url_configured:Boolean(process.env.PUBLIC_BASE_URL),linked:Number(stats.linked),vip_members:Number(stats.members),detached_pending:Number(stats.detached_pending),tracked_members:Number(tracking.known_current||0),tracked_total:Number(tracking.total||0),creator_preserved:Number(exceptions.total||0),telegram_member_count:reportedChannelMembers,full_scan_available:false});
   }catch(error){console.error('telegram admin',error.code||error.message);res.status(503).json({error:'No se pudo consultar Telegram'});}
  });
+ // Owner visibility into GOLD whitelist requests; only the bot can verify
+ // membership and no admin action grants private access based on an @username.
+ app.get('/api/admin/telegram/gold-whitelist',authenticate,async(req,res)=>{
+  if(req.admin.role!=='owner')return res.status(403).json({error:'Solo el dueño puede consultar la lista blanca GOLD.'});
+  try{
+   const [rows]=await db.execute(`SELECT w.user_id,u.display_name,w.requested_username,w.status,w.requested_at,w.verified_at,
+     ${effectiveGoldSql('u')} AS has_gold,
+     (u.account_status='active' AND l.link_status='active' AND w.status='verified'
+      AND w.telegram_user_id=l.telegram_user_id) AS identity_linked
+     FROM telegram_gold_whitelist w JOIN users u ON u.id=w.user_id
+     LEFT JOIN telegram_links l ON l.user_id=u.id
+     ORDER BY w.requested_at DESC LIMIT 100`);
+   return res.json({members:rows.map(r=>({user_id:String(r.user_id),display_name:String(r.display_name||'Cliente'),
+    username:r.requested_username==='sin_usuario'?null:r.requested_username,
+    state:r.identity_linked&&r.has_gold?'authorized':r.status==='pending'?'pending':r.status==='revoked'?'revoked':'inactive',
+    identity_linked:Boolean(r.identity_linked),has_gold:Boolean(r.has_gold),verified_at:r.verified_at||null}))});
+  }catch(error){console.error('GOLD whitelist admin',error.code||error.message);return res.status(503).json({error:'No se pudo cargar la lista blanca GOLD.'});}
+ });
  // The original owner is created before customer registration and may lack a user row.
  // Opt-in: create a matching identity only for the authenticated owner so personal VIP/Telegram works.
  app.post('/api/admin/telegram/prepare-owner-profile',limit,authenticate,async(req,res)=>{
@@ -609,6 +710,7 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
    await conn.execute(`INSERT INTO telegram_owner_preserved(telegram_user_id,user_id,actor_admin_id,reason)
     VALUES(?,?,?,?)`,[String(link.telegram_user_id),userId,req.admin.id,reason]);
    await conn.execute('DELETE FROM telegram_links WHERE user_id=?',[userId]);
+   await conn.execute("UPDATE telegram_gold_whitelist SET status='revoked',telegram_user_id=NULL,verified_at=NULL WHERE user_id=?",[userId]);
    await conn.execute('DELETE FROM telegram_link_tokens WHERE user_id=?',[userId]);
    await conn.execute('DELETE FROM telegram_vip_invites WHERE user_id=?',[userId]);
    await conn.execute(`INSERT INTO telegram_change_state(user_id,status,cooldown_until)
@@ -677,13 +779,13 @@ export function installTelegramRoutes(app,{db,customerAuth,authenticate,limit}){
  });
  app.post('/api/admin/telegram/configure',limit,authenticate,async(req,res)=>{
   if(req.admin.role!=='owner')return res.status(403).json({error:'Solo el dueño puede configurar Telegram'});
-  if(!telegramEnabled()||!process.env.PUBLIC_BASE_URL)return res.status(400).json({error:'Configura TELEGRAM_BOT_TOKEN, TELEGRAM_VIP_CHAT_ID, TELEGRAM_WEBHOOK_SECRET y PUBLIC_BASE_URL'});
+  if(!botLinkEnabled()||!process.env.PUBLIC_BASE_URL)return res.status(400).json({error:'Configura TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET y PUBLIC_BASE_URL'});
   try{
    const base=new URL(process.env.PUBLIC_BASE_URL);
    if(base.protocol!=='https:')return res.status(400).json({error:'PUBLIC_BASE_URL debe usar HTTPS'});
    await api('setWebhook',{url:base.origin+BOT_ENDPOINT,secret_token:process.env.TELEGRAM_WEBHOOK_SECRET,allowed_updates:['message','chat_join_request','chat_member'],max_connections:1});
    const bot=await api('getMe');cachedBotUsername=bot.username;
-   res.json({ok:true,bot_username:cachedBotUsername,message:'Webhook activado. Telegram podrá vincular cuentas y gestionar solicitudes VIP.'});
+   res.json({ok:true,bot_username:cachedBotUsername,message:'Webhook activado. Telegram podrá verificar la lista blanca GOLD y gestionar solicitudes VIP si el canal está configurado.'});
   }catch(error){console.error('telegram configure',error.message);res.status(503).json({error:'Telegram rechazó el webhook. Revisa el token y los permisos del bot.'});}
  });
  app.post('/api/admin/telegram/sync',limit,authenticate,async(req,res)=>{

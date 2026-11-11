@@ -218,3 +218,9 @@
 .fe-build-status{font-size:12px;color:#9bd5ac!important;margin:5px 0 13px!important}
 .fe-build-status[data-build-match="false"]{color:#ffbc8f!important;font-weight:700}
 #predictionList .fe-kickoff-missing{padding:10px 13px;border-radius:9px;background:#25261f;color:#e6c888;font-weight:700}
+
+/* GOLD whitelist admin · v3.6.5 */
+.gold-whitelist-admin-list{display:grid;gap:8px;margin-top:12px;max-height:390px;overflow:auto}
+.gold-whitelist-admin-row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 14px;border:1px solid #354050;border-radius:10px;background:#1c232d}
+.gold-whitelist-admin-row strong{font-size:13px;color:#eee1c5;overflow-wrap:anywhere}
+.gold-whitelist-admin-row span{font-size:12px;color:#d7bc7c}

@@ -5,6 +5,7 @@ import {diagnoseNforceCalendar} from './nforce-calendar-health.js';
 import {estimateMatch,modelReadiness,makeCandidate,walkForwardBacktest,fulltime,MODEL_VERSION,VIP_RISK_POLICY} from './nforce-model.js';
 import {canAutoPublishCandidate} from './football-publication-policy.js';
 import {evaluateVipEvidence,VIP_POLICY} from './nforce-vip-gate.js';
+import {summarizeVipDatabase} from './nforce-vip-diagnostic.js';
 import {sendPredictionToTelegram} from './telegram-bridge.js';
 import {publishedFootballDetails} from './football-report.js';
 import {createNforceSettlement} from './nforce-settlement.js';
@@ -458,6 +459,25 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     verified_status:r.verified_status||null,verified_at:r.verified_at||null
    }))});
   }catch(e){res.status(500).json({error:'No se pudo consultar el calendario importado: '+safeError(e)});}
+ });
+ // Read-only VIP diagnostics. Strictly for the owner; never approves or invents a pick.
+ app.get(api('vip-diagnostic'),authenticate,async(req,res)=>{
+  if(!owner(req))return res.status(403).json({error:'Solo creador'});
+  try{
+   const [[totals]]=await db.query(`SELECT
+    SUM(visibility='vip' AND status='draft') AS vip_drafts,
+    SUM(visibility='vip' AND status='published') AS vip_published,
+    SUM(visibility='gold' AND status='draft') AS gold_drafts,
+    SUM(status='draft') AS total_drafts
+    FROM football_candidates WHERE provider=?`,[NFORCE_PROVIDER]);
+   const [rows]=await db.query(`SELECT id,home_team,away_team,market,visibility,status,
+    provider,provider_probability,selection,evidence_json,kickoff
+    FROM football_candidates WHERE provider=? AND visibility='vip' AND status='draft'
+    ORDER BY id DESC LIMIT 250`,[NFORCE_PROVIDER]);
+   const [[validation]]=await db.query('SELECT created_at,evaluated,model_version,metrics_json FROM nforce_backtests ORDER BY id DESC LIMIT 1');
+   res.set('Cache-Control','no-store').json(summarizeVipDatabase({rows,total:totals||{},validation,
+    scan:lastScanReport,asOf:now(),telegramReady:Boolean(process.env.TELEGRAM_BOT_TOKEN&&process.env.TELEGRAM_VIP_CHAT_ID)}));
+  }catch(e){res.status(500).json({error:'No se pudo consultar el diagnóstico VIP: '+safeError(e)});}
  });
  // Keep old API paths so existing dashboard, VIP protection and payment flows remain intact.
  app.get(api('status'),authenticate,async(req,res)=>{

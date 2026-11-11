@@ -325,6 +325,24 @@ export async function initializeDatabase() {
       expires_at DATETIME NOT NULL,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     ) ENGINE=InnoDB`);
+    // v3.6.5: GOLD whitelist registrations. A web-entered @username is only
+    // pending until Telegram /start verifies the real account and user ID.
+    await connection.query(`CREATE TABLE IF NOT EXISTS telegram_gold_whitelist (
+      user_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+      requested_username VARCHAR(32) NOT NULL,
+      telegram_user_id BIGINT NULL,
+      status ENUM('pending','verified','revoked') NOT NULL DEFAULT 'pending',
+      requested_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      verified_at DATETIME NULL,
+      INDEX idx_gold_whitelist_status(status,requested_username),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB`);
+    // Preserve verified /start links from older versions, including VIP members.
+    // Membership validity is independently checked at EVERY GOLD delivery.
+    await connection.query(`INSERT IGNORE INTO telegram_gold_whitelist
+      (user_id,requested_username,telegram_user_id,status,verified_at)
+      SELECT user_id,COALESCE(NULLIF(LOWER(telegram_username),''),'sin_usuario'),telegram_user_id,'verified',linked_at
+      FROM telegram_links WHERE link_status='active'`);
     await connection.query(`CREATE TABLE IF NOT EXISTS telegram_vip_invites (
       user_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
       invite_hash CHAR(64) NOT NULL,
