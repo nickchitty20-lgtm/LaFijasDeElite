@@ -1,4 +1,4 @@
-# Actualización v3.7.2 — IA y Radar VIP: revisión de los próximos 7 días
+# Actualización v3.7.3 — IA y Radar VIP: revisión de los próximos 7 días
 
 - **Corrección del salto de fechas:** el módulo IA y el Radar informativo admiten partidos desde 2 horas antes del comienzo (antes se ocultaban todos los que estaban a menos de 24 h). Los pronósticos GOLD/VIP oficiales NO relajan sus comprobaciones.
 - **Diagnóstico por encuentro de los próximos siete días:** distingue calendario ausente de MySQL, encuentro sin hora fiable, historial insuficiente, calidad baja y partido demasiado próximo. Estos encuentros en observación nunca se publican ni se envían como VIP validados.
@@ -1342,3 +1342,11 @@ GOLD es una membresía pagada, independiente de VIP, con un precio inicial de S/
 En el siguiente escaneo efectivo de N-FORCE se recalcula el partido desde los datos vigentes. Si una propuesta descartada conserva una versión de modelo anterior o un formato legado que requiere migración a GOLD, puede volver al estado de borrador **solo si sigue siendo un encuentro futuro con horario válido y el modelo actual vuelve a proponer una selección apta**. No resucita automáticamente pronósticos publicados ni partidos fuera de la ventana. La recuperación es idempotente (mismo fixture) y se registra en `audit_logs`.
 
 Los descartes manuales nuevos quedan diferenciados con `evidence_json.discard_reason = "manual"`, y las incompatibilidades identificables usan `"version_incompatible"`. Los registros históricos no etiquetados se recuperan únicamente cuando existe evidencia de incompatibilidad del modelo o del formato anterior; si no es posible identificar la causa, permanecen descartados para no anular decisiones del propietario. El motor sigue sujeto al intervalo de escaneo y al límite de partidos configurados.
+
+
+## v3.7.3 — Auditoría de partidos cercanos y calendario diario
+
+- En «Fuentes deportivas», el propietario puede pulsar «Comprobar cobertura de mañana». El panel consulta API-Football (si la clave está configurada) e informa partidos devueltos, admitidos, pendientes de importar y competiciones sin histórico del modelo. Consulta de solo lectura: no confirma NS al publicar ni crea pronósticos.
+- La fuente IV gratuita intenta consultar **hoy y mañana UTC** en lugar de únicamente mañana; esto usa dos peticiones sujetas a límites y cobertura del proveedor. En modo extendido se mantiene la consulta por rango.
+- La auditoría usa la cuota registrada de consultas del calendario. Si no hay clave, se agotó la cuota o la API no cubre la jornada, el panel informa el motivo sin presentar partidos ficticios.
+- La publicación de propuestas GOLD/VIP sigue requiriendo historial, backtesting y verificaciones vigentes. No se importan datos directamente de OneFootball ni de ESPN: las páginas públicas no equivalen a un acceso API autorizado.

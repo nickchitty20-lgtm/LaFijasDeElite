@@ -90,3 +90,7 @@
 .sports-fixture-item{padding:11px;border:1px solid #384453;border-radius:9px;background:#1a2530;display:grid;gap:6px}
 .sports-fixture-item strong{font-size:13px;color:#e6d4af;overflow-wrap:anywhere}
 .sports-fixture-item small{display:block}
+/* v3.7.3: owner-only near-term fixture coverage audit */
+.sports-audit-examples{margin-top:12px;display:grid;gap:6px}
+.sports-audit-examples strong{font-size:13px;color:#e7cd9c;margin-top:8px}
+.sports-audit-examples p{margin:0;border-left:2px solid #655635;padding:5px 10px;font-size:12px;line-height:1.5;color:#b9c8d8;background:rgba(255,255,255,.025)}

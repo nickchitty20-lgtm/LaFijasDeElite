@@ -37,14 +37,30 @@ export async function fetchWideCalendar({request=footballApi,env=process.env,now
  if(!env.FOOTBALL_API_KEY)throw Error('Falta FOOTBALL_API_KEY en Railway');
  const extended=env.FOOTBALL_SCHEDULE_PLAN==='extended';
  const today=Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate());
- // Free access is explicitly bounded by the provider to a narrow date window.
- // Query only the next UTC date; never claim a paid-range result using free access.
- const params=extended?{from:utcDay(today),to:utcDay(today+WIDE_LOOKAHEAD_DAYS*DAY)}:{date:utcDay(today+DAY)};
- const raw=await request('fixtures',params,env);
- if(!Array.isArray(raw)||raw.length>8000)throw Error('Respuesta de calendario inesperada o excesiva');
- const events=raw.map(f=>normalizeWideFixture(f,{now})).filter(Boolean);
- return {events,received:raw.length,unmapped:raw.filter(f=>!Object.hasOwn(PROVIDER_LEAGUES,String(f?.league?.id))).length,
-  discarded:raw.length-events.length,plan:extended?'extended':'free',range:params,limited:!extended};
+ // On the free plan, today AND tomorrow are in the allowed sliding window.
+ // Never infer that a whole month was checked from a one-day response.
+ const ranges=extended?[{from:utcDay(today),to:utcDay(today+WIDE_LOOKAHEAD_DAYS*DAY)}]:
+  [{date:utcDay(today)},{date:utcDay(today+DAY)}];
+ const rows=[],by_date={},errors=[];
+ for(const params of ranges){
+  const label=params.date||`${params.from}…${params.to}`;
+  try{
+   const response=await request('fixtures',params,env);
+   if(!Array.isArray(response)||response.length>8000)throw Error('Respuesta inesperada o excesiva');
+   rows.push(...response);
+   by_date[label]={received:response.length};
+  }catch(error){
+   const reason=String(error?.message||error).slice(0,160);
+   errors.push(`${label}: ${reason}`);
+   by_date[label]={received:0,error:reason};
+  }
+ }
+ if(errors.length===ranges.length)throw Error('No se pudo consultar ningún día: '+errors.join(' / ').slice(0,240));
+ const events=[...new Map(rows.map((f,i)=>[String(f?.fixture?.id||`invalid-${i}`),f])).values()]
+  .map(f=>normalizeWideFixture(f,{now})).filter(Boolean);
+ return {events,received:rows.length,unmapped:rows.filter(f=>!Object.hasOwn(PROVIDER_LEAGUES,String(f?.league?.id))).length,
+  discarded:rows.length-events.length,plan:extended?'extended':'free',range:ranges,
+  requests:ranges.length,by_date,errors,limited:!extended};
 }
 
 export async function importWideCalendar({conn,enabled=false,now=new Date(),env=process.env,fetchCalendar=fetchWideCalendar}={}){
@@ -56,13 +72,15 @@ export async function importWideCalendar({conn,enabled=false,now=new Date(),env=
  // The request log must not be conflated with live NS verification records.
  const [counts]=await conn.query('SELECT COUNT(*) AS total FROM nforce_wide_calendar_requests WHERE requested_at>=UTC_DATE()');
  const maxDaily=report.plan==='extended'?4:6;
- if(Number(counts[0]?.total||0)>=maxDaily){report.limited=true;report.errors.push(`Límite de ${maxDaily} importaciones del calendario amplio por día UTC`);return report;}
- await conn.execute('INSERT INTO nforce_wide_calendar_requests(requested_at) VALUES (UTC_TIMESTAMP())');
- report.requests=1;
+ const required=report.plan==='extended'?1:2;
+ if(Number(counts[0]?.total||0)+required>maxDaily){report.limited=true;report.errors.push(`Límite de ${maxDaily} importaciones del calendario amplio por día UTC`);return report;}
+ for(let n=0;n<required;n++)await conn.execute('INSERT INTO nforce_wide_calendar_requests(requested_at) VALUES (UTC_TIMESTAMP())');
+ report.requests=required;
  let response;
  try{response=await fetchCalendar({env,now});}
  catch(error){report.errors.push(String(error?.message||error).slice(0,180));return report;}
  report.received=response.received||0;report.unmapped=response.unmapped||0;
+ report.by_date=response.by_date||{};report.errors.push(...(response.errors||[]));
  report.limited=Boolean(response.limited);
  report.discovered=response.events.length;
  const [locals]=await conn.query(`SELECT id,source_key,competition,home_team,away_team,match_date,kickoff,scheduled_time_known

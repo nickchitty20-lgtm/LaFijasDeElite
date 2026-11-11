@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 let currentAdminRole='';
-const ADMIN_PANEL_BUILD='3.7.2';
+const ADMIN_PANEL_BUILD='3.7.3';
 // Diagnose a partial/old Railway deployment instead of silently rendering stale UI.
 async function checkAdminBuild(){
  const label=$('adminBuildVersion'),status=$('adminBuildStatus');
@@ -625,10 +625,10 @@ async function loadSportsSources(){
   if(wide&&wideToggle){
    const wideState=$('sportsWideState'),keyState=$('sportsWideKeyState'),last=$('sportsWideLastImport');
    wideToggle.checked=Boolean(wide.enabled);wideToggle.disabled=false;
-   wideState.textContent=!wide.enabled?'Desactivada':!wide.configured?'Sin clave':wide.plan==='extended'?'Activa · 21 días':'Activa · 1 día';
+   wideState.textContent=!wide.enabled?'Desactivada':!wide.configured?'Sin clave':wide.plan==='extended'?'Activa · 30 días':'Activa · hoy y mañana';
    wideState.classList.toggle('enabled',Boolean(wide.enabled&&wide.configured));
    wideState.classList.toggle('disabled',!wide.enabled||!wide.configured);
-   keyState.textContent=!wide.configured?'Requiere FOOTBALL_API_KEY en Railway':wide.plan==='extended'?'Plan extendido: búsqueda de hasta 21 días · '+wide.competition_count+' competiciones reconocidas':'Plan gratuito: solo mañana (UTC). Para 21 días, necesitas un plan compatible y FOOTBALL_SCHEDULE_PLAN=extended.';
+   keyState.textContent=!wide.configured?'Requiere FOOTBALL_API_KEY en Railway':wide.plan==='extended'?'Plan extendido: búsqueda de hasta 30 días · '+wide.competition_count+' competiciones reconocidas':'Plan gratuito: hoy y mañana (UTC), sujetos a la cuota disponible. Para 30 días, necesitas un plan compatible y FOOTBALL_SCHEDULE_PLAN=extended.';
    const run=wide.last_import;
    last.textContent=run?`Última importación: ${run.requests||0} consultas · ${run.received||0} recibidos · ${run.discovered||0} compatibles · ${run.inserted||0} nuevos · ${run.matched||0} vinculados · ${run.unmapped||0} ligas sin histórico${run.errors?.length?' · '+run.errors.slice(0,2).join(' / '):''}`:'Sin importaciones de la fuente amplia en este proceso.';
   }
@@ -693,6 +693,20 @@ async function loadSportsFixturePreview(){
   }
  }catch(error){notice.textContent='Error al consultar los partidos: '+error.message;}
 }
+$('sportsTomorrowAudit')?.addEventListener('click',async()=>{
+ const button=$('sportsTomorrowAudit'),notice=$('sportsTomorrowAuditResult'),list=$('sportsTomorrowAuditMatches');
+ button.disabled=true;list.replaceChildren();notice.textContent='Comparando el calendario de mañana con MySQL…';
+ try{
+  const r=await api('/api/admin/football/calendar-audit');
+  notice.textContent=`${r.date_utc} (UTC): ${r.received} partidos recibidos · ${r.in_mysql} compatibles en MySQL · ${r.missing_in_mysql} compatibles aún sin importar · ${r.unmapped} de torneos sin historial compatible. ${r.diagnosis}`;
+  for(const [title,items] of [['Compatibles que faltan en MySQL',r.examples_missing],['Otras competiciones recibidas',r.examples_unsupported]]){
+   if(!items?.length)continue;
+   const heading=document.createElement('strong');heading.textContent=title;list.append(heading);
+   for(const match of items){const line=document.createElement('p');line.textContent=`${match.match} · ${match.league} · ${match.kickoff?new Date(match.kickoff).toLocaleString('es-PE',{timeZone:'America/Lima',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'Hora desconocida'}`;list.append(line);}
+  }
+ }catch(error){notice.textContent='Comprobación no disponible: '+error.message;}
+ finally{button.disabled=false;}
+});
 $('sportsFixturesRefresh')?.addEventListener('click',loadSportsFixturePreview);
 $('sportsFixturePreview')?.addEventListener('toggle',()=>{if($('sportsFixturePreview').open)loadSportsFixturePreview();});
 $('sportsSourcesRefresh')?.addEventListener('click',loadSportsSources);

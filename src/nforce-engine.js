@@ -19,6 +19,7 @@ import {readSecondarySource,saveSecondarySource,readFootballDataSource,saveFootb
 import {importFootballDataFixtures,FOOTBALL_DATA_COMPETITIONS} from './football-data-fixtures.js';
 import {readWideSource,saveWideSource} from './nforce-source-settings.js';
 import {importWideCalendar,WIDE_SUPPORTED_COMPETITIONS} from './api-football-wide.js';
+import {auditTomorrowCalendar} from './nforce-fixture-audit.js';
 import {predictAiForecast,AI_MODEL_VERSION} from './nforce-ml.js';
 import {prepareVipRadar,vipRadarTelegramMessage,VIP_RADAR_MIN_LEAD_HOURS,VIP_RADAR_MAX_DAYS} from './nforce-vip-radar.js';
 import {telegramApi,inspectFreeTelegramChannel} from './telegram-bridge.js';
@@ -45,11 +46,11 @@ export function importDecision(last,now=Date.now(),hours=IMPORT_INTERVAL_HOURS){
  const next=started+interval;
  return {due:!Number.isFinite(next)||now>=next,next:Number.isFinite(next)?new Date(next).toISOString():null};
 }
-export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenFootball,fetchSecondary=importSecondaryFixtures,fetchFootballData=importFootballDataFixtures,fetchWide=importWideCalendar,sendTelegram=sendPredictionToTelegram,sendRadarTelegram=async(chat,text,env)=>telegramApi('sendMessage',{chat_id:chat,text,parse_mode:'HTML',disable_web_page_preview:true,protect_content:true},env),enqueueEvent=null,now=()=>new Date()}={}){
+export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenFootball,fetchSecondary=importSecondaryFixtures,fetchFootballData=importFootballDataFixtures,fetchWide=importWideCalendar,fetchCalendarAudit=auditTomorrowCalendar,sendTelegram=sendPredictionToTelegram,sendRadarTelegram=async(chat,text,env)=>telegramApi('sendMessage',{chat_id:chat,text,parse_mode:'HTML',disable_web_page_preview:true,protect_content:true},env),enqueueEvent=null,now=()=>new Date()}={}){
  const settlement=createNforceSettlement({db,now});
  let importing=false,scanning=false,publishing=false,combinedRunning=false,radarSending=false,interval=null;
  let lastScanReport=null,lastImportReport=null,lastPublishReport=null,lastSchedulerMessage='',lastError='';
- let lastAutoRadarAttempt=0;
+ let lastAutoRadarAttempt=0,lastCoverageAuditAt=0;
  const api=path=>`/api/admin/football/${path}`;
  async function withLock(name,callback){
   const conn=await db.getConnection();let acquired=false;
@@ -539,6 +540,26 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
    const result=await saveFootballDataSource(db,{enabled:req.body.enabled,actorId:req.admin.id});
    res.json({...result,configured:Boolean(process.env.FOOTBALL_DATA_ORG_KEY),message:result.changed?'Configuración guardada. '+(process.env.FOOTBALL_DATA_ORG_KEY?'Importa datos para buscar partidos.':'Falta FOOTBALL_DATA_ORG_KEY en Railway; la fuente no podrá consultar partidos.'):'La configuración ya estaba guardada.'});
   }catch(e){res.status(500).json({error:'No se pudo guardar la fuente de calendario: '+safeError(e)});}
+ });
+ // Compare the real API response for tomorrow with our MySQL fixture catalog.
+ // A short throttle and the SAME daily quota ledger as Source IV prevent abuse.
+ // This is an owner-only read-only diagnostic; it never publishes anything.
+ app.get(api('calendar-audit'),authenticate,async(req,res)=>{
+  if(!owner(req))return res.status(403).json({error:'Solo creador'});
+  if(!process.env.FOOTBALL_API_KEY)return res.status(409).json({error:'No hay clave FOOTBALL_API_KEY configurada en Railway. Las páginas externas no son una API conectada.'});
+  try{
+   const [usage]=await db.query('SELECT COUNT(*) AS total FROM nforce_wide_calendar_requests WHERE requested_at>=UTC_DATE()');
+   const dailyLimit=process.env.FOOTBALL_SCHEDULE_PLAN==='extended'?4:6;
+   if(Number(usage[0]?.total||0)>=dailyLimit)return res.status(429).json({error:'Cuota diaria de consultas de calendario agotada. Vuelve a comprobar mañana.'});
+   if(lastCoverageAuditAt&&now().getTime()-lastCoverageAuditAt<5*60000)
+    return res.status(429).json({error:'Se consultó el proveedor hace menos de cinco minutos. Vuelve a comprobar después para evitar consumir consultas.'});
+   await db.execute('INSERT INTO nforce_wide_calendar_requests(requested_at) VALUES (UTC_TIMESTAMP())');
+   lastCoverageAuditAt=now().getTime();
+   const [locals]=await db.query(`SELECT competition,home_team,away_team,match_date FROM nforce_matches
+    WHERE match_date BETWEEN UTC_DATE() AND DATE_ADD(UTC_DATE(),INTERVAL 3 DAY) AND home_goals IS NULL LIMIT 2000`);
+   const result=await fetchCalendarAudit({env:process.env,now:now(),locals});
+   res.set('Cache-Control','no-store').json(result);
+  }catch(error){res.status(503).json({error:'No se pudo consultar mañana en la API: '+safeError(error)});}
  });
  // Preview of the calendar actually present in MySQL, not external fixtures
  // advertised by a web page. Owner-only; never treats discovery as verified NS.
