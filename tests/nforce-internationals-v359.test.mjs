@@ -141,3 +141,23 @@ test('resultado FT de selección se registra solo con marcador 90 minutos, nunca
  await h2.updater.sync();
  assert.equal(h2.writes.some(x=>x.sql.includes('UPDATE nforce_matches SET home_goals')),false);
 });
+
+test('verificador descubre clubes en liga conocida, solo con hora y NS confirmados',async()=>{
+ const raw={fixture:{id:1884518,date:'2026-11-11T17:00:00Z',status:{short:'NS'}},
+  league:{id:39,round:'Regular Season 10'},teams:{home:{name:'Arsenal'},away:{name:'Chelsea'}}};
+ const harness=liveHarness({fixtures:[raw]});
+ const result=await harness.updater.sync();
+ assert.equal(result.domestic_fixtures_discovered,1);
+ assert.equal(result.national_fixtures_discovered,0);
+ const inserts=harness.writes.filter(x=>x.sql.includes('INSERT IGNORE INTO nforce_matches'));
+ assert.equal(inserts.length,1);
+ assert.equal(inserts[0].args[2],'en.1');
+ assert.equal(inserts[0].args[10],'verified/domestic-fixtures');
+ assert.ok(harness.writes.some(x=>x.sql.includes('INSERT INTO nforce_fixture_schedules')));
+ // It must not create a prediction or assume model readiness.
+ assert.equal(harness.writes.some(x=>x.sql.includes('football_candidates')),false);
+ const noStart=liveHarness({fixtures:[{...raw,fixture:{...raw.fixture,status:{short:'TBD'}}}]});
+ assert.equal((await noStart.updater.sync()).domestic_fixtures_discovered,0);
+ const unknown=liveHarness({fixtures:[{...raw,league:{id:999999}}]});
+ assert.equal((await unknown.updater.sync()).domestic_fixtures_discovered,0);
+});

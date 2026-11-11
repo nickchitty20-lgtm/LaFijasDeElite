@@ -59,7 +59,7 @@ test('solo el dueño puede pedir verificación de una propuesta pendiente',async
 test('la cobertura independiente depende de la liga y del plan, no solo de la clave global',()=>{
  const covered=independentScheduleCoverage(candidate,{now:date,env});
  assert.equal(covered.required,true);
- assert.equal(independentScheduleCoverage({...candidate,competition:'pt.1'},{now:date,env}).required,false);
+ assert.equal(independentScheduleCoverage({...candidate,competition:'xx.unknown'},{now:date,env}).required,false);
  assert.equal(independentScheduleCoverage({...candidate,kickoff:'2026-11-15T20:00:00Z'},{now:date,env}).required,false);
  assert.equal(independentScheduleCoverage({...candidate,kickoff:'2026-11-15T20:00:00Z'},{now:date,env:{...env,FOOTBALL_SCHEDULE_PLAN:'extended'}}).required,false);
  assert.equal(independentScheduleCoverage({...candidate,kickoff:'2026-11-14T20:00:00Z'},{now:date,env:{...env,FOOTBALL_SCHEDULE_PLAN:'extended'}}).required,true);
@@ -84,7 +84,7 @@ test('si proveedor no devuelve una coincidencia verificable, publicar sigue bloq
 
 test('no consulta proveedor en liga no cubierta, fecha fuera de plan o sin configuración',async()=>{
  const fixtures=[
-  {entry:{...candidate,competition:'pt.1'},code:'league_not_covered'},
+  {entry:{...candidate,competition:'xx.unknown'},code:'league_not_covered'},
   {entry:{...candidate,kickoff:new Date('2026-11-16T20:00:00Z')},code:'date_outside_plan'},
   {clientEnv:{FOOTBALL_SCHEDULE_LIVE:'false',FOOTBALL_API_KEY:'mock-provider'},code:'not_configured'}
  ];

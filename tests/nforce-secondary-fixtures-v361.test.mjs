@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {SECONDARY_COMPETITIONS,normalizeSecondaryEvent,reconcileSecondaryEvents,fetchSecondaryLeague,importSecondaryFixtures} from '../src/secondary-fixtures.js';
+import {SECONDARY_COMPETITIONS,normalizeSecondaryEvent,reconcileSecondaryEvents,fetchSecondaryLeague,fetchSecondaryDay,SECONDARY_DAILY_LOOKAHEAD_DAYS,SECONDARY_REQUESTS_PER_IMPORT,importSecondaryFixtures} from '../src/secondary-fixtures.js';
 const now=new Date('2026-11-11T12:00:00Z');
 const example=(overrides={})=>({idLeague:'4328',idEvent:'123456789',strSport:'Soccer',
  strHomeTeam:'Arsenal',strAwayTeam:'Chelsea',dateEvent:'2026-11-16',
@@ -68,9 +68,43 @@ test('secondary import is opt-in; mock DB inserts new events without score or NS
  const off=await importSecondaryFixtures({conn,now,env:{FOOTBALL_SECONDARY_SCHEDULE:'false'}});
  assert.equal(off.enabled,false);assert.equal(calls.length,0);
  const mock=async(code)=>code==='en.1'?[normalizeSecondaryEvent(example(),'en.1',now)]:[];
- const on=await importSecondaryFixtures({conn,now,fetchLeague:mock,env:{FOOTBALL_SECONDARY_SCHEDULE:'true'}});
- assert.equal(on.inserted,1);assert.equal(on.matched,0);assert.equal(on.requests,SECONDARY_COMPETITIONS.length);
+ const on=await importSecondaryFixtures({conn,now,fetchLeague:mock,fetchDay:async()=>({events:[],received:0,unmapped:0}),env:{FOOTBALL_SECONDARY_SCHEDULE:'true'}});
+ assert.equal(on.inserted,1);assert.equal(on.matched,0);assert.equal(on.requests,SECONDARY_REQUESTS_PER_IMPORT);
  assert.equal(calls.filter(x=>x.includes('nforce_fixture_schedules')&&x.includes('INSERT')).length,0);
- const repeat=await importSecondaryFixtures({conn,now,fetchLeague:mock,env:{FOOTBALL_SECONDARY_SCHEDULE:'true'}});
+ const repeat=await importSecondaryFixtures({conn,now,fetchLeague:mock,fetchDay:async()=>[],env:{FOOTBALL_SECONDARY_SCHEDULE:'true'}});
  assert.equal(repeat.inserted,0);assert.equal(repeat.matched,1);
+});
+
+test('daily endpoint queries an exact date and maps only known football competitions',async()=>{
+ const calls=[];
+ const fetcher=async(url)=>{calls.push(url);return {ok:true,headers:{get:()=>null},text:async()=>JSON.stringify({events:[
+  example({idEvent:'123456781'}),
+  example({idEvent:'123456782',idLeague:'999999'}),
+  example({idEvent:'123456783',strStatus:'FT'})
+ ]})};};
+ const result=await fetchSecondaryDay('2026-11-16',{fetcher,now});
+ assert.match(calls[0],/eventsday\.php\?d=2026-11-16&s=Soccer$/);
+ assert.equal(result.events.length,1);assert.equal(result.received,3);
+ assert.equal(result.unmapped,1);assert.equal(result.limit_reached,true);
+ await assert.rejects(()=>fetchSecondaryDay('bad-date',{fetcher,now}),/inválida/);
+});
+test('daily+league coverage de-duplicates a football fixture found in both routes',async()=>{
+ const rows=[];const conn={query:async()=>[rows.map(x=>({...x}))],execute:async(sql,args)=>{
+  if(sql.includes('INSERT IGNORE'))rows.push({id:args[0],source_key:args[1],competition:args[2],home_team:args[6],away_team:args[7],match_date:args[8],kickoff:args[9]});
+  return [{affectedRows:1}];
+ }};
+ const event=normalizeSecondaryEvent(example(),'en.1',now);
+ const dates=[];
+ const report=await importSecondaryFixtures({conn,now,enabled:true,
+  fetchDay:async date=>{dates.push(date);return {events:[event],received:3,unmapped:2,limit_reached:true};},
+  fetchLeague:async code=>code==='en.1'?[event]:[]});
+ assert.equal(report.requests,SECONDARY_REQUESTS_PER_IMPORT);
+ assert.equal(report.daily.requests,SECONDARY_DAILY_LOOKAHEAD_DAYS);
+ assert.equal(report.daily.unmapped,14);
+ assert.equal(report.daily.limit_days,7);
+ assert.equal(report.daily.discovered,1);
+ assert.equal(report.inserted,1);
+ assert.equal(report.discovered,1);
+ assert.deepEqual(dates,['2026-11-11','2026-11-12','2026-11-13','2026-11-14','2026-11-15','2026-11-16','2026-11-17']);
+ assert.equal(rows.length,1);
 });

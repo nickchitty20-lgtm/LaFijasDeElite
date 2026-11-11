@@ -15,7 +15,7 @@ test('fuente secundaria: el interruptor persistido tiene prioridad sobre la anti
  const disabled=await importSecondaryFixtures({conn,env:{FOOTBALL_SECONDARY_SCHEDULE:'true'},enabled:false});
  assert.equal(disabled.enabled,false);assert.equal(calls.length,0);
  const enabled=await importSecondaryFixtures({conn,env:{FOOTBALL_SECONDARY_SCHEDULE:'false'},enabled:true,
-  fetchLeague:async()=>[]});
+  fetchLeague:async()=>[],fetchDay:async()=>[]});
  assert.equal(enabled.enabled,true);assert.ok(enabled.requests>=20);
 });
 test('guarda cambios reales con transacción y auditoría',async()=>{
