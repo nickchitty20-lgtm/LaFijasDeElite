@@ -134,7 +134,7 @@ test('configuration, UI and owner-only real delivery diagnostics exist',()=>{
  assert.match(read('public/app.js'), /telegramFreeChannelTest/);
  assert.match(read('src/telegram-routes.js'), /public_channel_url/);
  assert.match(read('public/landing.js'), /telegramFreeChannelCta/);
- assert.match(read('public/clientes.js'), /Canal GRATIS/);
+ assert.match(read('public/clientes.js'), /Canal oficial/);
  assert.match(read('.env.example'), /TELEGRAM_FREE_CHANNEL_CHAT_ID=/);
  assert.match(read('src/nforce-engine.js'), /freeTelegramDestination\(process\.env\)/);
  assert.match(read('src/football-automation.js'), /freeTelegramDestination\(process\.env\)/);

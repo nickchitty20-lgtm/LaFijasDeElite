@@ -27,15 +27,15 @@ function renderWithStats(groups){
 }
 
 test('DEMO muestra dos muestras coherentes y siempre rotuladas como SIMULADAS',()=>{
- assert.match(admin,/Comparación VIP frente a Gratis · DEMO/);
+ assert.match(admin,/Comparación VIP frente a Abierto · DEMO/);
  assert.match(admin,/completamente ficticios/);
  assert.match(admin,/>SIMULADO</);
  assert.match(admin,/max="9" value="8"/);
  assert.match(admin,/max="6" value="4"/);
  assert.match(admin,/>88,9 %</);
  assert.match(admin,/>66,7 %</);
- assert.match(admin,/VIP 8 \+ Gratis 4 = 12 ganadas/);
- assert.match(admin,/VIP 1 \+ Gratis 2 = 3 perdidas/);
+ assert.match(admin,/VIP 8 \+ Abierto 4 = 12 ganadas/);
+ assert.match(admin,/VIP 1 \+ Abierto 2 = 3 perdidas/);
  assert.match(admin,/SOLO|Solo panel del dueño/);
 });
 
@@ -56,7 +56,7 @@ test('los datos reales VIP y gratis son independientes y se muestran con denomin
  const result=nodes.get('performanceBreakdown').innerHTML;
  assert.match(result,/Pronósticos VIP/);
  assert.match(result,/Pronósticos GOLD/);
- assert.match(result,/Pronósticos gratuitos/);
+ assert.match(result,/Pronósticos abiertos/);
  assert.match(result,/En seguimiento/);
  assert.doesNotMatch(result,/88[.,]9 %|66[.,]7 %/);
  assert.match(result,/8 ganadas de 9 decididas/);
