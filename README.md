@@ -1,3 +1,9 @@
+## v3.5.8 — Comprobación del horario por propuesta
+
+Cuando el panel indique **Falta una comprobación reciente**, pulsa **Verificar horario y estado del partido** en esa propuesta. Esta acción consulta la fecha admisible y devuelve una respuesta real de verificación, sin generar otro borrador ni publicar. Si cambia el horario, utiliza **Reanalizar esta propuesta** antes de aprobarla.
+
+La verificación independiente requiere `FOOTBALL_SCHEDULE_LIVE=true` y `FOOTBALL_API_KEY` en Railway. El plan `free` admite ayer, hoy y mañana UTC; el plan `extended`, hoy y los tres días siguientes. Para propuestas fuera de esa cobertura o ligas sin soporte, la publicación sigue requiriendo una importación local reciente (máximo 36 horas), sin atribuirle un estado en vivo. Si el encuentro ya comenzó o no puede verificarse, se bloquea.
+
 # Fijas de Élite v3.5.7 — Reanálisis de propuestas antiguas y verificación de calendario
 
 ## Corrección de la aprobación de borradores antiguos

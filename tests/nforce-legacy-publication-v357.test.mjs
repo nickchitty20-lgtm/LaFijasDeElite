@@ -31,8 +31,8 @@ test('stale community and stale/missing live verification both fail closed',()=>
 });
 
 test('old draft publishes without creating a new candidate after explicit reanalysis, if latest verified schedule is good',async()=>{
- const oldLive=process.env.FOOTBALL_SCHEDULE_LIVE,oldKey=process.env.FOOTBALL_API_KEY;
- process.env.FOOTBALL_SCHEDULE_LIVE='true';process.env.FOOTBALL_API_KEY='test-key';
+ const oldLive=process.env.FOOTBALL_SCHEDULE_LIVE,oldKey=process.env.FOOTBALL_API_KEY,oldPlan=process.env.FOOTBALL_SCHEDULE_PLAN;
+ process.env.FOOTBALL_SCHEDULE_LIVE='true';process.env.FOOTBALL_API_KEY='test-key';process.env.FOOTBALL_SCHEDULE_PLAN='extended';
  try{
   const teams=Array.from({length:12},(_,i)=>'Club '+String.fromCharCode(65+i));
   let state=123;const random=()=>{state=(Math.imul(state,1664525)+1013904223)>>>0;return state/4294967296;};
@@ -83,6 +83,7 @@ test('old draft publishes without creating a new candidate after explicit reanal
   assert.equal(inserted,1);
   assert.equal(sent,1);
  }finally{
+  if(oldPlan===undefined)delete process.env.FOOTBALL_SCHEDULE_PLAN;else process.env.FOOTBALL_SCHEDULE_PLAN=oldPlan;
   if(oldLive===undefined)delete process.env.FOOTBALL_SCHEDULE_LIVE;else process.env.FOOTBALL_SCHEDULE_LIVE=oldLive;
   if(oldKey===undefined)delete process.env.FOOTBALL_API_KEY;else process.env.FOOTBALL_API_KEY=oldKey;
  }
