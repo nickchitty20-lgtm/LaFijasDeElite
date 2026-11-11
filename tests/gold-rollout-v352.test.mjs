@@ -47,7 +47,7 @@ test('both scan and manual refresh map current free-market candidates to paid GO
  assert.match(engine,/classifyAutomaticCandidate\(makeCandidate\(fixture,model\)\)/);
  assert.match(engine,/shouldBlockLegacyFreeDraft\(row\)/);
  assert.match(engine,/categoryCounts=\{free:0,gold:0,vip:0\}/);
- assert.match(source('src/server.js'),/p.visibility==='gold'\?queueGoldPrediction/);
+ assert.match(source('src/server.js'),/p.visibility==='gold'\?publishGoldTelegram/);
 });
 test('VIP pricing policy increases new plan prices, without repricing old payments, and is applied only once',async()=>{
  assert.deepEqual(VIP_PRICE_TARGETS,{7:89.9,30:249.9,90:649.9});

@@ -120,6 +120,7 @@ test('removal uses recorded channel chat_id, legacy deletes remain supported',as
   if(sql.includes('FROM telegram_prediction_messages'))return [[]];
   if(sql.includes('FROM telegram_vip_public_announcements'))return [[{prediction_id:98,telegram_message_id:22,chat_id:-10011111}]];
   if(sql.includes('FROM telegram_community_announcements'))return [[]];
+  if(sql.includes('FROM telegram_gold_public_announcements'))return [[]];
   return [{affectedRows:1}];
  }};
  await removePredictionTelegramMessages({db,predictionId:98,telegramApi:async(method,data)=>{ids.push(data.chat_id)},env});
