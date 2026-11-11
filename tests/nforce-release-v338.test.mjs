@@ -5,7 +5,7 @@ import {NFORCE_SCAN_LOOKAHEAD_DAYS} from '../src/nforce-engine.js';
 
 const source=path=>readFileSync(new URL(`../${path}`,import.meta.url),'utf8');
 
-test('v3.4.0 defaults to 14-day horizon while allowing explicit configurable override',()=>{
+test('v3.4.1 defaults to 14-day horizon while allowing explicit configurable override',()=>{
  assert.equal(NFORCE_SCAN_LOOKAHEAD_DAYS,14);
  assert.match(source('.env.example'),/^NFORCE_SCAN_DAYS=14$/m);
 });

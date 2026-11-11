@@ -21,7 +21,7 @@ test('N-FORCE local: datos CC0 simulados → MySQL → pronóstico GRATIS → Te
  const future={id:887799,source_key:'2026-27/en.1.json|Club A|Club B',competition:'en.1',league:'Premier League',season:'2026-27',round:'Matchday 30',
   home:'Club A',away:'Club B',date:'2026-11-12',kickoff:'2026-11-12T20:00:00.000Z',scheduled_time_known:true,
   home_goals:null,away_goals:null,source_path:'2026-27/en.1.json'};
- const table=[],candidates=[],published=[],telegram=[];let importId=0,scanId=0,createdId=900,validation=null;
+ const table=[],candidates=[],published=[],telegram=[];let importId=0,scanId=0,createdId=900,validation=null;let reopenAudit=0;
  function shape(m){return {...m,home_team:m.home,away_team:m.away,round_name:m.round,match_date:m.date,source_checked_at:now};}
  const connection=()=>({
   async query(sql,args=[]){
@@ -51,12 +51,32 @@ test('N-FORCE local: datos CC0 simulados → MySQL → pronóstico GRATIS → Te
     return [{affectedRows:1}];
    }
    if(sql.includes('UPDATE nforce_scans'))return [{affectedRows:1}];
+   if(sql.includes('SELECT id,status,prediction_id,published_at,evidence_json')&&sql.includes('FROM football_candidates')){
+    return [[candidates.find(x=>x.provider===args[0]&&x.fixture_id===args[1])]];
+   }
+   if(sql.includes("WHERE provider=? AND fixture_id=? AND status='discarded'")&&sql.includes("SET status='draft'")){
+    const [visibility,home_team,away_team,league,kickoff,market,selection,provider_probability,analysis,evidence_json,provider,fixture_id,oldVersion,oldBuild]=args;
+    const c=candidates.find(x=>x.provider===provider&&x.fixture_id===fixture_id);
+    if(!c||c.status!=='discarded'||c.prediction_id!=null||c.published_at!=null||
+        JSON.parse(c.evidence_json)?.model?.model!==oldVersion||
+        (JSON.parse(c.evidence_json)?.discarded_in_build||'')!==oldBuild)return [{affectedRows:0}];
+    Object.assign(c,{status:'draft',visibility,home_team,away_team,league,kickoff,market,selection,provider_probability,analysis,evidence_json,odds:null});
+    return [{affectedRows:1}];
+   }
+   if(sql.includes('UPDATE football_candidates SET visibility=')&&sql.includes("status='draft'")){
+    const [visibility,home_team,away_team,league,kickoff,market,selection,provider_probability,analysis,evidence_json,provider,fixture_id]=args;
+    const c=candidates.find(x=>x.provider===provider&&x.fixture_id===fixture_id&&x.status==='draft');
+    if(!c)return [{affectedRows:0}];
+    Object.assign(c,{visibility,home_team,away_team,league,kickoff,market,selection,provider_probability,analysis,evidence_json,odds:null});
+    return [{affectedRows:1}];
+   }
+
    if(sql.includes('SELECT * FROM football_candidates WHERE id='))return [candidates.filter(x=>x.id===args[0])];
    if(sql.includes('FROM nforce_matches m LEFT JOIN nforce_fixture_schedules'))return [[table.find(x=>x.id===args[0])]];
    if(sql.includes('SELECT p.id FROM predictions'))return [[]];
    if(sql.includes('INSERT INTO predictions')){published.push({id:++createdId,values:args});return [{insertId:createdId}];}
    if(sql.includes("UPDATE football_candidates SET status='published'")){const c=candidates.find(x=>x.id===args[1]);c.status='published';return [{affectedRows:1}];}
-   if(sql.includes('INSERT INTO audit_logs'))return [{affectedRows:1}];
+   if(sql.includes('INSERT INTO audit_logs')){if(sql.includes('nforce_candidate_reopened_new_model'))reopenAudit++;return [{affectedRows:1}];}
    if(sql.includes('UPDATE predictions'))return [{affectedRows:1}];
    throw Error('No se esperaba conn.execute: '+sql.slice(0,130));
   },
@@ -82,6 +102,33 @@ test('N-FORCE local: datos CC0 simulados → MySQL → pronóstico GRATIS → Te
   assert.equal(candidates[0].provider,'nforce-openfootball');
   assert.ok(JSON.parse(candidates[0].evidence_json).model.model===MODEL_VERSION);
   assert.equal(candidates[0].visibility,'free','La simulación no debe producir una VIP sin ventaja estadística');
+  // Discard made under an old model may reappear, but only after a new eligible scan.
+  candidates[0].status='discarded';
+  candidates[0].evidence_json=JSON.stringify({...JSON.parse(candidates[0].evidence_json),
+   model:{...JSON.parse(candidates[0].evidence_json).model,model:'nforce-poisson-1.5'}});
+  const rescan=await controller.scan({manual:true});
+  assert.equal(rescan.reopened_old_discards,1);
+  assert.equal(rescan.drafts_created,0);
+  assert.equal(rescan.eligible,1);
+  assert.equal(candidates.length,1,'No se crean filas duplicadas por fixture');
+  assert.equal(candidates[0].status,'draft');
+  assert.equal(JSON.parse(candidates[0].evidence_json).model.model,MODEL_VERSION);
+  assert.equal(reopenAudit,1,'La reapertura deja auditoría');
+  // A new discard in the current model must remain discarded after subsequent scans.
+  candidates[0].status='discarded';
+  candidates[0].evidence_json=JSON.stringify({...JSON.parse(candidates[0].evidence_json),discarded_in_build:'3.4.1'});
+  const repeat=await controller.scan({manual:true});
+  assert.equal(repeat.reopened_old_discards,0);
+  assert.equal(repeat.existing_by_status.discarded,1);
+  assert.equal(candidates[0].status,'discarded');
+  assert.equal(reopenAudit,1);
+  // A legacy discard from v3.4.0 did not yet have a build stamp, but can also
+  // come back even though it used statistical model 1.6.
+  candidates[0].evidence_json=JSON.stringify({...JSON.parse(candidates[0].evidence_json),discarded_in_build:undefined});
+  const legacy=await controller.scan({manual:true});
+  assert.equal(legacy.reopened_old_discards,1);
+  assert.equal(candidates[0].status,'draft');
+  assert.equal(reopenAudit,2);
   const approved=await controller.publish(candidates[0].id,{id:22});
   assert.equal(approved.published,true);
   assert.equal(approved.telegram,'sent');

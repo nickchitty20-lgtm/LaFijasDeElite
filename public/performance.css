@@ -43,3 +43,6 @@
 .performance-method div{padding-top:10px}
 .performance-method p{margin:0 0 8px}
 .performance-method p:last-child{margin-bottom:0}
+
+/* Display a qualitative indicator when the verified sample is too small for a headline rate. */
+.spotlight-rate,.performance-compare-rate{overflow-wrap:anywhere}.spotlight-rate{font-size:clamp(21px,3.4vw,33px)}.performance-compare-rate{font-size:clamp(18px,2.4vw,27px)!important}

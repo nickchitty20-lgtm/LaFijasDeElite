@@ -23,10 +23,10 @@ async function loadCustomerPicks(){
   for(const p of r.predictions){
    const article=document.createElement('article');article.className='customer-pick fe-research-card'+(p.locked?' is-locked':'');
    const h=document.createElement('h4');h.textContent=(p.locked?'🔒 ':'⚽ ')+p.title;article.append(h);
-   const meta=document.createElement('p');meta.textContent=`${p.league||'Fútbol'} · ${p.visibility==='vip'?'VIP':'Gratis'}`;article.append(meta);
+   const meta=document.createElement('p');meta.textContent=`${p.league||'Fútbol'} · ${p.visibility==='vip'?'VIP':p.visibility==='gold'?'GOLD':'Gratis'}`;article.append(meta);
    const schedule=window.FijasMatchSchedule?.render(p.match_date,{...(p.locked?{}:p.football_details?.match_context||{}),prediction_id:p.id});if(schedule)article.append(schedule);
-   if(p.locked){const desc=document.createElement('p');desc.textContent='🔒 Selección, mercados y análisis ocultos. Necesitas una membresía VIP activa.';article.append(desc);
-    const go=document.createElement('a');go.className='vip-unlock';go.href='#request';go.textContent='Desbloquear VIP';article.append(go);
+   if(p.locked){const desc=document.createElement('p');desc.textContent=`🔒 Selección, mercados y análisis privados. Necesitas una membresía ${p.visibility==='gold'?'GOLD o VIP':'VIP'} activa.`;article.append(desc);
+    const go=document.createElement('a');go.className='vip-unlock';go.href='#request';go.textContent=p.visibility==='gold'?'Desbloquear GOLD':'Desbloquear VIP';article.append(go);
    }else{
     if(window.FijasPickReport){article.append(window.FijasPickReport.pickInfo(p));const goalBox=window.FijasPickReport.goals(p);if(goalBox)article.append(goalBox);const advancedBox=window.FijasPickReport.advanced?.(p);if(advancedBox)article.append(advancedBox);const detail=window.FijasPickReport.analysis(p);if(detail)article.append(detail);}
     else{const desc=document.createElement('p');desc.textContent=`${p.market||''}: ${p.selection||''} · ${p.analysis||''}`;article.append(desc);}
@@ -42,7 +42,7 @@ async function loadDashboard(){
  try{
   const r=await call('/api/customers/dashboard',null,true);
   summary.replaceChildren();stats.replaceChildren();notices.replaceChildren();
-  const heading=document.createElement('div');heading.className='vip-status';heading.textContent=r.membership?(r.membership.staff_vip?'♛ VIP GRATUITO POR CARGO · SIN VENCIMIENTO':`✦ VIP ACTIVO · ${r.membership.plan} · ${r.membership.days_left} día(s) restantes`):'◇ CUENTA GRATUITA · VIP BLOQUEADO';summary.append(heading);
+  const heading=document.createElement('div');heading.className='vip-status';heading.textContent=r.membership?(r.membership.staff_vip?'♛ VIP GRATUITO POR CARGO · SIN VENCIMIENTO':`✦ ${(r.membership.tier==='gold'?'GOLD':'VIP')} ACTIVO · ${r.membership.plan} · ${r.membership.days_left} día(s) restantes`):'◇ CUENTA PÚBLICA · MEMBRESÍAS DISPONIBLES';summary.append(heading);
   const sub=document.createElement('p');sub.textContent=r.membership?(r.membership.staff_vip?'Tu acceso se mantiene mientras conserves tu cargo y la cuenta esté habilitada. No es una compra.':`Vigente hasta ${new Date(r.membership.ends_at).toLocaleDateString('es-PE',{dateStyle:'long'})}`):'Puedes consultar los pronósticos gratuitos. Activa un plan para desbloquear VIP.';summary.append(sub);
   if(r.membership?.renewals_scheduled>0){
    const renewal=document.createElement('p');renewal.className='vip-renewal-applied';
@@ -54,13 +54,13 @@ async function loadDashboard(){
   const payNav=document.querySelector('[data-client-tab="payments"]');
   const payShortcut=document.querySelector('[data-client-go="payments"]');
   const payHeading=document.querySelector('[data-client-panel="payments"] .client-section-heading h3');
-  if(payNav)payNav.textContent=r.membership?.staff_vip?'▣ Planes VIP':activeVip?'♛ Renovar VIP':'▣ Comprar VIP';
-  if(payShortcut)payShortcut.textContent=r.membership?.staff_vip?'Consultar planes (opcional) ↗':activeVip?'Renovar mi membresía ↗':'Explorar planes VIP ↗';
-  if(payHeading)payHeading.textContent=r.membership?.staff_vip?'Planes VIP · beneficio por cargo activo':activeVip?'Renovar mi membresía VIP':'Comprar membresía VIP';
+  if(payNav)payNav.textContent=r.membership?.staff_vip?'▣ Planes':'▣ Membresías GOLD y VIP';
+  if(payShortcut)payShortcut.textContent=r.membership?.staff_vip?'Consultar planes (opcional) ↗':activeVip?'Renovar mi membresía ↗':'Explorar planes GOLD y VIP ↗';
+  if(payHeading)payHeading.textContent=r.membership?.staff_vip?'Planes disponibles · beneficio por cargo':'Membresías GOLD y VIP';
   const renewNote=$('vip-renewal-note');
   if(renewNote){renewNote.hidden=!activeVip||Boolean(r.membership?.staff_vip);if(activeVip&&!r.membership?.staff_vip)renewNote.textContent=`✦ Tu VIP está activo hasta el ${new Date(r.membership.ends_at).toLocaleDateString('es-PE')}. Puedes renovarlo; la nueva duración se añadirá después de la fecha de vencimiento vigente.`;}
   const accountTier=$('client-account-tier');
-  if(accountTier)accountTier.textContent=r.membership?.staff_vip?'♛ PERSONAL · VIP GRATUITO':activeVip?'♛ CLIENTE VIP ACTIVO':'◇ CUENTA GRATUITA';
+  if(accountTier)accountTier.textContent=r.membership?.staff_vip?'♛ PERSONAL · VIP GRATUITO':activeVip?(r.membership?.tier==='gold'?'✦ CLIENTE GOLD ACTIVO':'♛ CLIENTE VIP ACTIVO'):'◇ CUENTA PÚBLICA';
   const values=[['Publicados',r.stats.total],['Ganados',r.stats.won],['Perdidos',r.stats.lost],['Pendientes',r.stats.pending]];
   for(const [label,value] of values){const tile=document.createElement('div');tile.className='vip-stat';const strong=document.createElement('strong');strong.textContent=String(value);const small=document.createElement('span');small.textContent=label;tile.append(strong,small);stats.append(tile);}
   if(!r.notices.length){notices.textContent='No tienes notificaciones nuevas.';return;}
@@ -98,7 +98,7 @@ async function me(){
   if(m.status==='active'&&end>now&&start>now){future.push(m);continue;}
   past.push(m);
  }
- appendMembershipGroup(area,'VIP activo',active,{labelFn:()=>'Vigente',emptyText:'No tienes un período VIP activo.'});
+ appendMembershipGroup(area,'Membresía activa',active,{labelFn:()=>'Vigente',emptyText:'No tienes una membresía activa.'});
  appendMembershipGroup(area,'Renovaciones confirmadas',future,{labelFn:()=>'Confirmada · Próxima',emptyText:'Aún no tienes renovaciones futuras.'});
  appendMembershipGroup(area,'Solicitudes pendientes',pending,{collapse:true,labelFn:()=>'Pendiente de revisión',emptyText:'No hay solicitudes pendientes.'});
  appendMembershipGroup(area,'Historial anterior',past,{collapse:true,labelFn:m=>m.status==='cancelled'?'Cancelada':m.status==='expired'?'Expirada':'Finalizada',emptyText:'Sin períodos anteriores.'});
@@ -263,11 +263,11 @@ async function refreshTelegramStatus(){
    ?`Cambio pendiente: el Telegram anterior fue retirado. El enlace dura 10 minutos; para generar otro espera ${r.change_reissue_minutes||0} minuto(s).`
    :r.change_cooldown_minutes>0?`Por seguridad, el próximo cambio estará disponible en aproximadamente ${Math.ceil(r.change_cooldown_minutes/1440)} día(s). Si perdiste Telegram, solicita una excepción al dueño.`
    :r.linked?'Puedes solicitar un cambio cada 30 días. Necesitarás confirmar tu contraseña.':'';
-  status.textContent=!r.configured?'El dueño todavía no configuró el bot y el canal VIP.':
+  status.textContent=!r.configured?'El dueño todavía no configuró el bot de Telegram.':
    r.change_pending?'Cambio de Telegram en curso. Tu cuenta anterior ya no tiene acceso al canal. Vincula la nueva cuenta mediante el enlace generado.':
    r.detached_pending?'Telegram desvinculado: la cuenta antigua todavía tiene su plaza reservada. Puede salir del canal o el creador retirarla manualmente. No puedes vincular otra por ahora.':
    !r.linked?r.change_cooldown_minutes>0?'El Telegram anterior ya salió. Espera el plazo de seguridad de 30 días, salvo excepción autorizada por el dueño.':'Primero vincula tu Telegram para verificar tu identidad.':
-   `${r.telegram_username?'@'+r.telegram_username:'Cuenta Telegram vinculada'} · ${r.is_member?'Ya perteneces al canal VIP':r.has_vip?'VIP activo: puedes solicitar acceso':'VIP no activo: renueva tu membresía para ingresar'}`;
+   `${r.telegram_username?'@'+r.telegram_username:'Cuenta Telegram vinculada'} · ${r.is_member?'Miembro del canal VIP · También recibes GOLD':r.has_vip?'VIP activo · Recibirás GOLD por privado y puedes solicitar canal VIP':r.has_gold?'GOLD activo · Las nuevas selecciones GOLD llegarán por privado':'Sin acceso de pago · Vincula Telegram y elige una membresía'}`;
   const group=$('telegramPublicLink');group.replaceChildren();
   const addPublicLink=(url,label)=>{
    if(!url||!/^https:\/\/t\.me\//i.test(url))return;

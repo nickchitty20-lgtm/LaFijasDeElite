@@ -8,7 +8,7 @@ const css=readFileSync(new URL('../public/performance.css',import.meta.url),'utf
 test('portada no muestra lenguaje técnico de origen en la primera impresión',()=>{
  const front=html.slice(0,html.indexOf('<section class="metrics'));
  assert.doesNotMatch(front,/OpenFootball|fuente/ig);
- assert.match(front,/VIP frente a Gratis/);
+ assert.match(front,/Nuestro historial/);
  assert.match(front,/performanceQuickSummary/);
 });
 test('metodología sigue contando con transparencia el origen comunitario no oficial y registros manuales',()=>{

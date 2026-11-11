@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 let currentAdminRole='';
-const ADMIN_PANEL_BUILD='3.4.0';
+const ADMIN_PANEL_BUILD='3.5.1';
 // Diagnose a partial/old Railway deployment instead of silently rendering stale UI.
 async function checkAdminBuild(){
  const label=$('adminBuildVersion'),status=$('adminBuildStatus');
@@ -173,7 +173,7 @@ async function loadVipPlans(){
  const select=$('vipPlanSelect');select.replaceChildren();
  try{
   const {plans}=await api('/api/admin/plans');
-  for(const p of plans.filter(p=>p.active)){
+  for(const p of plans.filter(p=>p.active && p.tier!=='gold')){
    const opt=document.createElement('option');opt.value=String(p.id);
    opt.textContent=`${p.name} · ${p.duration_days} días · S/${Number(p.price_pen).toFixed(2)} (asignación sin cobro)`;
    select.append(opt);
@@ -436,9 +436,17 @@ async function loadTelegramAdmin(){
   $('telegramAdminSetup').textContent=[s.bot_configured?'Bot ✓':'Falta bot',s.vip_channel_configured?'VIP ✓':'Falta VIP',s.free_channel_configured?'Canal GRATIS ✓':'Falta canal GRATIS',s.free_group_configured?'Grupo extra ✓':'Grupo extra sin configurar',s.webhook_secret_configured?'Secreto ✓':'Falta secreto'].join(' · ');
   $('telegramAdminLinked').textContent=String(s.linked);
   $('telegramAdminMembers').textContent=String(s.vip_members);
+  await refreshGoldDeliveryStatus();
   $('telegramCoverage').textContent=`Telegram informa ${s.telegram_member_count??'—'} miembros; IDs de miembros conocidos: ${s.tracked_members}. Desvinculados pendientes de salida: ${s.detached_pending}. Telegram anteriores conservados por el creador: ${s.creator_preserved??0}. El bot no puede descargar la lista total: revisa manualmente usuarios antiguos no registrados.`;
  }catch(error){$('telegramAdminResult').textContent=error.message;}
 }
+async function refreshGoldDeliveryStatus(){
+ const node=$('telegramGoldDeliveryStatus');if(!node)return;
+ try{const r=await api('/api/admin/telegram/gold-status');const c=r.counts||{};
+  node.textContent=`En cola: ${c.pending||0} · Enviadas: ${c.sent||0} · Fallidas: ${c.failed||0} · Interrumpidas: ${c.sending||0} · No enviadas por permisos: ${c.skipped||0}. ${r.bot_configured?'Bot conectado':'Falta token del bot'}.`;
+ }catch(e){node.textContent='No se pudo consultar las entregas GOLD: '+e.message;}
+}
+$('telegramGoldRefresh')?.addEventListener('click',refreshGoldDeliveryStatus);
 $('telegramFreeChannelCheck')?.addEventListener('click',async()=>{
  const msg=$('telegramFreeChannelResult');msg.textContent='Verificando el canal oficial…';
  try{const r=await api('/api/admin/telegram/free-channel/check',{method:'POST',body:'{}'});
@@ -767,6 +775,7 @@ function showFootballScanReport(r){
   line('Partidos realmente estudiados',r.examined);
   line('Modelos calculados',r.modeled??r.qualified??'—');
   line('Propuestas nuevas guardadas',r.drafts_created);
+  if(r.reopened_old_discards!=null)line('Descartadas de versiones anteriores recuperadas',r.reopened_old_discards);
   if(r.already_present!=null)line('Propuestas elegibles ya registradas',r.already_present);
   if(r.existing_by_status)line('Ya registradas (pendientes / descartadas / publicadas)',`${r.existing_by_status.draft||0} / ${r.existing_by_status.discarded||0} / ${r.existing_by_status.published||0}`);
   if(r.fixtures_without_time!=null)line('Partidos futuros sin hora exacta',r.fixtures_without_time);

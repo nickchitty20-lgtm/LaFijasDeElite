@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS plans (
  name VARCHAR(100) NOT NULL,
  duration_days INT UNSIGNED NOT NULL,
  price_pen DECIMAL(10,2) NOT NULL,
+ tier ENUM('gold','vip') NOT NULL DEFAULT 'vip',
  active BOOLEAN NOT NULL DEFAULT TRUE
 );
 CREATE TABLE IF NOT EXISTS memberships (
@@ -64,7 +65,7 @@ CREATE TABLE IF NOT EXISTS predictions (
  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
  title VARCHAR(200) NOT NULL,
  analysis TEXT NOT NULL,
- visibility ENUM('free','vip') NOT NULL DEFAULT 'free',
+ visibility ENUM('free','gold','vip') NOT NULL DEFAULT 'free',
  outcome ENUM('pending','won','lost','void') NOT NULL DEFAULT 'pending',
  settlement_source VARCHAR(60) NULL,
  settlement_score VARCHAR(9) NULL,
