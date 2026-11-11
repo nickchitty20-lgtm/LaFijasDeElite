@@ -7,7 +7,7 @@
  */
 import {estimateMatch,modelReadiness,fulltime} from './nforce-model.js';
 import {predictAiForecast} from './nforce-ml.js';
-import {h} from './telegram-bridge.js';
+import {h,telegramHomeUrl} from './telegram-bridge.js';
 
 // A 24-hour minimum hid tomorrow's real matches when the owner checked
 // the panel in the afternoon. Shorten only the NON-OFFICIAL scouting radar.
@@ -126,4 +126,25 @@ export function vipRadarTelegramMessage(report,{asOf=new Date()}={}){
  return head+rows+'\n\n⚠️ <b>RADAR INFORMATIVO · NO SON FIJAS VIP APROBADAS.</b>\n'+
   'Las probabilidades son estimaciones, no tasas de acierto verificadas ni garantías de resultados. El canal distinguirá los pronósticos VIP validados de estos estudios.\n'+
   'No apuestes dinero que no puedas permitirte perder.';
+}
+
+/** Public teaser for a successfully delivered VIP scouting bulletin.
+ * It intentionally reveals only a fixture example and the size of the bulletin,
+ * never estimated probabilities, AI output, markets, picks, or private analysis.
+ * Never call this as a replacement for an actual published VIP prediction. */
+export function vipRadarOfficialTeaser(report,{baseUrl}={}){
+ if(!report?.items?.length)return '';
+ const sample=report.items[0];
+ const clean=value=>h(String(value??'').replace(/[\x00-\x1f\x7f\u2028\u2029]+/g,' ').trim().slice(0,90));
+ const fixture=sample?.home&&sample?.away?`\n🔎 En seguimiento: <b>${clean(sample.home)} vs. ${clean(sample.away)}</b>`:'';
+ const competition=sample?.league?`\n🏆 ${clean(sample.league)}`:'';
+ const kickoff=Number.isFinite(Date.parse(String(sample?.kickoff||'')))
+  ?`\n🗓️ ${h(new Intl.DateTimeFormat('es-PE',{timeZone:'America/Lima',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(sample.kickoff)))} (Perú)` :'';
+ const count=Math.min(report.items.length,5); // Private bulletin also lists at most five fixtures.
+ return `👑 <b>FIJAS DE ÉLITE · RADAR VIP</b>\n\n`+
+  `📣 ¡Nuevo boletín de análisis anticipado en nuestro canal VIP!\n`+
+  `⚽ <b>${count} ${count===1?'partido estudiado':'partidos estudiados'}</b>${fixture}${competition}${kickoff}\n\n`+
+  `🔒 Probabilidades y análisis completos: exclusivamente para miembros VIP.\n`+
+  `ℹ️ Boletín informativo, no pronósticos VIP aprobados ni resultados garantizados.\n\n`+
+  `✨ Conoce nuestros planes: ${h(telegramHomeUrl(baseUrl))}`;
 }

@@ -164,6 +164,19 @@ export async function initializeDatabase() {
       sent_at DATETIME NULL,
       telegram_message_id BIGINT NULL
     ) ENGINE=InnoDB`);
+    // v3.7.4: idempotent teaser of each delivered private Radar bulletin in
+    // the official public channel. Existing days are preserved.
+    const [radarColumns]=await connection.query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='nforce_vip_radar_dispatches'");
+    const radarExisting=new Set(radarColumns.map(row=>row.COLUMN_NAME));
+    const radarAdditions={
+      public_status:"ENUM('pending','reserved','sent','skipped','failed') NOT NULL DEFAULT 'pending'",
+      public_sent_at:'DATETIME NULL',
+      public_message_id:'BIGINT NULL',
+      public_chat_id:'VARCHAR(40) NULL'
+    };
+    for(const [name,definition] of Object.entries(radarAdditions)){
+      if(!radarExisting.has(name))await connection.query(`ALTER TABLE nforce_vip_radar_dispatches ADD COLUMN ${name} ${definition}`);
+    }
     await connection.query(`CREATE TABLE IF NOT EXISTS nforce_wide_calendar_requests (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
       requested_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

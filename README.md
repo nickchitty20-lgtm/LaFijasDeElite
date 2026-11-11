@@ -1,3 +1,15 @@
+# Fijas de Élite v3.7.4 — Adelanto del boletín Radar VIP en el canal oficial
+
+- Al enviar manualmente o mediante el programador diario un boletín **Radar VIP**, el sistema publica **un único adelanto breve** en el canal oficial, después de confirmar la entrega privada.
+- El adelanto revela como máximo el número de partidos estudiados, un encuentro de ejemplo, competición y hora en Perú; **no** revela probabilidades, selecciones, mercados, análisis, calidad ni otros detalles exclusivos.
+- El texto identifica expresamente el Radar como **análisis anticipado y no pronóstico VIP validado**. La página de entrada se enlaza mediante `PUBLIC_BASE_URL`.
+- Se valida que el destino público sea un **canal** distinto al VIP y que el bot pueda publicar allí. No se utiliza el grupo de discusión como alternativa.
+- Cada boletín diario se registra en MySQL con estado de envío privado y estado de adelanto público independientes. El fallo del aviso público **no deshace** el envío VIP ni provoca un reenvío duplicado.
+- La migración añade columnas a `nforce_vip_radar_dispatches` automáticamente; conserva pagos, miembros, candidatos y propuestas. No requiere nueva clave ni modificación de MySQL manualmente.
+- En el panel del propietario se muestra el resultado del envío al canal oficial. La frecuencia continúa siendo como máximo una al día, y solo si hay partidos elegibles.
+
+---
+
 # Actualización v3.7.3 — IA y Radar VIP: revisión de los próximos 7 días
 
 - **Corrección del salto de fechas:** el módulo IA y el Radar informativo admiten partidos desde 2 horas antes del comienzo (antes se ocultaban todos los que estaban a menos de 24 h). Los pronósticos GOLD/VIP oficiales NO relajan sus comprobaciones.

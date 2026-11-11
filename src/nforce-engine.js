@@ -21,7 +21,7 @@ import {readWideSource,saveWideSource} from './nforce-source-settings.js';
 import {importWideCalendar,WIDE_SUPPORTED_COMPETITIONS} from './api-football-wide.js';
 import {auditTomorrowCalendar} from './nforce-fixture-audit.js';
 import {predictAiForecast,AI_MODEL_VERSION} from './nforce-ml.js';
-import {prepareVipRadar,vipRadarTelegramMessage,VIP_RADAR_MIN_LEAD_HOURS,VIP_RADAR_MAX_DAYS} from './nforce-vip-radar.js';
+import {prepareVipRadar,vipRadarTelegramMessage,vipRadarOfficialTeaser,VIP_RADAR_MIN_LEAD_HOURS,VIP_RADAR_MAX_DAYS} from './nforce-vip-radar.js';
 import {telegramApi,inspectFreeTelegramChannel} from './telegram-bridge.js';
 
 const DAY=86400000;
@@ -46,7 +46,7 @@ export function importDecision(last,now=Date.now(),hours=IMPORT_INTERVAL_HOURS){
  const next=started+interval;
  return {due:!Number.isFinite(next)||now>=next,next:Number.isFinite(next)?new Date(next).toISOString():null};
 }
-export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenFootball,fetchSecondary=importSecondaryFixtures,fetchFootballData=importFootballDataFixtures,fetchWide=importWideCalendar,fetchCalendarAudit=auditTomorrowCalendar,sendTelegram=sendPredictionToTelegram,sendRadarTelegram=async(chat,text,env)=>telegramApi('sendMessage',{chat_id:chat,text,parse_mode:'HTML',disable_web_page_preview:true,protect_content:true},env),enqueueEvent=null,now=()=>new Date()}={}){
+export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenFootball,fetchSecondary=importSecondaryFixtures,fetchFootballData=importFootballDataFixtures,fetchWide=importWideCalendar,fetchCalendarAudit=auditTomorrowCalendar,sendTelegram=sendPredictionToTelegram,sendRadarTelegram=async(chat,text,env)=>telegramApi('sendMessage',{chat_id:chat,text,parse_mode:'HTML',disable_web_page_preview:true,protect_content:true},env),sendRadarOfficialTelegram=async(chat,text,env)=>telegramApi('sendMessage',{chat_id:chat,text,parse_mode:'HTML',disable_web_page_preview:true},env),inspectOfficialChannel=inspectFreeTelegramChannel,enqueueEvent=null,now=()=>new Date()}={}){
  const settlement=createNforceSettlement({db,now});
  let importing=false,scanning=false,publishing=false,combinedRunning=false,radarSending=false,interval=null;
  let lastScanReport=null,lastImportReport=null,lastPublishReport=null,lastSchedulerMessage='',lastError='';
@@ -319,8 +319,36 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
   return Boolean(Number(row?.enabled));
  }
  async function vipRadarLast(){
-  const [[row]]=await db.query('SELECT dispatch_day,status,sent_at,telegram_message_id FROM nforce_vip_radar_dispatches ORDER BY dispatch_day DESC LIMIT 1');
+  const [[row]]=await db.query('SELECT dispatch_day,status,sent_at,telegram_message_id,public_status,public_sent_at,public_message_id FROM nforce_vip_radar_dispatches ORDER BY dispatch_day DESC LIMIT 1');
   return row||null;
+ }
+ // At most one public notice per successfully delivered private bulletin.
+ // Never fall back to the community group or the private VIP chat.
+ async function announceVipRadarOnOfficial(report,day,vipChat,conn){
+  const setStatus=async(state)=>conn.execute('UPDATE nforce_vip_radar_dispatches SET public_status=? WHERE dispatch_day=?',[state,day]);
+  if(!freeTelegramDestination(process.env)){await setStatus('skipped');return {state:'skipped',reason:'Canal oficial sin configurar.'};}
+  let verified;
+  try{verified=await inspectOfficialChannel(process.env,{checkPermissions:true});}
+  catch(error){verified={ready:false,reason:'No se pudo verificar el canal oficial.'};}
+  if(!verified?.ready){await setStatus('skipped');return {state:'skipped',reason:verified?.reason||'Canal oficial no disponible.'};}
+  if(String(verified.chat_id)===String(vipChat)){
+   await setStatus('skipped');return {state:'skipped',reason:'El canal oficial coincide con el destino VIP; se omitió el anuncio.'};
+  }
+  const teaser=vipRadarOfficialTeaser(report,{baseUrl:process.env.PUBLIC_BASE_URL});
+  if(!teaser){await setStatus('skipped');return {state:'skipped',reason:'El boletín no contiene partidos para anunciar.'};}
+  const [reserved]=await conn.execute(
+   "UPDATE nforce_vip_radar_dispatches SET public_status='reserved',public_chat_id=? WHERE dispatch_day=? AND status='sent' AND public_status='pending'",
+   [String(verified.chat_id),day]);
+  if(Number(reserved.affectedRows)!==1)return {state:'skipped',reason:'El anuncio ya fue procesado.'};
+  try{
+   const message=await sendRadarOfficialTelegram(verified.chat_id,teaser,process.env);
+   await conn.execute("UPDATE nforce_vip_radar_dispatches SET public_status='sent',public_sent_at=UTC_TIMESTAMP(),public_message_id=? WHERE dispatch_day=?",[message?.message_id||null,day]);
+   return {state:'sent',message_id:message?.message_id||null};
+  }catch(error){
+   await setStatus('failed').catch(()=>{});
+   console.error('Adelanto Radar VIP oficial no enviado:',safeError(error));
+   return {state:'failed',reason:'El boletín VIP se envió, pero falló el anuncio oficial; comprueba los permisos del bot.'};
+  }
  }
  async function dispatchVipRadar({manual=false}={}){
   if(radarSending)return {sent:false,reason:'El radar ya se está enviando.'};
@@ -333,7 +361,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
    if(!/^-?\d{8,18}$/.test(target)||target===publicId||target===String(process.env.TELEGRAM_FREE_CHANNEL_CHAT_ID||''))
     return {sent:false,reason:'El canal VIP debe ser un ID numérico distinto al canal oficial.'};
    if(publicId.startsWith('@')){
-    const verified=await inspectFreeTelegramChannel(process.env);
+    const verified=await inspectOfficialChannel(process.env);
     if(!verified.ready||verified.chat_id===target)return {sent:false,reason:'No se pudo confirmar que el destino VIP sea distinto del oficial.'};
    }
    const report=await vipRadarPreview();
@@ -346,7 +374,10 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     const message=vipRadarTelegramMessage(report,{asOf:now()});
     const sent=await sendRadarTelegram(target,message,process.env);
     await conn.execute("UPDATE nforce_vip_radar_dispatches SET status='sent',sent_at=UTC_TIMESTAMP(),telegram_message_id=? WHERE dispatch_day=?",[sent?.message_id||null,day]);
-    return {sent:true,day,items:report.items.length,telegram_message_id:sent?.message_id||null,official_picks:false};
+    let publicAnnouncement;
+    try{publicAnnouncement=await announceVipRadarOnOfficial(report,day,target,conn);}
+    catch(error){console.error('Anuncio Radar VIP:',safeError(error));publicAnnouncement={state:'failed',reason:'No se pudo registrar el adelanto oficial.'};}
+    return {sent:true,day,items:Math.min(report.items.length,5),telegram_message_id:sent?.message_id||null,official_picks:false,public_announcement:publicAnnouncement};
    }catch(error){
     await conn.execute("UPDATE nforce_vip_radar_dispatches SET status='failed' WHERE dispatch_day=?",[day]).catch(()=>{});
     return {sent:false,reason:'Telegram no confirmó el envío: '+safeError(error)};

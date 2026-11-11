@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 let currentAdminRole='';
-const ADMIN_PANEL_BUILD='3.7.3';
+const ADMIN_PANEL_BUILD='3.7.4';
 // Diagnose a partial/old Railway deployment instead of silently rendering stale UI.
 async function checkAdminBuild(){
  const label=$('adminBuildVersion'),status=$('adminBuildStatus');
@@ -1171,7 +1171,7 @@ async function renderVipRadar(){
  try{
   const result=await api('/api/admin/football/vip-radar');
   const auto=$('footballVipRadarAuto');if(auto)auto.checked=Boolean(result.enabled);
-  const last=result.last?.status?` · Último boletín: ${result.last.status}`:'';
+  const last=result.last?.status?` · Último boletín VIP: ${result.last.status} · Adelanto oficial: ${result.last.public_status||'pendiente'}`:'';
   const first=result.next_eligible_at?` · Primer modelo apto: ${new Date(result.next_eligible_at).toLocaleString('es-PE',{timeZone:'America/Lima'})} (Perú)`:' · No hay un primer modelo apto';
   label.textContent=`${result.eligible_total} partidos modelados desde ${result.from_hours} horas hasta ${result.lookahead_days} días · ${result.counts.without_history} sin historial${first}${last}. No son VIP oficiales.`;
   for(const match of result.items||[]){
@@ -1200,17 +1200,21 @@ $('footballVipRadarRefresh')?.addEventListener('click',async()=>{
 });
 $('footballVipRadarSend')?.addEventListener('click',async()=>{
  const btn=$('footballVipRadarSend'),label=$('footballVipRadarStatus');
- if(!confirm('¿Enviar un boletín informativo al canal VIP? No es una selección VIP validada y solo puede enviarse una vez al día.'))return;
+ if(!confirm('¿Enviar el boletín informativo al canal VIP y un pequeño adelanto al canal oficial? No son pronósticos VIP aprobados. Máximo un envío diario.'))return;
  btn.disabled=true;label.textContent='Revisando destino y preparando el boletín privado…';
  try{const result=await api('/api/admin/football/vip-radar/send',{method:'POST',body:'{}'});
-  label.textContent=result.sent?`Boletín informativo enviado al canal VIP con ${result.items} partidos. No se ha publicado ninguna fija oficial.`:result.reason||'No se envió el boletín.';
+  const publicResult=result.public_announcement;
+  const publicNotice=publicResult?.state==='sent'?' Adelanto enviado también al canal oficial.':
+    publicResult?.state==='skipped'?` El canal oficial no recibió adelanto: ${publicResult.reason||'destino no disponible'}`:
+    publicResult?.state==='failed'?` El adelanto oficial falló: ${publicResult.reason||'revisa permisos'}`:'';
+  label.textContent=result.sent?`Boletín informativo enviado al canal VIP con ${result.items} partidos.${publicNotice} No se ha publicado ninguna fija VIP oficial.`:result.reason||'No se envió el boletín.';
  }catch(error){label.textContent=error.message;}finally{btn.disabled=false;}
 });
 $('footballVipRadarAuto')?.addEventListener('change',async()=>{
  const input=$('footballVipRadarAuto'),label=$('footballVipRadarStatus'),want=input.checked;
  input.disabled=true;
  try{const state=await api('/api/admin/football/vip-radar/settings',{method:'POST',body:JSON.stringify({enabled:want})});
-  label.textContent=state.enabled?'Boletín automático activado: máximo uno al día a partir de las 09:00 (Perú), si existen partidos con historial y horario.':'Boletín automático desactivado.';
+  label.textContent=state.enabled?'Boletín automático activado: máximo uno al día desde las 09:00 (Perú), con adelanto en el canal oficial si está configurado.':'Boletín automático desactivado.';
  }catch(error){input.checked=!want;label.textContent='No se pudo guardar: '+error.message;}finally{input.disabled=false;}
 });
 
