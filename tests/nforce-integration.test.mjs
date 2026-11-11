@@ -99,7 +99,7 @@ test('N-FORCE local: datos CC0 simulados → MySQL → pronóstico GRATIS → Te
   assert.equal(imported.sources,1);assert.equal(imported.records,matches.length+1);assert.equal(imported.competitions_configured,31);assert.equal(imported.competitions_imported,1);assert.equal(imported.datasets_missing,59);
   assert.equal(table.length,matches.length+1);
   const scanned=await controller.scan({manual:true});
-  assert.equal(scanned.ok,true);assert.equal(scanned.lookahead_days,14);assert.equal(scanned.fixtures_in_window,1);assert.equal(scanned.drafts_created,1);
+  assert.equal(scanned.ok,true);assert.equal(scanned.lookahead_days,21);assert.equal(scanned.fixtures_in_window,1);assert.equal(scanned.drafts_created,1);
   assert.equal(candidates[0].provider,'nforce-openfootball');
   assert.ok(JSON.parse(candidates[0].evidence_json).model.model===MODEL_VERSION);
   assert.equal(candidates[0].visibility,'gold','La simulación no debe producir una VIP sin ventaja estadística');
