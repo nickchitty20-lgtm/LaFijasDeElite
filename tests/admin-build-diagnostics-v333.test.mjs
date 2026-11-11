@@ -4,10 +4,10 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 const source=name=>readFileSync(new URL('../'+name,import.meta.url),'utf8');
 test('panel and server identify the matching build and prevent cached UI ambiguity',()=>{
- assert.match(source('src/server.js'),/const APP_VERSION = '3\.5\.1'/);
+ assert.match(source('src/server.js'),/const APP_VERSION = '3\.5\.2'/);
  assert.match(source('views/panel.html'),/id="adminBuildVersion"/);
- assert.match(source('views/panel.html'),/app\.js\?v=3\.5\.1/);
- assert.match(source('public/app.js'),/const ADMIN_PANEL_BUILD='3\.5\.1'/);
+ assert.match(source('views/panel.html'),/app\.js\?v=3\.5\.2/);
+ assert.match(source('public/app.js'),/const ADMIN_PANEL_BUILD='3\.5\.2'/);
  assert.match(source('public/app.js'),/Versión distinta:/);
  assert.match(source('src/server.js'),/X-Fijas-Build/);
 });

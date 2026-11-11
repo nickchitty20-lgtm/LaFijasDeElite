@@ -101,7 +101,7 @@ test('N-FORCE local: datos CC0 simulados → MySQL → pronóstico GRATIS → Te
   assert.equal(scanned.ok,true);assert.equal(scanned.lookahead_days,14);assert.equal(scanned.fixtures_in_window,1);assert.equal(scanned.drafts_created,1);
   assert.equal(candidates[0].provider,'nforce-openfootball');
   assert.ok(JSON.parse(candidates[0].evidence_json).model.model===MODEL_VERSION);
-  assert.equal(candidates[0].visibility,'free','La simulación no debe producir una VIP sin ventaja estadística');
+  assert.equal(candidates[0].visibility,'gold','La simulación no debe producir una VIP sin ventaja estadística');
   // Discard made under an old model may reappear, but only after a new eligible scan.
   candidates[0].status='discarded';
   candidates[0].evidence_json=JSON.stringify({...JSON.parse(candidates[0].evidence_json),
@@ -133,7 +133,7 @@ test('N-FORCE local: datos CC0 simulados → MySQL → pronóstico GRATIS → Te
   assert.equal(approved.published,true);
   assert.equal(approved.telegram,'sent');
   assert.equal(published.length,1);assert.equal(telegram.length,1);
-  assert.equal(telegram[0].visibility,'free');
+  assert.equal(telegram[0].visibility,'gold');
   assert.equal(telegram[0].odds,null);
   const again=await controller.publish(candidates[0].id,{id:22});
   assert.equal(again.published,false);

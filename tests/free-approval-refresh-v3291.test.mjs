@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {installNforceEngine} from '../src/nforce-engine.js';
 import {estimateMatch,makeCandidate,MODEL_VERSION} from '../src/nforce-model.js';
 
-test('GRATIS antigua: se bloquea, se reanaliza y luego se puede aprobar sin filtro VIP',async()=>{
+test('GRATIS antigua: se bloquea, se reanaliza como GOLD y luego se aprueba sin filtro VIP',async()=>{
  const now=new Date('2026-11-10T12:00:00Z');
  const teams=Array.from({length:12},(_,i)=>'Club '+String.fromCharCode(65+i));
  const table=[];let state=1;
@@ -47,12 +47,12 @@ test('GRATIS antigua: se bloquea, se reanaliza y luego se puede aprobar sin filt
  await assert.rejects(()=>engine.publish(1,{id:5}),/versión anterior/);
  const updated=await engine.refreshCandidate(1,{id:5});
  assert.equal(updated.refreshed,true);
- assert.equal(updated.visibility,'free');
+ assert.equal(updated.visibility,'gold');
  assert.equal(JSON.parse(row.evidence_json).model.model,MODEL_VERSION);
  assert.equal(predictions.length,0,'Reanalizar no publica ni envía');
  const approved=await engine.publish(1,{id:5});
  assert.equal(approved.published,true);
  assert.equal(approved.telegram,'sent');
  assert.equal(predictions.length,1);
- assert.equal(telegram[0].visibility,'free');
+ assert.equal(telegram[0].visibility,'gold');
 });

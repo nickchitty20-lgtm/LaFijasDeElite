@@ -40,7 +40,7 @@ test('DEMO muestra dos muestras coherentes y siempre rotuladas como SIMULADAS',(
 });
 
 test('web pública muestra comparación lado a lado sin cifras DEMO',()=>{
- assert.match(html,/Pronósticos VIP <em>vs\.<\/em> Gratis/);
+ assert.match(html,/Pronósticos <em>por categoría<\/em>/);
  assert.match(html,/id="performanceComparisonHint"/);
  assert.match(html,/id="performanceBreakdown"/);
  assert.match(style,/\.performance-split\.is-vip/);
