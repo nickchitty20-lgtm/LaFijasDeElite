@@ -5,9 +5,9 @@ import {NFORCE_SCAN_LOOKAHEAD_DAYS} from '../src/nforce-engine.js';
 
 const source=path=>readFileSync(new URL(`../${path}`,import.meta.url),'utf8');
 
-test('v3.4.1 defaults to 21-day horizon while allowing explicit configurable override',()=>{
- assert.equal(NFORCE_SCAN_LOOKAHEAD_DAYS,21);
- assert.match(source('.env.example'),/^NFORCE_SCAN_DAYS=21$/m);
+test('v3.4.1 defaults to 30-day horizon while allowing explicit configurable override',()=>{
+ assert.equal(NFORCE_SCAN_LOOKAHEAD_DAYS,30);
+ assert.match(source('.env.example'),/^NFORCE_SCAN_DAYS=30$/m);
 });
 
 test('the status API exposes persisted league coverage, distinct from 20 configured',()=>{

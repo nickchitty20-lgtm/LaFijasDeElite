@@ -4,9 +4,9 @@ import {NFORCE_SCAN_LOOKAHEAD_DAYS,NFORCE_SCAN_FIXTURE_LIMIT} from '../src/nforc
 import {readFileSync} from 'node:fs';
 
 // Scan ahead for the next fixtures during calendar breaks, without lowering VIP evidence requirements.
-test('N-FORCE default window is 21 days without widening VIP thresholds',()=>{
- assert.equal(NFORCE_SCAN_LOOKAHEAD_DAYS,21);
- assert.equal(NFORCE_SCAN_FIXTURE_LIMIT,240);
+test('N-FORCE default window is 30 days without widening VIP thresholds',()=>{
+ assert.equal(NFORCE_SCAN_LOOKAHEAD_DAYS,30);
+ assert.equal(NFORCE_SCAN_FIXTURE_LIMIT,400);
  const engine=readFileSync(new URL('../src/nforce-engine.js',import.meta.url),'utf8');
  assert.match(engine,/days\*DAY/);
  assert.match(engine,/Date\.parse\(x\.kickoff\)>time\+60\*60000/);

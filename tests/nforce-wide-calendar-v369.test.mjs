@@ -22,13 +22,13 @@ test('mapea solo competiciones con historial y partidos NS futuros con hora, sin
   assert.equal(normalizeWideFixture(candidate,{now}),null);
 });
 
-test('aprovecha un rango de 21 días para el plan extendido en UNA sola solicitud',async()=>{
+test('aprovecha un rango de 30 días para el plan extendido en UNA sola solicitud',async()=>{
  const calls=[];
  const request=async(endpoint,params,env)=>{calls.push({endpoint,params,env});return [raw()];};
  const env={FOOTBALL_API_KEY:'private-secret',FOOTBALL_SCHEDULE_PLAN:'extended'};
  const report=await fetchWideCalendar({request,now,env});
  assert.equal(calls.length,1);assert.equal(calls[0].endpoint,'fixtures');
- assert.deepEqual(calls[0].params,{from:'2026-11-11',to:'2026-12-02'});
+ assert.deepEqual(calls[0].params,{from:'2026-11-11',to:'2026-12-11'});
  assert.equal(report.discarded,0);assert.equal(report.events.length,1);assert.equal(report.limited,false);
 });
 
