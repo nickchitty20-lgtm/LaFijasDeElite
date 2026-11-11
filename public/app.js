@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 let currentAdminRole='';
-const ADMIN_PANEL_BUILD='3.7.6';
+const ADMIN_PANEL_BUILD='3.7.7';
 // Diagnose a partial/old Railway deployment instead of silently rendering stale UI.
 async function checkAdminBuild(){
  const label=$('adminBuildVersion'),status=$('adminBuildStatus');
@@ -1244,6 +1244,32 @@ $('footballVipRadarSend')?.addEventListener('click',async()=>{
     publicResult?.state==='failed'?` El adelanto oficial falló: ${publicResult.reason||'revisa permisos'}`:'';
   label.textContent=result.sent?`Boletín informativo entregado a VIP con ${result.items} partidos.${publicNotice}${result.warning?' '+result.warning:''} No se ha publicado ninguna fija VIP oficial.`:result.already_sent?`Ya enviado hoy: ${result.reason} Adelanto oficial: ${result.public_status||'pendiente'}.`:result.reason||result.message||'No se envió el boletín.';
  }catch(error){label.textContent=error.message;}finally{btn.disabled=false;}
+});
+// Owner-only recovery for an earlier "sent" status that targeted the wrong
+// Telegram chat. This is never automatically retried or invoked by the scheduler.
+$('footballVipRadarResendConfirmed')?.addEventListener('click',async()=>{
+ const button=$('footballVipRadarResendConfirmed'),label=$('footballVipRadarStatus');
+ if(!confirm('¿Ya corregiste el canal VIP y comprobaste que el bot tiene permisos? Se enviará un mensaje REAL, no una prueba.'))return;
+ if(!confirm('CONFIRMACIÓN DE REENVÍO EXCEPCIONAL: ¿verificaste que el boletín de HOY NO está en el canal VIP correcto? Si sí llegó, reenviarlo podría duplicarlo.'))return;
+ button.disabled=true;label.textContent='Comprobando el canal VIP y recuperando el boletín de hoy…';
+ try{
+  const r=await api('/api/admin/football/vip-radar/recover-delivery',{method:'POST',body:JSON.stringify({destination:'vip',confirm_not_received:true})});
+  const p=r.public_announcement;
+  label.textContent=r.sent?`✓ Boletín VIP reenviado correctamente (mensaje #${r.message_id||'—'}). ${p?.state==='sent'?'Adelanto oficial enviado.':p?.state==='skipped'||p?.state==='failed'?`Adelanto oficial: ${p.reason||p.state}.`:'Consulta el estado del adelanto oficial.'} ${r.warning||''}`:
+   `⚠ ${r.reason||'No pudo completarse el reenvío.'}`;
+ }catch(error){label.textContent='⚠ Reenvío VIP: '+error.message;}
+ finally{button.disabled=false;}
+});
+$('footballVipRadarRecoverOfficial')?.addEventListener('click',async()=>{
+ const button=$('footballVipRadarRecoverOfficial'),label=$('footballVipRadarStatus');
+ if(!confirm('¿Confirmas que el adelanto de HOY NO está publicado en el canal oficial? El anuncio se publicará ahora si Telegram lo permite.'))return;
+ button.disabled=true;label.textContent='Recuperando únicamente el anuncio del canal oficial…';
+ try{
+  const r=await api('/api/admin/football/vip-radar/recover-delivery',{method:'POST',body:JSON.stringify({destination:'official',confirm_not_received:true})});
+  label.textContent=r.sent?'✓ Adelanto enviado al canal oficial. No se ha reenviado el boletín privado.':
+   `⚠ ${r.reason||r.public_announcement?.reason||'No se pudo enviar el adelanto.'}`;
+ }catch(error){label.textContent='⚠ Adelanto oficial: '+error.message;}
+ finally{button.disabled=false;}
 });
 $('footballVipRadarAuto')?.addEventListener('change',async()=>{
  const input=$('footballVipRadarAuto'),label=$('footballVipRadarStatus'),want=input.checked;

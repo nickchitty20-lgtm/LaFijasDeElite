@@ -1,3 +1,13 @@
+# Fijas de Élite v3.7.7 — Recuperación manual de envíos a Telegram mal configurados
+
+- **Reenvío VIP excepcional desde N-FORCE:** un boletín marcado `sent` puede reenviarse al canal VIP correcto *solo* a petición explícita del propietario, tras comprobar que no aparece allí. El mensaje previo sigue registrado, sin borrar su ID ni cambiar el estado de entrega original. La configuración VIP se vuelve a verificar contra Telegram antes de intentarlo.
+- **Adelanto oficial independiente:** un anuncio con estado `pending`, `skipped` o `failed` puede recuperarse sin reenviar el boletín VIP. `sent` y `reserved` quedan bloqueados contra duplicados. Un anuncio oficial confirmado no vuelve a publicarse.
+- **Persistencia y seguridad:** columnas MySQL aditivas para intentos de reenvío y sus estados, con límite de tres intentos excepcionales confirmados por el propietario, auditoría y reserva atómica protegida por bloqueo distribuido de MySQL. Fallos de red ambiguos no provocan reintentos automáticos. No hace falta borrar ninguna tabla ni añadir claves.
+- **Panel:** botones de recuperación separados bajo Radar VIP, con dos confirmaciones para el VIP. Los envíos diarios normales continúan limitados a uno por fecha, salvo autorización excepcional. El envío automático nunca ejecuta estas recuperaciones.
+- **Límite:** en boletines de versiones antiguas no se guardó el texto exacto: el reenvío reconstruye el boletín utilizando el historial y calendario que estén disponibles en ese momento. La aceptación de la API de Telegram acredita la entrega al chat configurado en ese intento, no la lectura por los miembros.
+
+---
+
 # Fijas de Élite v3.7.6 — Diagnóstico real de Telegram y separación de canales
 
 - El envío del boletín VIP **no espera ni exige** que el canal oficial esté disponible. Verifica exclusivamente el canal VIP y sus permisos de publicación; impide el envío si coincide con el oficial por ID o @usuario.

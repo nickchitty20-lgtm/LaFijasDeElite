@@ -174,7 +174,16 @@ export async function initializeDatabase() {
       public_message_id:'BIGINT NULL',
       public_chat_id:'VARCHAR(40) NULL',
       private_failure_kind:"ENUM('rejected','unknown') NULL",
-      recovery_attempts:'TINYINT UNSIGNED NOT NULL DEFAULT 0'
+      recovery_attempts:'TINYINT UNSIGNED NOT NULL DEFAULT 0',
+      // v3.7.7: independent, owner-confirmed repairs for wrong Telegram destinations.
+      // Preserve the original successful send receipt and avoid overwriting its ID.
+      private_chat_id:'VARCHAR(40) NULL',
+      manual_resend_status:"ENUM('none','reserved','sent','rejected','unknown') NOT NULL DEFAULT 'none'",
+      manual_resend_attempts:'TINYINT UNSIGNED NOT NULL DEFAULT 0',
+      manual_resend_at:'DATETIME NULL',
+      manual_resend_message_id:'BIGINT NULL',
+      manual_resend_chat_id:'VARCHAR(40) NULL',
+      public_recovery_attempts:'TINYINT UNSIGNED NOT NULL DEFAULT 0'
     };
     for(const [name,definition] of Object.entries(radarAdditions)){
       if(!radarExisting.has(name))await connection.query(`ALTER TABLE nforce_vip_radar_dispatches ADD COLUMN ${name} ${definition}`);

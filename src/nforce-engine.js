@@ -319,12 +319,12 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
   return Boolean(Number(row?.enabled));
  }
  async function vipRadarLast(){
-  const [[row]]=await db.query('SELECT dispatch_day,status,sent_at,telegram_message_id,public_status,public_sent_at,public_message_id,private_failure_kind,recovery_attempts FROM nforce_vip_radar_dispatches ORDER BY dispatch_day DESC LIMIT 1');
+  const [[row]]=await db.query('SELECT dispatch_day,status,sent_at,telegram_message_id,private_chat_id,public_status,public_sent_at,public_message_id,private_failure_kind,recovery_attempts,manual_resend_status,manual_resend_attempts,manual_resend_message_id,manual_resend_at,manual_resend_chat_id,public_recovery_attempts FROM nforce_vip_radar_dispatches ORDER BY dispatch_day DESC LIMIT 1');
   return row||null;
  }
  // At most one public notice per successfully delivered private bulletin.
  // Never fall back to the community group or the private VIP chat.
- async function announceVipRadarOnOfficial(report,day,vipChat,conn){
+ async function announceVipRadarOnOfficial(report,day,vipChat,conn,{manualRecovery=false}={}){
   const setStatus=async(state)=>conn.execute('UPDATE nforce_vip_radar_dispatches SET public_status=? WHERE dispatch_day=?',[state,day]);
   if(!freeTelegramDestination(process.env)){await setStatus('skipped');return {state:'skipped',reason:'Canal oficial sin configurar.'};}
   let verified;
@@ -337,7 +337,10 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
   const teaser=vipRadarOfficialTeaser(report,{baseUrl:process.env.PUBLIC_BASE_URL});
   if(!teaser){await setStatus('skipped');return {state:'skipped',reason:'El boletín no contiene partidos para anunciar.'};}
   const [reserved]=await conn.execute(
-   "UPDATE nforce_vip_radar_dispatches SET public_status='reserved',public_chat_id=? WHERE dispatch_day=? AND status='sent' AND public_status='pending'",
+   `UPDATE nforce_vip_radar_dispatches SET public_status='reserved',public_chat_id=?${manualRecovery?',public_recovery_attempts=public_recovery_attempts+1':''}
+    WHERE dispatch_day=? AND status='sent' AND public_message_id IS NULL AND public_sent_at IS NULL
+    AND public_status ${manualRecovery?"IN ('pending','skipped','failed')":"= 'pending'"}
+    AND public_recovery_attempts<3`,
    [String(verified.chat_id),day]);
   if(Number(reserved.affectedRows)!==1)return {state:'skipped',reason:'El anuncio ya fue procesado.'};
   try{
@@ -393,7 +396,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
    }
    // Telegram returned success. Never mark as failed or re-send if logging fails.
    try{
-    await conn.execute("UPDATE nforce_vip_radar_dispatches SET status='sent',sent_at=UTC_TIMESTAMP(),telegram_message_id=?,private_failure_kind=NULL WHERE dispatch_day=?",[sent?.message_id||null,day]);
+    await conn.execute("UPDATE nforce_vip_radar_dispatches SET status='sent',sent_at=UTC_TIMESTAMP(),telegram_message_id=?,private_failure_kind=NULL,private_chat_id=? WHERE dispatch_day=?",[sent?.message_id||null,target,day]);
    }catch(error){
     console.error('Boletín entregado, registro MySQL pendiente:',safeError(error));
     return {sent:true,day,items:Math.min(report.items.length,5),telegram_message_id:sent?.message_id||null,public_announcement:{state:'skipped',reason:'Entrega VIP confirmada. El registro MySQL falló; se omitió el adelanto para no duplicar publicaciones.'},warning:'Se envió a VIP, pero no se pudo guardar el registro en MySQL. No reintentes sin revisar el canal.'};
@@ -402,6 +405,74 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
    try{publicAnnouncement=await announceVipRadarOnOfficial(report,day,target,conn);}
    catch(error){console.error('Anuncio Radar VIP:',safeError(error));publicAnnouncement={state:'failed',reason:'No se pudo registrar el adelanto oficial; el boletín VIP sí se envió.'};}
    return {sent:true,day,items:Math.min(report.items.length,5),telegram_message_id:sent?.message_id||null,official_picks:false,public_announcement:publicAnnouncement};
+  });}finally{radarSending=false;}
+ }
+ // A successful Telegram API response only confirms acceptance into the chat ID
+ // configured at the time. If that ID was wrong, the owner can explicitly
+ // authorize a ONE-OFF repair without falsifying or deleting the old receipt.
+ // Regular daily dispatches, including the scheduler, never use this path.
+ async function recoverVipRadar({kind,confirmed=false,adminId=null}={}){
+  if(!['vip','official'].includes(kind))return {sent:false,reason:'Destino de recuperación inválido.'};
+  if(!confirmed)return {sent:false,needs_confirmation:true,reason:'Comprueba que el mensaje no llegó al canal correcto y confirma expresamente el reenvío.'};
+  if(radarSending)return {sent:false,reason:'Otro envío del radar está en curso.'};
+  radarSending=true;
+  try{return await withLock('fijas_nforce_vip_radar',async conn=>{
+   const day=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Lima',year:'numeric',month:'2-digit',day:'2-digit'}).format(now());
+   const [[previous]]=await conn.execute(`SELECT status,telegram_message_id,private_chat_id,public_status,public_message_id,public_sent_at,
+    manual_resend_status,manual_resend_attempts,manual_resend_message_id,public_recovery_attempts
+    FROM nforce_vip_radar_dispatches WHERE dispatch_day=? LIMIT 1`,[day]);
+   if(!previous||previous.status!=='sent')return {sent:false,day,reason:'No existe un boletín de hoy registrado como enviado. Utiliza el envío normal o su recuperación.'};
+   const report=await vipRadarPreview();
+   if(!report.items.length)return {sent:false,day,reason:'Hoy no hay partidos analizables para regenerar el boletín. No se ha reenviado ningún mensaje.'};
+   if(kind==='vip'){
+    if(previous.manual_resend_status==='sent'||previous.manual_resend_message_id)return {sent:false,day,already_sent:true,reason:'El reenvío excepcional VIP ya fue confirmado. No se repite.'};
+    if(previous.manual_resend_status==='reserved')return {sent:false,day,reason:'El reenvío VIP quedó reservado con resultado incierto. Comprueba el canal y los registros de Railway antes de repetirlo.'};
+    if(Number(previous.manual_resend_attempts||0)>=3)return {sent:false,day,reason:'Se agotaron las tres recuperaciones excepcionales de hoy.'};
+    if(!process.env.TELEGRAM_BOT_TOKEN||!process.env.TELEGRAM_VIP_CHAT_ID)return {sent:false,day,reason:'Revisa TELEGRAM_BOT_TOKEN y TELEGRAM_VIP_CHAT_ID antes de recuperar el envío.'};
+    const verified=await inspectVipChannel(process.env,{checkPermissions:true});
+    if(!verified?.ready)return {sent:false,day,reason:verified?.reason||'El destino VIP no está listo.'};
+    const target=String(verified.chat_id);
+    const [reserved]=await conn.execute(`UPDATE nforce_vip_radar_dispatches SET manual_resend_status='reserved',
+     manual_resend_attempts=manual_resend_attempts+1,manual_resend_chat_id=?
+     WHERE dispatch_day=? AND status='sent' AND manual_resend_status IN ('none','rejected','unknown')
+     AND manual_resend_message_id IS NULL AND manual_resend_attempts<3`,[target,day]);
+    if(Number(reserved.affectedRows)!==1)return {sent:false,day,reason:'No se pudo reservar el reenvío excepcional; comprueba el estado actual.'};
+    let receipt;
+    try{receipt=await sendRadarTelegram(target,vipRadarTelegramMessage(report,{asOf:now()}),process.env);}
+    catch(error){
+     const state=error?.telegramRejected===true?'rejected':'unknown';
+     await conn.execute('UPDATE nforce_vip_radar_dispatches SET manual_resend_status=? WHERE dispatch_day=? AND manual_resend_status=\'reserved\'',[state,day]).catch(()=>{});
+     return {sent:false,day,retryable:state==='rejected',needs_confirmation:state==='unknown',reason:'Telegram no confirmó el reenvío VIP: '+safeError(error)};
+    }
+    try{await conn.execute(`UPDATE nforce_vip_radar_dispatches SET manual_resend_status='sent',
+     manual_resend_at=UTC_TIMESTAMP(),manual_resend_message_id=? WHERE dispatch_day=? AND manual_resend_status='reserved'`,[receipt?.message_id||null,day]);}
+    catch(error){console.error('Reenvío VIP recibido por Telegram, confirmación MySQL pendiente:',safeError(error));
+     return {sent:true,resent:true,day,message_id:receipt?.message_id||null,warning:'Telegram aceptó el reenvío, pero MySQL no confirmó el registro. NO repitas sin comprobar el canal.'};}
+    await conn.execute("INSERT INTO audit_logs(actor_admin_id,action,entity_type,entity_id,details) VALUES (?,'nforce_vip_radar_manual_resend','nforce_vip_radar_dispatches',?,?)",
+     [adminId,String(day),JSON.stringify({destination:'vip',chat_id:target,telegram_message_id:receipt?.message_id||null})]).catch(error=>console.error('Auditoría Radar VIP:',safeError(error)));
+    // If the original official teaser is still pending, send it once. Other
+    // states remain independent and can be repaired with the official action.
+    let publicAnnouncement={state:previous.public_status||'pending',reason:'Consulta el estado del anuncio oficial.'};
+    if(!previous.public_status||previous.public_status==='pending'){
+     try{publicAnnouncement=await announceVipRadarOnOfficial(report,day,target,conn);}
+     catch(error){publicAnnouncement={state:'failed',reason:'No se pudo recuperar el anuncio oficial.'};console.error('Adelanto después del reenvío:',safeError(error));}
+    }
+    return {sent:true,resent:true,day,items:Math.min(report.items.length,5),chat_id:target,message_id:receipt?.message_id||null,
+     public_announcement:publicAnnouncement,warning:'Reenvío excepcional registrado. El mensaje original permanece en el historial.'};
+   }
+   // Manual ONLY: failed/skipped/pending official notices can be recovered
+   // after verifying that no public announcement appeared. Reserved and sent
+   // cannot be retried because Telegram could already have delivered them.
+   if(previous.public_status==='sent'||previous.public_message_id||previous.public_sent_at)
+    return {sent:false,day,already_sent:true,reason:'El adelanto oficial figura como enviado; no se duplica.'};
+   if(previous.public_status==='reserved')return {sent:false,day,reason:'El adelanto quedó reservado con entrega incierta. Comprueba primero el canal oficial.'};
+   if(Number(previous.public_recovery_attempts||0)>=3)return {sent:false,day,reason:'Se agotaron las tres recuperaciones oficiales de hoy.'};
+   let result;
+   try{result=await announceVipRadarOnOfficial(report,day,String(process.env.TELEGRAM_VIP_CHAT_ID||''),conn,{manualRecovery:true});}
+   catch(error){return {sent:false,day,reason:'No se pudo intentar el adelanto: '+safeError(error)};}
+   if(result.state==='sent')await conn.execute("INSERT INTO audit_logs(actor_admin_id,action,entity_type,entity_id,details) VALUES (?,'nforce_vip_radar_official_recovery','nforce_vip_radar_dispatches',?,?)",
+    [adminId,String(day),JSON.stringify({destination:'official',telegram_message_id:result.message_id||null})]).catch(error=>console.error('Auditoría adelanto:',safeError(error)));
+   return {sent:result.state==='sent',recovered:true,day,public_announcement:result,reason:result.reason||''};
   });}finally{radarSending=false;}
  }
  /** Refresh one pending proposal against the current model, without publishing it.
@@ -695,6 +766,15 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
   if(!owner(req))return res.status(403).json({error:'Solo creador'});
   try{res.json(await dispatchVipRadar({manual:true,confirmUnsent:req.body?.confirm_unsent===true}));}
   catch(error){res.status(500).json({error:'No fue posible enviar el radar: '+safeError(error)});}
+ });
+ // Emergency recovery after a wrongly configured destination. Explicit owner
+ // consent is required on EVERY attempt. Never reachable by the scheduler.
+ app.post(api('vip-radar/recover-delivery'),authenticate,async(req,res)=>{
+  if(!owner(req))return res.status(403).json({error:'Solo creador'});
+  if(!['vip','official'].includes(req.body?.destination))return res.status(400).json({error:'Destino inválido'});
+  if(req.body?.confirm_not_received!==true)return res.status(400).json({error:'Confirma que el mensaje NO está en el canal correcto antes de reenviar.'});
+  try{res.set('Cache-Control','no-store').json(await recoverVipRadar({kind:req.body.destination,confirmed:true,adminId:req.admin.id||null}));}
+  catch(error){res.status(500).json({error:'No fue posible recuperar el envío: '+safeError(error)});}
  });
  // Read-only VIP diagnostics. Strictly for the owner; never approves or invents a pick.
  app.get(api('vip-diagnostic'),authenticate,async(req,res)=>{
