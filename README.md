@@ -1,3 +1,11 @@
+# Fijas de Élite v3.5.6 — Recuperación de descartes incompatibles (panel dueño)
+
+Algunas propuestas descartadas tras mensajes de incompatibilidad se guardaban como `manual` o sin motivo verificable y por eso la recuperación automática 3.5.5 no las reabría. Esta versión añade en el panel **Análisis automático → Recuperar propuestas descartadas por incompatibilidad**.
+
+Pulsa **Consultar descartadas** y luego **Reanalizar y pasar a Pendientes** sobre el partido elegido. El servidor valida permisos, fecha futura, ventana de escaneo, estado de partido, ausencia de publicación previa y calidad de predicción del modelo vigente; si pasa las comprobaciones cambia la propuesta a borrador GOLD/VIP y registra la auditoría. **Nunca publica por sí misma**. Si no pasa, muestra el motivo sin alterar el descarte.
+
+El listado se limita a los últimos 150 descartes de N-FORCE. Si las fechas ya pasaron o falta historial suficiente, no es posible recuperarlos sin inventar una selección. Las decisiones manuales antiguas solo se reabren si el dueño selecciona el registro y lo confirma explícitamente. No se requieren nuevas variables de entorno ni migraciones destructivas.
+
 # Fijas de Élite v3.5.4 — Publicidad GOLD en canal oficial
 
 A partir de esta versión, cuando se **publica un pronóstico GOLD nuevo**, el sistema guarda la publicación y realiza dos operaciones independientes:

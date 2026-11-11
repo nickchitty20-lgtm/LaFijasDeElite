@@ -417,6 +417,85 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
       vip_validation:row.visibility==='vip'&&row.status==='draft'?evaluateVipEvidence(row,validation,{asOf:now()}):null};})});
   }catch(e){res.status(500).json({error:safeError(e)});}
  });
+ // Owner-requested recovery of historical discards. Old versions sometimes stamped
+ // an incompatible proposal as `manual`, so a scan could never distinguish it.
+ // Expose those records for explicit REVIEW; never mass-revive manual decisions.
+ app.get(api('discarded'),authenticate,async(req,res)=>{
+  if(!owner(req))return res.status(403).json({error:'Solo creador'});
+  try{
+   const [rows]=await db.execute(`SELECT c.id,c.fixture_id,c.home_team,c.away_team,c.league,c.kickoff,
+    c.visibility,c.evidence_json,c.created_at,c.status,c.prediction_id,c.published_at,
+    COALESCE(s.kickoff,m.kickoff,c.kickoff) AS actual_kickoff,
+    m.home_goals,m.away_goals,m.scheduled_time_known,s.status AS live_status
+    FROM football_candidates c
+    LEFT JOIN nforce_matches m ON m.id=c.fixture_id
+    LEFT JOIN nforce_fixture_schedules s ON s.nforce_match_id=c.fixture_id AND s.checked_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 12 HOUR)
+    WHERE c.provider=? AND c.status='discarded'
+    ORDER BY c.id DESC LIMIT 150`,[NFORCE_PROVIDER]);
+   const currentTime=now().getTime(),horizon=currentTime+NFORCE_SCAN_LOOKAHEAD_DAYS*DAY;
+   const entries=rows.map(r=>{
+    const at=r.actual_kickoff?asUtc(r.actual_kickoff).getTime():0;
+    const reason=discardReason(r.evidence_json)||'sin_etiqueta';
+    const hasModel=Boolean(candidateModelVersion(r.evidence_json));
+    let eligibility='revision_permitida';
+    if(r.prediction_id!=null||r.published_at!=null)eligibility='ya_publicada';
+    else if(!r.scheduled_time_known||!at||!Number.isFinite(at))eligibility='horario_no_confirmado';
+    else if(r.home_goals!=null||r.away_goals!=null||r.live_status&&r.live_status!=='NS'||at<=currentTime+60*60000)eligibility='partido_iniciado_o_cercano';
+    else if(at>=horizon)eligibility='fuera_de_ventana';
+    return {id:r.id,match:`${r.home_team} vs ${r.away_team}`,league:r.league,kickoff:r.actual_kickoff,
+     visibility:r.visibility,discard_reason:reason,stored_model:hasModel?candidateModelVersion(r.evidence_json):'no identificado',eligibility};
+   });
+   res.set('Cache-Control','private, no-store').json({candidates:entries,scan_lookahead_days:NFORCE_SCAN_LOOKAHEAD_DAYS,
+    note:'La recuperación requiere confirmar cada propuesta y recalcularla; no publica, ni altera resultados anteriores.'});
+  }catch(e){res.status(500).json({error:'No fue posible consultar las propuestas descartadas: '+safeError(e)});}
+ });
+ app.post(api('discarded/:id/reconsider'),authenticate,async(req,res)=>{
+  if(!owner(req))return res.status(403).json({error:'Solo creador'});
+  if(!validId(req.params.id))return res.status(400).json({error:'ID inválido'});
+  if(req.body?.confirm!==true)return res.status(400).json({error:'Debes confirmar expresamente la reevaluación de esta propuesta.'});
+  try{
+   const result=await withLock('fijas_nforce_scan',async conn=>{
+    const all=await loadMatches(),historical=all.filter(fulltime);
+    await conn.beginTransaction();
+    try{
+     const [[stored]]=await conn.execute(`SELECT * FROM football_candidates WHERE id=? AND provider=? FOR UPDATE`,[req.params.id,NFORCE_PROVIDER]);
+     if(!stored||stored.status!=='discarded'||stored.prediction_id!=null||stored.published_at!=null){
+      await conn.rollback();return {reopened:false,reason:'La propuesta ya no es un descarte recuperable o está asociada a una publicación.'};
+     }
+     const fixture=all.find(m=>String(m.id)===String(stored.fixture_id));
+     if(!fixture||!fixture.scheduled_time_known||!fixture.kickoff||fixture.home_goals!=null||fixture.away_goals!=null||fixture.live_status&&fixture.live_status!=='NS'){
+      await conn.rollback();return {reopened:false,reason:'Partido sin horario válido, cancelado o con resultado. Importa datos si está pendiente.'};
+     }
+     const at=asUtc(fixture.kickoff).getTime(),t0=now().getTime();
+     if(!Number.isFinite(at)||at<=t0+60*60000||at>=t0+NFORCE_SCAN_LOOKAHEAD_DAYS*DAY){
+      await conn.rollback();return {reopened:false,reason:`Partido fuera de la ventana de análisis de ${NFORCE_SCAN_LOOKAHEAD_DAYS} días o demasiado próximo.`};
+     }
+     const model=estimateMatch(fixture,historical,at);
+     const rebuilt=model?classifyAutomaticCandidate(makeCandidate(fixture,model)):null;
+     if(!rebuilt){await conn.rollback();return {reopened:false,reason:'El modelo vigente no encuentra una selección con calidad suficiente para este partido.'};}
+     // Do not create a second recommendation for an already published match.
+     const [published]=await conn.execute(`SELECT id FROM predictions WHERE title=? AND archived_at IS NULL
+      AND ABS(TIMESTAMPDIFF(MINUTE,match_date,?))<=180 LIMIT 1`,[
+      `${fixture.home} vs ${fixture.away}`.slice(0,200),rebuilt.kickoff]);
+     if(published.length){await conn.rollback();return {reopened:false,reason:'Este partido ya tiene un pronóstico publicado.'};}
+     const [updated]=await conn.execute(`UPDATE football_candidates SET status='draft',visibility=?,home_team=?,away_team=?,league=?,kickoff=?,
+      market=?,selection=?,provider_probability=?,odds=NULL,analysis=?,evidence_json=?
+      WHERE id=? AND provider=? AND status='discarded' AND prediction_id IS NULL AND published_at IS NULL`,[
+      rebuilt.visibility,rebuilt.home_team,rebuilt.away_team,rebuilt.league,rebuilt.kickoff,
+      rebuilt.market,rebuilt.selection,rebuilt.provider_probability,rebuilt.analysis,rebuilt.evidence_json,
+      stored.id,NFORCE_PROVIDER]);
+     if(Number(updated.affectedRows)!==1){await conn.rollback();return {reopened:false,reason:'El estado cambió antes de completar la recuperación.'};}
+     await conn.execute(`INSERT INTO audit_logs(actor_admin_id,action,entity_type,entity_id,details)
+      VALUES (?,'nforce_discard_owner_reanalyzed','football_candidate',?,?)`,[
+      req.admin.id,String(stored.id),JSON.stringify({old_reason:discardReason(stored.evidence_json)||'legacy_unmarked',old_model:candidateModelVersion(stored.evidence_json)||'unknown',new_model:MODEL_VERSION,
+       old_visibility:stored.visibility,new_visibility:rebuilt.visibility,confirmed_by_owner:true})]);
+     await conn.commit();return {reopened:true,id:stored.id,visibility:rebuilt.visibility,market:rebuilt.market,
+      message:'Propuesta recalculada y devuelta a Pendientes para revisión. No se ha publicado.'};
+    }catch(e){await conn.rollback();throw e;}
+   });
+   res.json(result);
+  }catch(e){res.status(500).json({error:'No fue posible reanalizar la propuesta: '+safeError(e)});}
+ });
  app.post(api('import'),authenticate,async(req,res)=>{
   if(!owner(req))return res.status(403).json({error:'Solo creador'});
   if(importing)return res.status(409).json({error:'Importación en curso'});

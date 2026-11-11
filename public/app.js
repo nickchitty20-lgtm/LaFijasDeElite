@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 let currentAdminRole='';
-const ADMIN_PANEL_BUILD='3.5.5';
+const ADMIN_PANEL_BUILD='3.5.6';
 // Diagnose a partial/old Railway deployment instead of silently rendering stale UI.
 async function checkAdminBuild(){
  const label=$('adminBuildVersion'),status=$('adminBuildStatus');
@@ -759,6 +759,39 @@ function footballDiagnosticSummary(d){
  for(const [key,value] of items){const p=document.createElement('p');const bold=document.createElement('b');bold.textContent=key+': ';p.append(bold,document.createTextNode(String(value)));holder.append(p);}
  const note=document.createElement('p');note.className='football-diagnostic-note';note.textContent=d.reason||'Prueba completada sin publicar nada.';holder.append(note);
 }
+// Legacy incompatibility recovery is OWNER-initiated and always rechecks
+// model quality on the server. The UI never changes status by itself.
+async function loadDiscardedForReview(){
+ const target=$('footballDiscardedList'),notice=$('footballDiscardResult');
+ if(!target||!notice)return;
+ target.replaceChildren();notice.textContent='Consultando registros históricos…';
+ try{
+  const data=await api('/api/admin/football/discarded');
+  const list=Array.isArray(data.candidates)?data.candidates:[];
+  if(!list.length){notice.textContent='No hay descartes antiguos en los últimos 150 registros.';return;}
+  notice.textContent=`${list.length} descartada(s) encontradas. Solo el dueño puede solicitar una reevaluación individual.`;
+  const reasonText={version_incompatible:'Versión incompatible identificada',manual:'Marcada como descarte manual',sin_etiqueta:'Motivo antiguo no registrado'};
+  const stateText={revision_permitida:'Puede reanalizarse',ya_publicada:'Ya tiene publicación',horario_no_confirmado:'Sin horario utilizable',partido_iniciado_o_cercano:'Partido iniciado o muy cercano',fuera_de_ventana:'Fuera del rango actual'};
+  for(const c of list){
+   const article=document.createElement('article');article.className='football-discarded-item';
+   const header=document.createElement('strong');header.textContent=`#${c.id} · ${c.match}`;
+   const info=document.createElement('p');info.textContent=`${c.league} · ${c.visibility.toUpperCase()} · ${reasonText[c.discard_reason]||c.discard_reason} · Modelo ${c.stored_model} · ${stateText[c.eligibility]||c.eligibility}`;
+   const btn=document.createElement('button');btn.type='button';btn.className='secondary';btn.textContent='Reanalizar y pasar a Pendientes';
+   btn.disabled=c.eligibility!=='revision_permitida';
+   btn.addEventListener('click',async()=>{
+    if(!confirm(`¿Reevaluar ${c.match} con el modelo vigente? Si supera los filtros, volverá como borrador; NO se publicará.`))return;
+    btn.disabled=true;notice.textContent='Recalculando…';
+    try{
+     const result=await api(`/api/admin/football/discarded/${encodeURIComponent(c.id)}/reconsider`,{method:'POST',body:JSON.stringify({confirm:true})});
+     if(result.reopened){notice.textContent=result.message;await loadFootballEngine();await loadDiscardedForReview();}
+     else {notice.textContent=result.reason||'La propuesta no cumple los requisitos actuales.';btn.disabled=false;}
+    }catch(e){notice.textContent=e.message;btn.disabled=false;}
+   });
+   article.append(header,info,btn);target.append(article);
+  }
+ }catch(error){notice.textContent=error.message;}
+}
+$('footballReviewDiscarded')?.addEventListener('click',loadDiscardedForReview);
 $('footballTestButton')?.addEventListener('click',async()=>{
  const btn=$('footballTestButton');btn.disabled=true;$('footballEngineMsg').textContent='Comprobando datos deportivos; no se publicará nada…';
  try{const report=await api('/api/admin/football/test',{method:'POST',body:'{}'});footballDiagnosticSummary(report);$('footballEngineMsg').textContent=report.cached?'Mostrando la última prueba (sin gastar más consultas).':'Prueba completada. Revisa los resultados debajo.';}

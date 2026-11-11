@@ -49,3 +49,13 @@
 .fe-advanced-report h6{color:#dfc58a;font-size:12px;letter-spacing:.06em;margin:2px 0 8px}
 .fe-advanced-report{overflow-wrap:anywhere;min-width:0}
 @media(max-width:600px){.football-advanced-preview,.fe-advanced-team{padding:11px 12px}.football-candidate-actions button{white-space:normal}}
+
+/* Reanalysis of historical, version-incompatible discards */
+.nforce-discard-recovery{padding:18px;margin:20px 0;border:1px solid rgba(214,179,110,.40);border-radius:14px;background:#111a1e;color:#d0dadb}
+.nforce-discard-recovery summary{font-weight:800;color:#dfc08a;cursor:pointer}
+.nforce-discard-recovery>p{line-height:1.7;font-size:13px}
+.football-discarded-list{display:grid;gap:10px;margin-top:15px;max-height:560px;overflow:auto}
+.football-discarded-item{padding:13px;border:1px solid #344348;border-radius:10px;background:#152025;min-width:0}
+.football-discarded-item strong{font-size:13px;color:#f0e2c7;overflow-wrap:anywhere}
+.football-discarded-item p{font-size:12px;line-height:1.6;color:#aebec0}
+.football-discarded-item button{max-width:100%;white-space:normal}
