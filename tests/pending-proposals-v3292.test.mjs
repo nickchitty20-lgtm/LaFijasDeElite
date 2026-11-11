@@ -34,6 +34,9 @@ for(const [label, installer, provider] of [
    },
    async execute(sql,args){
     executed.push({sql,args});
+    if(sql.includes('SELECT provider,visibility,status,prediction_id,published_at,evidence_json FROM football_candidates')){
+     return [[candidates.find(c=>c.id===Number(args.at(-1))&&c.status==='draft')]];
+    }
     if(sql.includes("UPDATE football_candidates SET status='discarded'")){
      const match=candidates.find(c=>c.id===Number(args.at(-1))&&c.status==='draft');
      if(!match)return [{affectedRows:0}];
@@ -74,5 +77,5 @@ test('panel retira tarjeta al confirmar descarte y mantiene reanalizar de propue
  assert.match(app,/if\(!list\.querySelector\('\.football-candidate'\)\)/);
  assert.match(app,/Reanalizar esta propuesta/);
  const panel=readFileSync(new URL('../views/panel.html',import.meta.url),'utf8');
- assert.match(panel,/app\.js\?v=3\.5\.4/);
+ assert.match(panel,/app\.js\?v=3\.5\.5/);
 });

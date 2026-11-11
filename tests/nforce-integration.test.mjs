@@ -51,15 +51,16 @@ test('N-FORCE local: datos CC0 simulados → MySQL → pronóstico GRATIS → Te
     return [{affectedRows:1}];
    }
    if(sql.includes('UPDATE nforce_scans'))return [{affectedRows:1}];
-   if(sql.includes('SELECT id,status,prediction_id,published_at,evidence_json')&&sql.includes('FROM football_candidates')){
+   if(sql.includes('SELECT id,status,prediction_id,published_at,visibility,provider,evidence_json')&&sql.includes('FROM football_candidates')){
     return [[candidates.find(x=>x.provider===args[0]&&x.fixture_id===args[1])]];
    }
    if(sql.includes("WHERE provider=? AND fixture_id=? AND status='discarded'")&&sql.includes("SET status='draft'")){
-    const [visibility,home_team,away_team,league,kickoff,market,selection,provider_probability,analysis,evidence_json,provider,fixture_id,oldVersion,oldBuild]=args;
+    const [visibility,home_team,away_team,league,kickoff,market,selection,provider_probability,analysis,evidence_json,provider,fixture_id,oldVersion,oldBuild,oldReason,oldVisibility]=args;
     const c=candidates.find(x=>x.provider===provider&&x.fixture_id===fixture_id);
     if(!c||c.status!=='discarded'||c.prediction_id!=null||c.published_at!=null||
         JSON.parse(c.evidence_json)?.model?.model!==oldVersion||
-        (JSON.parse(c.evidence_json)?.discarded_in_build||'')!==oldBuild)return [{affectedRows:0}];
+        (JSON.parse(c.evidence_json)?.discarded_in_build||'')!==oldBuild ||
+        (JSON.parse(c.evidence_json)?.discard_reason||'')!==oldReason ||c.visibility!==oldVisibility)return [{affectedRows:0}];
     Object.assign(c,{status:'draft',visibility,home_team,away_team,league,kickoff,market,selection,provider_probability,analysis,evidence_json,odds:null});
     return [{affectedRows:1}];
    }
@@ -122,9 +123,13 @@ test('N-FORCE local: datos CC0 simulados → MySQL → pronóstico GRATIS → Te
   assert.equal(repeat.existing_by_status.discarded,1);
   assert.equal(candidates[0].status,'discarded');
   assert.equal(reopenAudit,1);
-  // A legacy discard from v3.4.0 did not yet have a build stamp, but can also
-  // come back even though it used statistical model 1.6.
-  candidates[0].evidence_json=JSON.stringify({...JSON.parse(candidates[0].evidence_json),discarded_in_build:undefined});
+  // Legacy OPEN profile is incompatible with GOLD distribution. Its prior
+  // prediction is evaluated anew and never inserted twice.
+  candidates[0].visibility='free';
+  const legacyEvidence=JSON.parse(candidates[0].evidence_json);
+  delete legacyEvidence.distribution;
+  delete legacyEvidence.discarded_in_build;
+  candidates[0].evidence_json=JSON.stringify(legacyEvidence);
   const legacy=await controller.scan({manual:true});
   assert.equal(legacy.reopened_old_discards,1);
   assert.equal(candidates[0].status,'draft');
