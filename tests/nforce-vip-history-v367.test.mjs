@@ -27,7 +27,7 @@ test('historial: tres temporadas por liga, sin URL arbitraria ni temporadas futu
 test('modelo usa partido antiguo real dentro de 900 días, pero exige actividad reciente',()=>{
  assert.equal(MODEL_SETTINGS.lookbackDays,900);
  assert.equal(MODEL_SETTINGS.freshDays,90);
- assert.equal(MODEL_VERSION,'nforce-poisson-1.8');
+ assert.equal(MODEL_VERSION,'nforce-poisson-1.9');
  const teams=['A','B','C','D','E','F'];
  const older=Array.from({length:72},(_,i)=>({competition:'en.1',home:teams[i%6],away:teams[(i+1+i%5)%6],
   kickoff:past(820-i*2),home_goals:1+i%3,away_goals:i%2})).filter(x=>x.home!==x.away);
@@ -46,8 +46,8 @@ test('modelo usa partido antiguo real dentro de 900 días, pero exige actividad 
 });
 
 test('faltantes VIP detallan únicamente umbrales reales sin alterar la política',()=>{
- const model={quality:85,sample:{home:17,away:24,league:130,home_venue:3,away_venue:7,
-  home_effective:10,away_effective:12,age_home_days:9,age_away_days:32},opponent_model:{active:true}};
+ const model={quality:79,sample:{home:14,away:24,league:110,home_venue:3,away_venue:7,
+  home_effective:8,away_effective:12,age_home_days:9,age_away_days:42},opponent_model:{active:true}};
  const gaps=vipSampleGaps(model);
  assert.deepEqual(gaps.map(g=>g.code),['quality','home_matches','league_matches','home_venue','home_effective','away_form_days']);
  assert.deepEqual(gaps.find(x=>x.code==='home_venue'),{code:'home_venue',label:'Partidos del local en casa',current:3,required:VIP_RISK_POLICY.minVenue});

@@ -1,3 +1,4 @@
+import {MODEL_VERSION} from '../src/nforce-model.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -116,7 +117,7 @@ test('owner can recover a previously manual-labelled incompatible pick only afte
  assert.equal(r.result.reopened,true);
  assert.equal(discarded.status,'draft');
  assert.equal(discarded.visibility,'gold');
- assert.match(discarded.evidence_json,/nforce-poisson-1\.8/);
+ assert.match(discarded.evidence_json,new RegExp(MODEL_VERSION.replaceAll('.','\\.')));
  assert.equal(c.transactions().commit,1);
  assert.equal(c.queries.filter(x=>x.sql.includes('nforce_discard_owner_reanalyzed')).length,1);
  assert.equal(c.queries.filter(x=>x.sql.includes('INSERT INTO predictions')).length,0);

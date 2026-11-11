@@ -18,7 +18,7 @@ function internationalHistory(n=210){
  }).filter(m=>m.home!==m.away);
 }
 
-test('v1.8: partidos internacionales con fecha pero sin hora participan en el ajuste de rivales, sin datos futuros',()=>{
+test('v1.9: partidos internacionales con fecha pero sin hora participan en el ajuste de rivales, sin datos futuros',()=>{
  const history=internationalHistory();
  const target={competition:'int.unl',home:'Argentina',away:'France',kickoff:'2026-11-14T17:00:00Z'};
  const report=modelReadiness(target,history);
@@ -35,7 +35,7 @@ test('v1.8: partidos internacionales con fecha pero sin hora participan en el aj
 
 test('VIP internacionales: la ventana de actividad difiere de clubes; muestra, calidad y robustez no cambian',()=>{
  assert.equal(NATIONAL_VIP_RISK_POLICY.maxFormAgeDays,NATIONAL_MODEL_SETTINGS.freshDays);
- assert.equal(VIP_RISK_POLICY.maxFormAgeDays,28);
+ assert.equal(VIP_RISK_POLICY.maxFormAgeDays,35);
  for(const key of ['minTeam','minLeague','minVenue','minEffective','minQuality','maxStressDrop','minStressed','minBaselineEdge'])
   assert.deepEqual(NATIONAL_VIP_RISK_POLICY[key],VIP_RISK_POLICY[key]);
  const model={history_group:'selecciones',quality:92,opponent_model:{active:true},sample:{
