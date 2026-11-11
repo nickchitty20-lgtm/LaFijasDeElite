@@ -21,12 +21,12 @@ function fixtureData(){
  return {matches,later};
 }
 
-test('radar VIP analiza solo partidos futuros a 24h o más, nunca crea una propuesta oficial',()=>{
+test('radar VIP muestra partidos próximos desde dos horas, nunca crea una propuesta oficial',()=>{
  const {matches,later}=fixtureData();
  const result=prepareVipRadar([...matches,later(12,950),later(30,951),later(720,952),later(721,953)],{now:when});
- assert.equal(VIP_RADAR_MIN_LEAD_HOURS,24);assert.equal(VIP_RADAR_MAX_DAYS,30);
- assert.equal(result.eligible_total,2);
- assert.deepEqual(result.items.map(x=>x.fixture_id),['951','952']);
+ assert.equal(VIP_RADAR_MIN_LEAD_HOURS,2);assert.equal(VIP_RADAR_MAX_DAYS,30);
+ assert.equal(result.eligible_total,3);
+ assert.deepEqual(result.items.map(x=>x.fixture_id),['950','951','952']);
  assert.ok(result.items.every(x=>x.state==='analysis_only'&&x.official_vip===false));
  assert.equal(result.items[0].ai,null);
  assert.equal(result.items[0].probabilities.home+result.items[0].probabilities.draw+result.items[0].probabilities.away,100);
