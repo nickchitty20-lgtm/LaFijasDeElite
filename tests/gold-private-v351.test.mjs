@@ -24,9 +24,9 @@ test('Gold private message contains real pick but escapes markup safely',()=>{
  assert.doesNotMatch(msg,/<malicious>/);
 });
 test('Gold is not sent to expired, blocked, unlinked or replaced Telegram accounts',()=>{
- const base={active:true,linked:true,entitled:true,pendingChange:false,archived:null,telegramId:'12345678'};
+ const base={active:true,linked:true,entitled:true,whitelisted:true,pendingChange:false,archived:null,telegramId:'12345678'};
  assert.equal(goldMayReceive(base),true);
- for(const patch of [{active:false},{entitled:false},{linked:false},{pendingChange:1},{archived:'now'},{telegramId:'@channel'}])assert.equal(goldMayReceive({...base,...patch}),false);
+ for(const patch of [{active:false},{entitled:false},{linked:false},{whitelisted:false},{pendingChange:1},{archived:'now'},{telegramId:'@channel'}])assert.equal(goldMayReceive({...base,...patch}),false);
 });
 test('queueGoldPrediction inserts only eligible linked subscribers and is safe to call repeatedly',async()=>{
  const queries=[];
@@ -36,6 +36,7 @@ test('queueGoldPrediction inserts only eligible linked subscribers and is safe t
  assert.match(queries[0][0],/INSERT IGNORE INTO telegram_gold_deliveries/);
  assert.match(queries[0][0],/p\.visibility='gold'/);
  assert.match(queries[0][0],/t\.link_status='active'/);
+ assert.match(queries[0][0],/telegram_gold_whitelist/);
  assert.match(queries[0][0],/p\.tier IN \('gold','vip'\)/);
  assert.deepEqual(queries[0][1],[42]);
 });
@@ -55,7 +56,7 @@ test('project migration and routes protect all Gold picks and keep VIP separate'
  assert.match(backend,/if\(p.visibility==='gold'&&!gold\)return/);
  assert.match(backend,/if\(p.visibility==='vip'&&!vip\)return/);
  assert.match(backend,/goldControl.start\(\)/);
- assert.match(backend,/APP_VERSION = '3\.6\.4'/);
+ assert.match(backend,/APP_VERSION = '3\.6\.6'/);
 });
 
 test('Gold private delivery is made once, uses Telegram DM, and requires current entitlement',async()=>{
@@ -66,7 +67,7 @@ test('Gold private delivery is made once, uses Telegram DM, and requires current
   getConnection:async()=>connection,
   execute:async(sql,args)=>{
    if(sql.includes('SELECT d.id'))return [attempts++===0?[row]:[]];
-   if(sql.includes('SELECT u.account_status'))return [[{account_status:'active',telegram_user_id:98765432,link_status:'active',pending_change:0,entitled:1}]];
+   if(sql.includes('SELECT u.account_status'))return [[{account_status:'active',telegram_user_id:98765432,link_status:'active',pending_change:0,entitled:1,whitelisted:1}]];
    return [{affectedRows:1}];
   }
  };
