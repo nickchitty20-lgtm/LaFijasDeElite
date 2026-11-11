@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 let currentAdminRole='';
-const ADMIN_PANEL_BUILD='3.5.4';
+const ADMIN_PANEL_BUILD='3.5.5';
 // Diagnose a partial/old Railway deployment instead of silently rendering stale UI.
 async function checkAdminBuild(){
  const label=$('adminBuildVersion'),status=$('adminBuildStatus');
@@ -775,7 +775,7 @@ function showFootballScanReport(r){
   line('Partidos realmente estudiados',r.examined);
   line('Modelos calculados',r.modeled??r.qualified??'—');
   line('Propuestas nuevas guardadas',r.drafts_created);
-  if(r.reopened_old_discards!=null)line('Descartadas de versiones anteriores recuperadas',r.reopened_old_discards);
+  if(r.reopened_old_discards!=null)line('Propuestas incompatibles recalculadas y recuperadas',r.reopened_old_discards);
   if(r.already_present!=null)line('Propuestas elegibles ya registradas',r.already_present);
   if(r.existing_by_status)line('Ya registradas (pendientes / descartadas / publicadas)',`${r.existing_by_status.draft||0} / ${r.existing_by_status.discarded||0} / ${r.existing_by_status.published||0}`);
   if(r.fixtures_without_time!=null)line('Partidos futuros sin hora exacta',r.fixtures_without_time);

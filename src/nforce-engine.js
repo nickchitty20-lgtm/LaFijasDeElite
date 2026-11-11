@@ -9,7 +9,7 @@ import {sendPredictionToTelegram} from './telegram-bridge.js';
 import {publishedFootballDetails} from './football-report.js';
 import {createNforceSettlement} from './nforce-settlement.js';
 import {LIVE_VERIFICATION_LEAGUES} from './live-schedule.js';
-import {candidateModelVersion,discardedInBuild,canReopenOldDiscard,CANDIDATE_REVIEW_BUILD} from './nforce-candidate-revival.js';
+import {candidateModelVersion,discardedInBuild,discardReason,reasonForDiscard,canReopenOldDiscard,CANDIDATE_REVIEW_BUILD} from './nforce-candidate-revival.js';
 import {classifyAutomaticCandidate,shouldBlockLegacyFreeDraft,GOLD_ROLLOUT} from './nforce-gold-transition.js';
 
 const DAY=86400000;
@@ -154,14 +154,15 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
       candidate.kickoff,candidate.market,candidate.selection,candidate.provider_probability,null,candidate.analysis,candidate.evidence_json]);
      if(!Number(r.affectedRows||0)){
       // Fixture IDs are unique across all candidate statuses. A previous
-      // discard is eligible to return only when *this scan* selects the fixture
-      // and its last discard predates this review build. Discards made in this
-      // build and anything linked to an actual publication remain untouched.
-      const [[registered]]=await conn.execute(`SELECT id,status,prediction_id,published_at,evidence_json
+      // The selected fixture must be modeled again before a stale, version-
+      // incompatible discard is eligible for reopening. Explicit manual
+      // discards and anything already published are never overwritten.
+      const [[registered]]=await conn.execute(`SELECT id,status,prediction_id,published_at,visibility,provider,evidence_json
        FROM football_candidates WHERE provider=? AND fixture_id=? LIMIT 1`,
        [candidate.provider,candidate.fixture_id]);
       const oldVersion=candidateModelVersion(registered?.evidence_json);
       const oldBuild=discardedInBuild(registered?.evidence_json);
+      const oldReason=discardReason(registered?.evidence_json);
       if(canReopenOldDiscard(registered,MODEL_VERSION,CANDIDATE_REVIEW_BUILD)){
        // Recheck status and old version in SQL: a concurrent owner action or
        // publication must never be overridden by the background scan.
@@ -173,14 +174,16 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
          WHERE provider=? AND fixture_id=? AND status='discarded'
           AND prediction_id IS NULL AND published_at IS NULL
           AND JSON_UNQUOTE(JSON_EXTRACT(evidence_json,'$.model.model'))=?
-          AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(evidence_json,'$.discarded_in_build')),'')=?`,[
+          AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(evidence_json,'$.discarded_in_build')),'')=?
+          AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(evidence_json,'$.discard_reason')),'')=?
+          AND visibility=?`,[
          candidate.visibility,candidate.home_team,candidate.away_team,candidate.league,candidate.kickoff,
          candidate.market,candidate.selection,candidate.provider_probability,candidate.analysis,candidate.evidence_json,
-         candidate.provider,candidate.fixture_id,oldVersion,oldBuild||'']);
+         candidate.provider,candidate.fixture_id,oldVersion,oldBuild||'',oldReason||'',registered.visibility]);
         if(Number(revived.affectedRows||0)===1){
          await conn.execute(`INSERT INTO audit_logs(actor_admin_id,action,entity_type,entity_id,details)
           VALUES (NULL,'nforce_candidate_reopened_new_model','football_candidate',?,?)`,[
-          String(registered.id),JSON.stringify({previous_model:oldVersion,new_model:MODEL_VERSION,previous_build:oldBuild||'legacy_unstamped',new_build:CANDIDATE_REVIEW_BUILD,fixture_id:String(candidate.fixture_id)})]);
+          String(registered.id),JSON.stringify({previous_model:oldVersion,new_model:MODEL_VERSION,previous_build:oldBuild||'legacy_unstamped',previous_reason:oldReason||'legacy_unmarked',new_build:CANDIDATE_REVIEW_BUILD,fixture_id:String(candidate.fixture_id)})]);
          reopenedOldDiscards++;
         }else{
          alreadyPresent++;existingByStatus.discarded++;
@@ -192,7 +195,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
        const storedStatus=String(registered?.status||'other');
        existingByStatus[storedStatus in existingByStatus?storedStatus:'other']++;
        // Refresh drafts using the new model, but never overwrite published
-       // selections, or disregarded picks made with the current model.
+       // selections or deliberate manual discards.
        if(storedStatus==='draft'){
         const [updated]=await conn.execute(`UPDATE football_candidates SET visibility=?,home_team=?,away_team=?,league=?,kickoff=?,
          market=?,selection=?,provider_probability=?,odds=NULL,analysis=?,evidence_json=?
@@ -213,7 +216,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
      fixtures_with_known_time:futureWithTimes.length,fixtures_in_window:future.length,examined:future.length,
      fixtures_truncated:Math.max(0,withinWindow.length-future.length),
      next_fixture_beyond_window:nextBeyondWindow?{match:`${nextBeyondWindow.home} vs ${nextBeyondWindow.away}`,kickoff:nextBeyondWindow.kickoff}:null,
-     modeled:models,drafts_created:drafts,reopened_old_discards:reopenedOldDiscards,already_present:alreadyPresent,existing_by_status:existingByStatus,
+     modeled:models,drafts_created:drafts,reopened_old_discards:reopenedOldDiscards,reopened_incompatible_discards:reopenedOldDiscards,already_present:alreadyPresent,existing_by_status:existingByStatus,
      updated_existing_drafts:updatedDrafts,eligible:drafts+reopenedOldDiscards+alreadyPresent,
      eligible_by_category:categoryCounts,eligible_by_market:marketCounts,vip_rejections_by_market_reason:vipRejections,
      insufficient_history:underMin,insufficient_reasons:missingReasons,below_filters:rejected,rejection_examples:examples,filter_examples:filteredExamples,
@@ -461,10 +464,14 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
  app.post(api('candidates/:id/discard'),authenticate,async(req,res)=>{
   if(!owner(req))return res.status(403).json({error:'Solo creador'});
   if(!validId(req.params.id))return res.status(400).json({error:'ID inválido'});
-  try{const [r]=await db.execute("UPDATE football_candidates SET status='discarded',evidence_json=JSON_SET(evidence_json,'$.discarded_in_build',?) WHERE provider=? AND id=? AND status='draft'",[CANDIDATE_REVIEW_BUILD,NFORCE_PROVIDER,req.params.id]);
-   if(!r.affectedRows)return res.status(409).json({error:'No se puede descartar esta propuesta'});
-   await db.execute("INSERT INTO audit_logs(actor_admin_id,action,entity_type,entity_id) VALUES (?,'football_candidate_discarded','football_candidate',?)",[req.admin.id,req.params.id]);
-   res.json({ok:true});
+  try{
+   const [[candidate]]=await db.execute("SELECT provider,visibility,status,prediction_id,published_at,evidence_json FROM football_candidates WHERE provider=? AND id=? AND status='draft' LIMIT 1",[NFORCE_PROVIDER,req.params.id]);
+   if(!candidate)return res.status(409).json({error:'No se puede descartar esta propuesta'});
+   const reason=reasonForDiscard(candidate,MODEL_VERSION);
+   const [r]=await db.execute("UPDATE football_candidates SET status='discarded',evidence_json=JSON_SET(evidence_json,'$.discarded_in_build',?,'$.discard_reason',?) WHERE provider=? AND id=? AND status='draft'",[CANDIDATE_REVIEW_BUILD,reason,NFORCE_PROVIDER,req.params.id]);
+   if(!r.affectedRows)return res.status(409).json({error:'La propuesta ya cambió de estado'});
+   await db.execute("INSERT INTO audit_logs(actor_admin_id,action,entity_type,entity_id,details) VALUES (?,'football_candidate_discarded','football_candidate',?,?)",[req.admin.id,req.params.id,JSON.stringify({reason,build:CANDIDATE_REVIEW_BUILD})]);
+   res.json({ok:true,reason,may_reappear_on_rescan:reason==='version_incompatible'});
   }catch(e){res.status(500).json({error:safeError(e)});}
  });
  async function tick(){

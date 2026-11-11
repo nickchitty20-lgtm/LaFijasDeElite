@@ -1163,3 +1163,10 @@ GOLD es una membresía pagada, independiente de VIP, con un precio inicial de S/
 - Para borradores antiguos que aún figuren `free`, ejecutar un escaneo o **Actualizar propuesta** antes de aprobar; mientras tanto se bloquea su publicación. Los pronósticos gratuitos ya publicados, con sus resultados, se preservan sin relabeling retroactivo.
 - Precios recomendados VIP: 7 días S/89.90, 30 días S/249.90 y 90 días S/649.90. Un cambio de precios se aplica **una única vez** al arrancar en Railway sobre planes VIP activos con esas duraciones, subiéndolos hasta un mínimo por duración y dejando intactos los precios superiores. Planes de duraciones diferentes y GOLD no se modifican. Pagos históricos o solicitudes pendientes no se recalculan.
 - El historial público sigue distinguiendo `free` (histórico), `gold` y `vip`; nunca se omiten pérdidas. VIP mantiene sus filtros estrictos y puede no generar ninguna fija.
+
+
+## v3.5.5 · Revisión de propuestas incompatibles
+
+En el siguiente escaneo efectivo de N-FORCE se recalcula el partido desde los datos vigentes. Si una propuesta descartada conserva una versión de modelo anterior o un formato legado que requiere migración a GOLD, puede volver al estado de borrador **solo si sigue siendo un encuentro futuro con horario válido y el modelo actual vuelve a proponer una selección apta**. No resucita automáticamente pronósticos publicados ni partidos fuera de la ventana. La recuperación es idempotente (mismo fixture) y se registra en `audit_logs`.
+
+Los descartes manuales nuevos quedan diferenciados con `evidence_json.discard_reason = "manual"`, y las incompatibilidades identificables usan `"version_incompatible"`. Los registros históricos no etiquetados se recuperan únicamente cuando existe evidencia de incompatibilidad del modelo o del formato anterior; si no es posible identificar la causa, permanecen descartados para no anular decisiones del propietario. El motor sigue sujeto al intervalo de escaneo y al límite de partidos configurados.
