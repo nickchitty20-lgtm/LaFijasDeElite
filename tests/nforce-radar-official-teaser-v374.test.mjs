@@ -26,6 +26,7 @@ function fakeEngine({officialReady=true,publicFails=false,hasMatches=true}={}){
    query:async()=>[[{acquired:1}]],
    execute:async(q,args=[])=>{
     statements.push({q,args});
+    if(q.startsWith('SELECT status,sent_at,telegram_message_id,private_failure_kind'))return [[{status:'sent',public_status:'sent',telegram_message_id:17}]];
     if(q.startsWith('INSERT IGNORE INTO nforce_vip_radar_dispatches')){
      if(dispatched.has(args[0]))return [{affectedRows:0}];
      dispatched.add(args[0]);return [{affectedRows:1}];

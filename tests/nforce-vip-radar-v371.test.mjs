@@ -62,6 +62,7 @@ test('solo propietario puede previsualizar y enviar; despacho VIP no se repite e
  const db={
   getConnection:async()=>({query:async(q)=>[[{acquired:1}]],execute:async(q,args=[])=>{
    sql.push(q);
+   if(q.startsWith('SELECT status,sent_at,telegram_message_id,private_failure_kind'))return [[{status:'sent',public_status:'skipped',telegram_message_id:11}]];
    if(q.startsWith('INSERT IGNORE INTO nforce_vip_radar_dispatches')){
     if(days.has(args[0]))return [{affectedRows:0}];days.add(args[0]);return [{affectedRows:1}];
    }
