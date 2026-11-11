@@ -37,7 +37,8 @@ test('en plan gratuito no finge cobertura extendida ni consume consultas para mÃ
  const report=await fetchWideCalendar({now,env:{FOOTBALL_API_KEY:'x',FOOTBALL_SCHEDULE_PLAN:'free'},request:async(_,params)=>{
   calls.push(params);return [raw(901,{fixture:{id:901,date:'2026-11-12T19:00:00Z',status:{short:'NS'}}})];
  }});
- assert.deepEqual(calls,[{date:'2026-11-12'}]);
+ assert.deepEqual(calls,[{date:'2026-11-11'},{date:'2026-11-12'}]);
+ assert.equal(report.requests,2);
  assert.equal(report.plan,'free');assert.equal(report.limited,true);
  assert.equal(report.events.length,1);
 });
