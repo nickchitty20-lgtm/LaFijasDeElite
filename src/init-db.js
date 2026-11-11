@@ -172,7 +172,9 @@ export async function initializeDatabase() {
       public_status:"ENUM('pending','reserved','sent','skipped','failed') NOT NULL DEFAULT 'pending'",
       public_sent_at:'DATETIME NULL',
       public_message_id:'BIGINT NULL',
-      public_chat_id:'VARCHAR(40) NULL'
+      public_chat_id:'VARCHAR(40) NULL',
+      private_failure_kind:"ENUM('rejected','unknown') NULL",
+      recovery_attempts:'TINYINT UNSIGNED NOT NULL DEFAULT 0'
     };
     for(const [name,definition] of Object.entries(radarAdditions)){
       if(!radarExisting.has(name))await connection.query(`ALTER TABLE nforce_vip_radar_dispatches ADD COLUMN ${name} ${definition}`);

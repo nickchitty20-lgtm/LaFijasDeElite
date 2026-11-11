@@ -1,3 +1,14 @@
+# Fijas de Élite v3.7.5 — Recuperación segura del boletín VIP
+
+- El botón de envío explica si el boletín de **hoy ya se entregó**, si Telegram lo rechazó o si la entrega quedó incierta; ya no presenta un simple bloqueo ambiguo.
+- **Reintento controlado:** si Telegram rechaza explícitamente el mensaje (y por tanto no lo aceptó), permite hasta un reintento el mismo día. Para intentos anteriores fallidos con entrega incierta —incluidos los de v3.7.4— el propietario puede confirmar manualmente que el mensaje NO está en el canal VIP y autorizar un único reintento.
+- Si Telegram confirmó la entrega pero MySQL falló al registrar el ID, se muestra como entrega exitosa y NO se marca como fallido ni se reenvía automáticamente.
+- El adelanto oficial solo se intenta después del envío VIP confirmado; sus errores no afectan la entrega privada.
+- Se registra en MySQL el tipo de fallo y el número de recuperaciones, sin eliminar historial, pagos o membresías. No hay nuevas variables.
+- La fecha única diaria se calcula en hora de Perú. Sigue existiendo máximo un boletín confirmado al día y se evita la duplicación por reintentos no confirmados.
+
+---
+
 # Fijas de Élite v3.7.4 — Adelanto del boletín Radar VIP en el canal oficial
 
 - Al enviar manualmente o mediante el programador diario un boletín **Radar VIP**, el sistema publica **un único adelanto breve** en el canal oficial, después de confirmar la entrega privada.

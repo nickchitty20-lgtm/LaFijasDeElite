@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 let currentAdminRole='';
-const ADMIN_PANEL_BUILD='3.7.4';
+const ADMIN_PANEL_BUILD='3.7.5';
 // Diagnose a partial/old Railway deployment instead of silently rendering stale UI.
 async function checkAdminBuild(){
  const label=$('adminBuildVersion'),status=$('adminBuildStatus');
@@ -1203,11 +1203,19 @@ $('footballVipRadarSend')?.addEventListener('click',async()=>{
  if(!confirm('¿Enviar el boletín informativo al canal VIP y un pequeño adelanto al canal oficial? No son pronósticos VIP aprobados. Máximo un envío diario.'))return;
  btn.disabled=true;label.textContent='Revisando destino y preparando el boletín privado…';
  try{const result=await api('/api/admin/football/vip-radar/send',{method:'POST',body:'{}'});
+  if(result.needs_confirmation){
+   // Previous attempt (including legacy deployments) may have reached Telegram.
+   // Only the owner can explicitly authorize one recovery after checking VIP.
+   if(confirm('El envío anterior quedó SIN confirmar. Comprueba primero el canal VIP. ¿Confirmas que el boletín de HOY NO llegó allí y autorizas UN reintento?')){
+    const retry=await api('/api/admin/football/vip-radar/send',{method:'POST',body:JSON.stringify({confirm_unsent:true})});
+    Object.assign(result,retry);
+   }
+  }
   const publicResult=result.public_announcement;
   const publicNotice=publicResult?.state==='sent'?' Adelanto enviado también al canal oficial.':
     publicResult?.state==='skipped'?` El canal oficial no recibió adelanto: ${publicResult.reason||'destino no disponible'}`:
     publicResult?.state==='failed'?` El adelanto oficial falló: ${publicResult.reason||'revisa permisos'}`:'';
-  label.textContent=result.sent?`Boletín informativo enviado al canal VIP con ${result.items} partidos.${publicNotice} No se ha publicado ninguna fija VIP oficial.`:result.reason||'No se envió el boletín.';
+  label.textContent=result.sent?`Boletín informativo entregado a VIP con ${result.items} partidos.${publicNotice}${result.warning?' '+result.warning:''} No se ha publicado ninguna fija VIP oficial.`:result.already_sent?`Ya enviado hoy: ${result.reason} Adelanto oficial: ${result.public_status||'pendiente'}.`:result.reason||result.message||'No se envió el boletín.';
  }catch(error){label.textContent=error.message;}finally{btn.disabled=false;}
 });
 $('footballVipRadarAuto')?.addEventListener('change',async()=>{

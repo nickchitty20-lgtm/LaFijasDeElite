@@ -84,7 +84,14 @@ export async function telegramApi(method,payload={},env=process.env){
   method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(14000)
  });
  const data=await response.json().catch(()=>null);
- if(!response.ok||!data?.ok)throw Error(`Telegram ${method}: ${String(data?.description||'respuesta inválida').slice(0,160)}`);
+ if(!response.ok||!data?.ok){
+  const failure=new Error(`Telegram ${method}: ${String(data?.description||'respuesta inválida').slice(0,160)}`);
+  // A definitive Telegram rejection means sendMessage was not accepted. Network
+  // failures are intentionally NOT tagged: delivery can be ambiguous.
+  failure.telegramRejected=data?.ok===false&&Number.isInteger(data?.error_code);
+  failure.telegramErrorCode=Number(data?.error_code)||response.status;
+  throw failure;
+ }
  return data.result;
 }
 /** Public preview of a VIP pick: only a confirmed match title for automatic
