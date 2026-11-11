@@ -4,13 +4,14 @@
  * provider key. No provider branding is exposed by the public API.
  */
 import {footballApi} from './football-analysis.js';
-import {NFORCE_PROVIDER} from './nforce-data.js';
+import {NFORCE_PROVIDER,stableFixtureId} from './nforce-data.js';
+import {NATIONAL_LIVE_LEAGUES,isNationalCompetition,canonicalNationalTeam,nationalCompetitionByCode} from './nforce-internationals.js';
 
 const MINUTE=60_000;
 const asUtc=v=>v instanceof Date?v:new Date(String(v??'').replace(' ','T')+(String(v??'').match(/(?:Z|[+-]\d\d:\d\d)$/)?'':'Z'));
 const sqlUtc=v=>asUtc(v).toISOString().slice(0,19).replace('T',' ');
 const matchDateUTC=v=>{const d=asUtc(v);return Number.isFinite(d.getTime())?d.toISOString().slice(0,10):null;};
-const providerLeague=Object.freeze({39:'en.1',140:'es.1',78:'de.1',135:'it.1',61:'fr.1'});
+const providerLeague=Object.freeze({39:'en.1',140:'es.1',78:'de.1',135:'it.1',61:'fr.1',...NATIONAL_LIVE_LEAGUES});
 export const LIVE_VERIFICATION_LEAGUES=Object.freeze(Object.values(providerLeague));
 /** Scope of the optional independent source. Outside its league/date coverage,
  * a fresh local calendar is the available evidence; never require a feed that
@@ -55,7 +56,8 @@ export function normalizeScheduleFixture(raw){
  const when=raw?.fixture?.date;
  const start=typeof when==='string'?new Date(when):null;
  const league=providerLeague[Number(raw?.league?.id)];
- const home=cleanTeamName(raw?.teams?.home?.name),away=cleanTeamName(raw?.teams?.away?.name);
+ const home=cleanTeamName(isNationalCompetition(league)?canonicalNationalTeam(raw?.teams?.home?.name):raw?.teams?.home?.name),
+  away=cleanTeamName(isNationalCompetition(league)?canonicalNationalTeam(raw?.teams?.away?.name):raw?.teams?.away?.name);
  const status=String(raw?.fixture?.status?.short||'').toUpperCase();
  if(!Number.isSafeInteger(id)||id<1||!league||!home||!away||home===away||
    !start||!Number.isFinite(start.getTime())||!STATUS.has(status))return null;
@@ -67,7 +69,8 @@ export function linkSchedules(rows,providerRows,{maxDistanceHours=72}={}){
  const fixtures=(providerRows||[]).map(normalizeScheduleFixture).filter(Boolean);
  const result=[];
  for(const local of rows||[]){
-  const lHome=cleanTeamName(local.home_team),lAway=cleanTeamName(local.away_team);
+  const lHome=cleanTeamName(isNationalCompetition(local.competition)?canonicalNationalTeam(local.home_team):local.home_team),
+   lAway=cleanTeamName(isNationalCompetition(local.competition)?canonicalNationalTeam(local.away_team):local.away_team);
   const datePart=local.match_date instanceof Date?local.match_date.toISOString().slice(0,10):String(local.match_date||'').slice(0,10);
   const localDate=matchDateUTC(local.kickoff||`${datePart}T12:00:00Z`);
   const localMs=local.kickoff?asUtc(local.kickoff).getTime():localDate?Date.parse(localDate+'T12:00:00Z'):NaN;
@@ -187,7 +190,7 @@ export function installLiveSchedule(app,{db,authenticate,request=footballApi,now
   if(targetDate&&!scheduleDatesForPlan(now(),plan()).some(row=>row.date===targetDate))return {skipped:true,reason:'Fecha fuera de cobertura del plan'};
   if(running)return {skipped:true,reason:'Otra comprobación en marcha'};
   running=true;
-  let conn=null,locked=false,matched=0,queried=0;
+  let conn=null,locked=false,matched=0,queried=0,discoveredNationals=0;
   try{
    conn=await db.getConnection();
    const [[lock]]=await conn.query("SELECT GET_LOCK('fijas_live_schedule_sync',1) AS acquired");
@@ -235,13 +238,58 @@ export function installLiveSchedule(app,{db,authenticate,request=footballApi,now
      FROM nforce_matches m LEFT JOIN nforce_fixture_schedules s ON s.nforce_match_id=m.id
      WHERE m.match_date>=DATE_SUB(UTC_DATE(),INTERVAL 3 DAY) AND m.match_date<=DATE_ADD(UTC_DATE(),INTERVAL 7 DAY)
      AND m.home_goals IS NULL LIMIT 900`);
-    for(const {local,fixture} of linkSchedules(locals,fixtures)){
+    const linked=linkSchedules(locals,fixtures);
+    const linkedProviderIds=new Set(linked.map(x=>x.fixture.id));
+    // Only explicitly enumerated NATIONAL leagues may add new future fixtures.
+    // This complements date-only historical files and never invents kickoffs,
+    // match results or a national-team classification from a team name.
+    for(const raw of fixtures){
+     const fixture=normalizeScheduleFixture(raw);
+     if(!fixture||!isNationalCompetition(fixture.league)||fixture.status!=='NS'||!fixture.kickoff||
+        Date.parse(fixture.kickoff)<=today.getTime()+20*MINUTE||linkedProviderIds.has(fixture.id))continue;
+     // Don't duplicate a fixture already represented by a national JSON dataset.
+     const locallyPresent=locals.some(m=>m.competition===fixture.league&&
+       cleanTeamName(canonicalNationalTeam(m.home_team))===fixture.home&&
+       cleanTeamName(canonicalNationalTeam(m.away_team))===fixture.away&&
+       Math.abs((m.kickoff?asUtc(m.kickoff).getTime():Date.parse(String(m.match_date).slice(0,10)+'T12:00:00Z'))-Date.parse(fixture.kickoff))<=72*3600000);
+     if(locallyPresent)continue;
+     const when=asUtc(fixture.kickoff),fixtureId=stableFixtureId('national-verified|'+fixture.id);
+     const leagueName=nationalCompetitionByCode(fixture.league)?.name||'Selecciones nacionales';
+     const home=canonicalNationalTeam(raw?.teams?.home?.name),away=canonicalNationalTeam(raw?.teams?.away?.name);
+     if(!home||!away||home===away)continue;
+     await conn.execute(`INSERT IGNORE INTO nforce_matches
+      (id,source_key,competition,league,season,round_name,home_team,away_team,match_date,kickoff,scheduled_time_known,home_goals,away_goals,source_path)
+      VALUES (?,?,?,?,?,?,?,?,?,?,1,NULL,NULL,?)`,
+      [fixtureId,'national-verified|'+fixture.id,fixture.league,leagueName,String(when.getUTCFullYear()),
+       String(raw?.league?.round||'').slice(0,90),home,away,when.toISOString().slice(0,10),sqlUtc(when),'verified/national-fixtures']);
+     await conn.execute(`INSERT INTO nforce_fixture_schedules
+      (nforce_match_id,provider_fixture_id,kickoff,status,checked_at)
+      VALUES (?,?,?,'NS',UTC_TIMESTAMP())
+      ON DUPLICATE KEY UPDATE provider_fixture_id=VALUES(provider_fixture_id),kickoff=VALUES(kickoff),
+       status='NS',checked_at=UTC_TIMESTAMP()`,[fixtureId,fixture.id,sqlUtc(when)]);
+     discoveredNationals++;
+    }
+    for(const {local,fixture} of linked){
      await conn.execute(`INSERT INTO nforce_fixture_schedules
       (nforce_match_id,provider_fixture_id,kickoff,status,checked_at)
       VALUES (?,?,?,?,UTC_TIMESTAMP())
       ON DUPLICATE KEY UPDATE provider_fixture_id=VALUES(provider_fixture_id),
         kickoff=VALUES(kickoff),status=VALUES(status),checked_at=UTC_TIMESTAMP()`,
        [local.id,fixture.id,fixture.kickoff?sqlUtc(fixture.kickoff):null,fixture.status]);
+     // For international fixtures only: accept an official 90-minute FT score.
+     // Never conflate extra time or penalties with a 1X2 full-time outcome.
+     if(isNationalCompetition(local.competition)&&fixture.status==='FT'){
+      const raw=fixtures.find(f=>Number(f?.fixture?.id)===fixture.id);
+      const ft=raw?.score?.fulltime;
+      const h=ft?.home,a=ft?.away;
+      if([h,a].every(v=>Number.isInteger(v)&&v>=0&&v<=25)){
+       await conn.execute(`UPDATE nforce_matches SET home_goals=?,away_goals=?
+        WHERE id=? AND home_goals IS NULL AND away_goals IS NULL AND competition LIKE 'int.%'
+        AND (kickoff<=UTC_TIMESTAMP() OR EXISTS
+         (SELECT 1 FROM nforce_fixture_schedules v WHERE v.nforce_match_id=nforce_matches.id
+          AND v.kickoff<=UTC_TIMESTAMP()))`,[h,a,local.id]);
+      }
+     }
      // Future predictions and proposals should use verified revised times.
      // Do not silently alter the historical selection, probability or outcome.
      if(fixture.kickoff){
@@ -255,6 +303,7 @@ export function installLiveSchedule(app,{db,authenticate,request=footballApi,now
    }
    lastRun=now().toISOString();
    return {ok:succeeded>0||queried===0,requests:queried,matched,remaining,
+    national_fixtures_discovered:discoveredNationals,
     reason:queried===0?(remaining===0?'Se agotó el cupo diario o la fecha fue consultada recientemente':'La fecha ya fue consultada recientemente o está restringida'):
     succeeded===0?(lastError||'Error de consulta del calendario'):matched===0?'El proveedor no encontró una coincidencia unívoca para este partido':null};
   }finally{if(conn){if(locked)await conn.query("SELECT RELEASE_LOCK('fijas_live_schedule_sync')").catch(()=>{});conn.release();}running=false;}

@@ -34,7 +34,7 @@ import {publicAnalysisText} from './public-branding.js';
 import {publicPerformanceFilters,performanceWhere,summaryFromGroups,publicRecentResults} from './performance-stats.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
-const APP_VERSION = '3.5.8';
+const APP_VERSION = '3.5.9';
 const app = express();
 let telegramVipControl=null;
 let notificationControl=null;

@@ -1,6 +1,6 @@
 import {publicAnalysisText} from './public-branding.js';
 import {freeTelegramDestination} from './telegram-public.js';
-import {allowedDatasets,fetchOpenFootball,LEAGUES,NFORCE_PROVIDER} from './nforce-data.js';
+import {allowedDatasets,nationalDatasets,NATIONAL_COMPETITIONS,fetchOpenFootball,LEAGUES,NFORCE_PROVIDER} from './nforce-data.js';
 import {diagnoseNforceCalendar} from './nforce-calendar-health.js';
 import {estimateMatch,modelReadiness,makeCandidate,walkForwardBacktest,fulltime,MODEL_VERSION,VIP_RISK_POLICY} from './nforce-model.js';
 import {canAutoPublishCandidate} from './football-publication-policy.js';
@@ -62,7 +62,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
    const [created]=await conn.execute("INSERT INTO nforce_import_runs (status,started_at) VALUES ('running',UTC_TIMESTAMP())");
    const id=created.insertId,errors=[];let imported=0,sources=0,scheduled=0,completed=0,missing=0;
    const importedCompetitions=new Set(),missingCompetitions=new Set();
-   const datasets=allowedDatasets(now());
+   const datasets=[...allowedDatasets(now()),...nationalDatasets(now())];
    // Download in small parallel batches so missing optional league files don't
    // cause long serial waits; serialize SQL writes on this connection.
    for(let batchStart=0;batchStart<datasets.length;batchStart+=5){
@@ -100,8 +100,9 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
    await conn.execute('UPDATE nforce_import_runs SET status=?,finished_at=UTC_TIMESTAMP(),sources=?,records=?,scheduled=?,completed_results=?,errors_json=? WHERE id=?',
     [status,sources,imported,scheduled,completed,JSON.stringify(errors).slice(0,3900),id]);
    lastImportReport={ok:sources>0,status,sources,records:imported,scheduled,completed,failed_sources:errors.length,errors:errors.slice(0,5),
-    competitions_configured:LEAGUES.length,competitions_imported:importedCompetitions.size,
-    leagues_imported:LEAGUES.filter(l=>importedCompetitions.has(l.code)).map(l=>l.name),
+    competitions_configured:LEAGUES.length+NATIONAL_COMPETITIONS.length,competitions_imported:importedCompetitions.size,
+    leagues_imported:[...LEAGUES,...NATIONAL_COMPETITIONS].filter(l=>importedCompetitions.has(l.code)).map(l=>l.name),
+    national_teams_supported:true,national_competitions_imported:NATIONAL_COMPETITIONS.filter(c=>importedCompetitions.has(c.code)).map(c=>c.name),
     datasets_missing:missing,leagues_with_missing_seasons:[...missingCompetitions],
     warning:errors.length?'Importación parcial: algunas consultas fallaron.':missing?'Algunas competiciones aún no tienen archivos disponibles para todas las temporadas; no se inventan partidos.':'Los calendarios pueden estar desactualizados; verifica horarios antes de publicar.'};
    if(!sources)lastError='Fallaron las consultas de resultados deportivos';
@@ -110,7 +111,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
  }
  async function loadMatches(){
   // bounded season set; no API requests per match.
-  const [rows]=await db.query('SELECT m.id,m.source_key,m.competition,m.league,m.season,m.round_name AS `round`,m.home_team AS home,m.away_team AS away,COALESCE(DATE(s.kickoff),m.match_date) AS date_label,COALESCE(s.kickoff,m.kickoff) AS kickoff,(m.scheduled_time_known OR s.kickoff IS NOT NULL) AS scheduled_time_known,m.home_goals,m.away_goals,m.source_path,m.source_checked_at,s.status AS live_status,s.checked_at AS schedule_verified_at FROM nforce_matches m LEFT JOIN nforce_fixture_schedules s ON s.nforce_match_id=m.id AND s.checked_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 12 HOUR) WHERE m.match_date>=DATE_SUB(UTC_DATE(),INTERVAL 560 DAY) ORDER BY m.match_date DESC LIMIT 20000');
+  const [rows]=await db.query('SELECT m.id,m.source_key,m.competition,m.league,m.season,m.round_name AS `round`,m.home_team AS home,m.away_team AS away,COALESCE(DATE(s.kickoff),m.match_date) AS date_label,COALESCE(s.kickoff,m.kickoff) AS kickoff,(m.scheduled_time_known OR s.kickoff IS NOT NULL) AS scheduled_time_known,m.home_goals,m.away_goals,m.source_path,m.source_checked_at,s.status AS live_status,s.checked_at AS schedule_verified_at FROM nforce_matches m LEFT JOIN nforce_fixture_schedules s ON s.nforce_match_id=m.id AND s.checked_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 12 HOUR) WHERE m.match_date>=DATE_SUB(UTC_DATE(),INTERVAL 960 DAY) ORDER BY m.match_date DESC LIMIT 45000');
   return rows.reverse().map(r=>({...r,date:r.date_label instanceof Date?r.date_label.toISOString().slice(0,10):String(r.date_label).slice(0,10),
    kickoff:r.kickoff?asUtc(r.kickoff).toISOString():null,scheduled_time_known:Boolean(r.scheduled_time_known),
    home_goals:r.home_goals==null?null:Number(r.home_goals),away_goals:r.away_goals==null?null:Number(r.away_goals)}));
@@ -378,6 +379,8 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     (SELECT COUNT(*) FROM football_candidates c JOIN predictions p ON p.id=c.prediction_id WHERE c.provider='nforce-openfootball' AND p.outcome='lost') AS lost,
     (SELECT COUNT(*) FROM nforce_matches) AS total_matches,
     (SELECT COUNT(DISTINCT competition) FROM nforce_matches) AS loaded_competitions,
+    (SELECT COUNT(DISTINCT competition) FROM nforce_matches WHERE competition LIKE 'int.%') AS loaded_national_competitions,
+    (SELECT COUNT(*) FROM nforce_matches WHERE competition LIKE 'int.%') AS national_matches,
     (SELECT COUNT(*) FROM nforce_matches WHERE home_goals IS NOT NULL) AS complete_matches`);
    const [[latest]]=await db.query('SELECT status,initiated_by,started_at,finished_at,error_message,upcoming AS examined,drafts AS drafts_created,insufficient AS without_prediction,filtered AS below_filters FROM nforce_scans ORDER BY id DESC LIMIT 1');
    const [[lastImport]]=await db.query('SELECT status,started_at,finished_at,sources,records,scheduled,completed_results,errors_json FROM nforce_import_runs ORDER BY id DESC LIMIT 1');
@@ -393,7 +396,7 @@ export function installNforceEngine(app,{db,authenticate,fetchDataset=fetchOpenF
     latest:latest||null,scanning,importing,publishing,last_error:lastError,last_import_report:lastImportReport,last_scan_report:lastScanReport,
     vip_policy:VIP_POLICY,vip_risk_policy:VIP_RISK_POLICY,last_publish_report:lastPublishReport,last_scheduler_message:lastSchedulerMessage,scheduled_retry_at:latest?new Date(asUtc(latest.started_at).getTime()+SCAN_INTERVAL_MINUTES*60000).toISOString():null,
     scheduled_retry_reason:'Control local cada hora',manual_scan:{available:!scanning,remaining:'Ilimitados con pausa de 5 min',daily_limit:'—'},
-    configured_competitions:LEAGUES.length,live_schedule_supported_competitions:LIVE_VERIFICATION_LEAGUES.length,loaded_competitions:Number(stats.loaded_competitions||0),
+    configured_competitions:LEAGUES.length+NATIONAL_COMPETITIONS.length,national_competitions_configured:NATIONAL_COMPETITIONS.length,live_schedule_supported_competitions:LIVE_VERIFICATION_LEAGUES.length,loaded_competitions:Number(stats.loaded_competitions||0),loaded_national_competitions:Number(stats.loaded_national_competitions||0),national_matches:Number(stats.national_matches||0),
     total_matches:Number(stats.total_matches||0),complete_matches:Number(stats.complete_matches||0),source_import:lastImport||null,next_import_at:retry.next,
     settlement:settlement.getStatus(),
     backtest:lastBacktest?{evaluated:lastBacktest.evaluated,accuracy:lastBacktest.accuracy,brier:lastBacktest.brier,validated:Number(lastBacktest.evaluated)>=40&&validation.model===MODEL_VERSION&&now().getTime()-asUtc(lastBacktest.created_at).getTime()<=8*DAY,

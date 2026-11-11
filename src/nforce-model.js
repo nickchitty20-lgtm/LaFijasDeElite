@@ -1,4 +1,5 @@
 import {fitOpponentRatings,opponentAdjustedGoals} from './nforce-strength.js';
+import {isNationalCompetition} from './nforce-internationals.js';
 /** N-FORCE probability engine, v1.2. Historical scores only.
  * Raw model probabilities are NOT calibrated or guaranteed profitable.
  * Walk-forward testing never trains on fixtures at/after the prediction time.
@@ -59,11 +60,12 @@ const weighted=(rows,cutoff,fn)=>{
 };
 /** Find out why a fixture has no model; no fabricated history or kickoffs. */
 export function modelReadiness(target,completed,asOf=fixtureTimestamp(target)){
- const cutoff=Number(asOf),league=String(target?.competition||'');
+ const cutoff=Number(asOf),league=String(target?.competition||''),national=isNationalCompetition(league);
+ const lookback=national?900:MODEL_SETTINGS.lookbackDays, freshDays=national?180:MODEL_SETTINGS.freshDays;
  if(!Number.isFinite(cutoff)||!league||!target?.home||!target?.away||target.home===target.away)
   return {ready:false,reason:'invalid_fixture'};
- const prior=(completed||[]).filter(m=>m.competition===league&&fulltime(m)&&
-  fixtureTimestamp(m)<cutoff&&fixtureTimestamp(m)>=cutoff-MODEL_SETTINGS.lookbackDays*DAY)
+ const prior=(completed||[]).filter(m=>(national?isNationalCompetition(m.competition):m.competition===league)&&fulltime(m)&&
+  fixtureTimestamp(m)<cutoff&&fixtureTimestamp(m)>=cutoff-lookback*DAY)
   .sort((a,b)=>fixtureTimestamp(b)-fixtureTimestamp(a));
  const home=prior.filter(m=>m.home===target.home||m.away===target.home).slice(0,MODEL_SETTINGS.teamGames);
  const away=prior.filter(m=>m.home===target.away||m.away===target.away).slice(0,MODEL_SETTINGS.teamGames);
@@ -71,8 +73,8 @@ export function modelReadiness(target,completed,asOf=fixtureTimestamp(target)){
  if(prior.length<MODEL_SETTINGS.minLeague)return {ready:false,reason:'league_history',sample};
  if(home.length<MODEL_SETTINGS.minTeam||away.length<MODEL_SETTINGS.minTeam)return {ready:false,reason:'team_history',sample};
  const ageHome=(cutoff-fixtureTimestamp(home[0]))/DAY,ageAway=(cutoff-fixtureTimestamp(away[0]))/DAY;
- if(ageHome>MODEL_SETTINGS.freshDays||ageAway>MODEL_SETTINGS.freshDays)return {ready:false,reason:'stale_form',sample};
- return {ready:true,reason:'ok',prior,home,away,sample,ageHome,ageAway};
+ if(ageHome>freshDays||ageAway>freshDays)return {ready:false,reason:'stale_form',sample};
+ return {ready:true,reason:'ok',prior,home,away,sample,ageHome,ageAway,pool:national?'selecciones':'liga'};
 }
 /** Empirical Bayes / partial pooling: venue sample -> team's overall rate,
  * with shrinkage of outlying relative strengths toward the league baseline. */
@@ -144,6 +146,7 @@ export function estimateMatch(target,completed,asOf=fixtureTimestamp(target)){
   totals:{over15:round(100*p.over15),over25:round(100*p.over25),over35:round(100*p.over35),under25:round(100*p.under25),btts:round(100*p.btts)},
   selected:order[0],confidence:round(100*p[order[0]]),margin:round(100*(p[order[0]]-p[order[1]])),
   score:`${peak.home}-${peak.away}`,score_probability:round(100*peak.p),sample,quality,leagueBaseline,
+  history_group:r.pool, // selecciones: historial integrado entre competiciones, nunca entre clubes
   method:'Poisson regularizado con ajuste de rivales, forma temporal y marcadores bajos (sin calibración demostrada)'};
 }
 /** All markets use only full-time historical scores available before kickoff.
@@ -299,9 +302,9 @@ export function makeCandidate(match,model,diagnostics=null){
  ...(selected.free_screen?[`Cribado GRATIS multimerkado (NO demuestra ventaja frente a cuotas): frecuencia histórica de liga ${fmt(selected.baseline)}; peor escenario de sensibilidad ${fmt(selected.free_screen.worst_scenario)}. Validación retrospectiva pendiente.`]:[]),
  `Goles proyectados: ${match.home} ${model.lambda.home}, ${match.away} ${model.lambda.away}. Más de 1.5: ${fmt(model.totals.over15)}, más de 2.5: ${fmt(model.totals.over25)}, menos de 2.5: ${fmt(model.totals.under25)}, ambos marcan: ${fmt(model.totals.btts)}.`,
  `Marcador meramente orientativo: ${model.score} (${fmt(model.score_probability)}). No representa una apuesta recomendada ni un resultado seguro.`,
- `Calidad de muestra: ${model.quality}/100 (NO mide precisión). Partidos previos: local ${model.sample.home}, visitante ${model.sample.away}, competición ${model.sample.league}.`,
- `Riesgos: sin datos verificados de lesiones ni alineaciones; posibles cambios de plantilla, horarios reprogramados y variabilidad deportiva. Sin cuotas verificadas ni rentabilidad demostrada.${selected.visibility==='free'?' Esta propuesta gratuita tiene alta incertidumbre.':''}`].join('\n\n');
- const evidence={source:'OpenFootball football.json (CC0-1.0)',model,margin:model.margin,evidence_count:2,
+ `Calidad de muestra: ${model.quality}/100 (NO mide precisión). Partidos previos: local ${model.sample.home}, visitante ${model.sample.away}, ${model.history_group==='selecciones'?'historial de selecciones':'competición'} ${model.sample.league}.`,
+ `Riesgos: sin datos verificados de lesiones ni alineaciones; posibles cambios de plantilla, horarios reprogramados y variabilidad deportiva.${isNationalCompetition(match.competition)?' En selecciones, comprobar convocatorias, sede neutral y calendario internacional.':''} Sin cuotas verificadas ni rentabilidad demostrada.${selected.visibility==='free'?' Esta propuesta gratuita tiene alta incertidumbre.':''}`].join('\n\n');
+ const evidence={source:isNationalCompetition(match.competition)?'Resultados históricos de selecciones (CC0-1.0)':'OpenFootball football.json (CC0-1.0)',model,margin:model.margin,evidence_count:2,
   pick:{key:selected.key,market:selected.market,selection:selected.selection,probability:selected.probability,baseline:selected.baseline,advantage:selected.advantage,robustness:selected.robustness||null,free_screen:selected.free_screen||null},
   match_context:{round:match.round||'',country:'',venue:'',city:''},
   goals:{home:match.home,away:match.away,illustrative_score:model.score,

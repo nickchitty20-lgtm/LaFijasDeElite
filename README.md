@@ -1,3 +1,11 @@
+## Selecciones nacionales (v3.5.9)
+
+N-FORCE mantiene las 20 ligas de clubes y añade 11 categorías de torneos de selecciones: Mundial, Eurocopa, eliminatorias mundialistas, amistosos, Nations League, Copa América y competiciones de confederaciones. En el panel del dueño, `Análisis automático` ahora muestra los torneos y registros importados.
+
+Usa **Importar datos** para recuperar resultados recientes y calendarios públicos. Los archivos históricos de selecciones sin hora no permiten programar ni publicar una propuesta por sí solos; el escaneo necesita una hora real. Con `FOOTBALL_SCHEDULE_LIVE=true` y `FOOTBALL_API_KEY` configurados, el verificador existente puede identificar encuentros próximos en torneos nacionales explícitamente admitidos, respetando la ventana de fechas y cuota del plan. Publicar sigue requiriendo revisión de horarios, estado NS y los controles de calidad del modelo. Una selección no recibe pronóstico si su muestra histórica es insuficiente.
+
+Datos CC0: `openfootball/worldcup.json`, `openfootball/euro.json`, catálogo internacional `openfootball.github.io/internationals`. Integración futura o de países concretos depende de la disponibilidad real de registros: no se prometen todos los amistosos del calendario.
+
 ## v3.5.8 — Comprobación del horario por propuesta
 
 Cuando el panel indique **Falta una comprobación reciente**, pulsa **Verificar horario y estado del partido** en esa propuesta. Esta acción consulta la fecha admisible y devuelve una respuesta real de verificación, sin generar otro borrador ni publicar. Si cambia el horario, utiliza **Reanalizar esta propuesta** antes de aprobarla.

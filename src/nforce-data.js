@@ -3,6 +3,8 @@
  * Never invent an unavailable kickoff time. Never fetch arbitrary user URLs.
  */
 import crypto from 'node:crypto';
+import {nationalDatasets,canonicalNationalTeam,offsetKickoff} from './nforce-internationals.js';
+export {NATIONAL_COMPETITIONS,nationalDatasets,isNationalCompetition} from './nforce-internationals.js';
 
 export const NFORCE_PROVIDER='nforce-openfootball';
 // Strict competition allowlist. The importer attempts only predefined paths.
@@ -78,19 +80,19 @@ export function stableFixtureId(sourceKey){
  return Number.parseInt(hex,16); // <=2^52, exact in JS and MySQL BIGINT
 }
 export function normalizeOpenFootball(feed,dataset,now=new Date()){
- if(!feed||!Array.isArray(feed.matches)||feed.matches.length>900)throw Error('JSON sin partidos o formato no permitido');
+ if(!feed||!Array.isArray(feed.matches)||feed.matches.length>(dataset.kind==='national'?4000:900))throw Error('JSON sin partidos o formato no permitido');
  const result=[];
  for(const m of feed.matches){
-  const date=String(m.date||''),home=clean(m.team1),away=clean(m.team2);
+  const date=String(m.date||''),home=dataset.kind==='national'?canonicalNationalTeam(m.team1):clean(m.team1),away=dataset.kind==='national'?canonicalNationalTeam(m.team2):clean(m.team2);
   if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!home||!away||home===away)continue;
   const time=typeof m.time==='string'?m.time.trim():'';
-  const kick=zonedKickoff(date,time,dataset.zone);
+  const kick=dataset.kind==='national'?offsetKickoff(date,time)||(!dataset.requireOffset&&/^([01]\d|2[0-3]):[0-5]\d$/.test(time)?zonedKickoff(date,time,dataset.zone):null):zonedKickoff(date,time,dataset.zone);
   const validTime=Boolean(kick);
-  if(!validTime&&time)continue; // invalid time must not get silently defaulted
+  if(!validTime&&time&&dataset.kind!=='national')continue; // para selecciones: conservar fecha sin inventar hora
   // Stable key across reschedules: domestic league has one home/away pairing per season.
-  const key=[dataset.path,home,away].join('|');
+  const key=dataset.kind==='national'?[dataset.code,dataset.season,date,home,away].join('|'):[dataset.path,home,away].join('|');
   let gh=null,ga=null;
-  const ft=m.score?.ft;
+  const ft=dataset.kind==='national'?(Array.isArray(m.score)?m.score:m.score?.ft):m.score?.ft;
   const occurred=validTime?kick.getTime()<=now.getTime()-2*3600000:Date.parse(date+'T23:59:59Z')<now.getTime()-86400000;
   if(occurred&&Array.isArray(ft)&&ft.length===2&&ft.every(n=>Number.isInteger(n)&&n>=0&&n<=25)){
    gh=ft[0];ga=ft[1];
@@ -103,8 +105,12 @@ export function normalizeOpenFootball(feed,dataset,now=new Date()){
 }
 // Abort on oversized responses or network problems; no user-supplied URLs.
 export async function fetchOpenFootball(dataset,{fetcher=fetch}={}){
- if(!allowedDatasets().some(x=>x.path===dataset.path&&x.code===dataset.code))throw Error('Fuente no autorizada');
- const url=`https://raw.githubusercontent.com/openfootball/football.json/master/${dataset.path}`;
+ const approved=[...allowedDatasets(),...nationalDatasets()].some(x=>x.path===dataset.path&&x.code===dataset.code&&x.source===dataset.source);
+ if(!approved)throw Error('Fuente no autorizada');
+ const url=dataset.kind==='national'?(dataset.source==='internationals'?
+  `https://openfootball.github.io/internationals/${dataset.path}`:
+  `https://raw.githubusercontent.com/openfootball/${dataset.source==='worldcup'?'worldcup.json':'euro.json'}/master/${dataset.path}`):
+  `https://raw.githubusercontent.com/openfootball/football.json/master/${dataset.path}`;
  const response=await fetcher(url,{headers:{Accept:'application/json','User-Agent':'FijasDeElite-NForceFootball/3.0'},signal:AbortSignal.timeout(15000)});
  if(!response.ok)throw Error(`OpenFootball ${dataset.path}: HTTP ${response.status}`);
  if(Number(response.headers?.get?.('content-length')||0)>2_000_000)throw Error('Archivo excede el tamaño máximo');

@@ -1,3 +1,14 @@
+# Fijas de Élite 3.5.9 — Selecciones nacionales (integración sin romper clubes)
+
+- Añade **11 categorías de competiciones de selecciones** y un importador CC0 con allowlist cerrada: Mundial FIFA, Eurocopa, amistosos, eliminatorias mundialistas, UEFA Nations League, CONCACAF Nations League, Copa América, Copa Africana, Copa Asiática, Copa Oro y clasificatorias de Eurocopa.
+- Importa históricos y calendarios válidos desde JSON de torneos internacionales; los archivos sin hora se conservan para estadísticas, NUNCA como partidos con horario confirmado. Detecta offsets UTC explícitos en los calendarios del Mundial.
+- El análisis de selecciones utiliza un historial internacional separado del de clubes, agrupado entre torneos para evitar muestras vacías por cambiar de competición; conserva umbrales de tamaño y filtros GOLD/VIP.
+- Si el verificador independiente ya configurado devuelve amistosos/torneos internacionales programados, vincula o incorpora dichos partidos con fecha, hora y estado **NS** verificados; nunca inventa un inicio ni publica automáticamente por el mero hallazgo.
+- Mantiene límites del plan y los chequeos de horarios de v3.5.8. En competiciones, fechas o países sin cobertura fiable, no se crean propuestas por intuición.
+- Para partidos internacionales terminados, solo registra resultados oficiales FT a los 90 minutos cuando están disponibles; no confunde prórroga o penales con el 1X2.
+- Panel N-FORCE: recuento de partidos y competiciones de selecciones, junto a clubes. Sin migraciones destructivas ni cambios a pagos, GOLD/VIP o Telegram.
+- Fuentes de fechas internacionales son datos comunitarios y pueden retrasarse. La disponibilidad concreta depende de los encuentros incluidos en los archivos y de la cobertura/plan del verificador.
+
 # Fijas de Élite 3.5.8 — Verificación manual del horario por propuesta
 
 - Se agrega **Verificar horario y estado del partido** junto a los borradores pendientes que requieren una comprobación independiente en la ventana disponible.
