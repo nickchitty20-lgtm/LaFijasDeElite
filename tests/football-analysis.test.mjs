@@ -53,7 +53,7 @@ test('el canal VIP nunca presenta una cuota faltante como 0.00',()=>{
 test('la publicación gratuita distingue estimación de una promesa',()=>{
  const text=telegramFreeAutoPost({title:'A vs B',league:'Demo',match_date:'2026-11-06',market:'Resultado final',selection:'A',analysis:'Probabilidad aproximada, sujeta a error'});
  assert.match(text,/Probabilidad aproximada/);
- assert.match(text,/sujeta a incertidumbre/i);
+ assert.doesNotMatch(text,/sujeta a incertidumbre/i);
 });
 test('sin token el bot no envía ningún mensaje',async()=>{
  const result=await sendPredictionToTelegram({visibility:'free'},{TELEGRAM_BOT_TOKEN:''});

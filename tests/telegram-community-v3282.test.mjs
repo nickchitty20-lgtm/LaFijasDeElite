@@ -39,7 +39,7 @@ function fakeDb(){
 test('short community notices have correct links but no private pick details',()=>{
  const free=telegramCommunityNotice('free',{channelUrl:env.TELEGRAM_FREE_CHANNEL_URL,baseUrl:env.PUBLIC_BASE_URL});
  const vip=telegramCommunityNotice('vip',{channelUrl:env.TELEGRAM_FREE_CHANNEL_URL,baseUrl:env.PUBLIC_BASE_URL});
- assert.match(free,/fija GRATIS/); assert.match(free,/https:\/\/t\.me\/FijasDeEliteOficial/);
+ assert.match(free,/análisis deportivo disponible/); assert.match(free,/https:\/\/t\.me\/FijasDeEliteOficial/);
  assert.match(vip,/fija VIP/);assert.match(vip,/https:\/\/web\.example\//);
  assert.doesNotMatch(vip,/clientes\.html|https:\/\/t\.me/);
  assert.ok(free.length<180 && vip.length<180);

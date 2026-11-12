@@ -47,7 +47,7 @@ test('boletín privado identifica los análisis y escapa nombres hostiles sin tr
   probabilities:{home:51.2,draw:24.3,away:24.5},ai:null}]};
  const text=vipRadarTelegramMessage(report);
  assert.match(text,/RADAR VIP · ANÁLISIS ANTICIPADO/);
- assert.match(text,/selecciones VIP validadas se publican por separado/);
+ assert.doesNotMatch(text,/selecciones VIP validadas se publican por separado/);
  assert.match(text,/A &amp; &lt;script&gt;/);
  assert.doesNotMatch(text,/<script>/);
  assert.doesNotMatch(text,/garantizado.*ganar/i);
@@ -85,7 +85,7 @@ test('solo propietario puede previsualizar y enviar; despacho VIP no se repite e
  const send=handlers['POST /api/admin/football/vip-radar/send'];
  const first=makeRes();await send({admin:{role:'owner'}},first);
  assert.equal(first.body.sent,true);assert.equal(sent.length,1);assert.equal(sent[0].chat,'-1001234567890');
- assert.match(sent[0].message,/selecciones VIP validadas se publican por separado/);
+ assert.doesNotMatch(sent[0].message,/selecciones VIP validadas se publican por separado/);
  const second=makeRes();await send({admin:{role:'owner'}},second);
  assert.equal(second.body.sent,false);assert.equal(sent.length,1);
  assert.ok(sql.some(q=>q.includes('nforce_vip_radar_dispatches')));

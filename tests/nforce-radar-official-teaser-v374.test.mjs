@@ -72,7 +72,7 @@ test('public Radar teaser shows only sample fixture and schedule; never probabil
  assert.match(message,/12\/11/);
  assert.match(message,/fijasdeelite\.xyz/);
  for(const secret of ['71.8','73','94','Secreto','Análisis oculto','1X','<script>'])assert.ok(!message.includes(secret),secret);
- assert.match(message,/selecciones VIP validadas se publican por separado/i);
+ assert.doesNotMatch(message,/selecciones VIP validadas se publican por separado/i);
  assert.equal(vipRadarOfficialTeaser({items:[]}), '');
 });
 

@@ -18,7 +18,7 @@ test('notificaciones: predicción VIP requiere derecho VIP actual',()=>{
 });
 test('mensajes gratuitos nunca revelan selección ni cuotas',()=>{
  const text=formatPredictionNotice('free','https://example.com/');
- assert.match(text,/gratuito/i);assert.ok(!text.includes('Cuota'));
+ assert.match(text,/análisis deportivo/i);assert.ok(!text.includes('Cuota'));
  assert.ok(!text.includes('Selección'));
  assert.match(text,/https:\/\/example.com/);
 });

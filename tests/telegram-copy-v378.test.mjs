@@ -19,9 +19,9 @@ test('Radar VIP: comunicación premium que diferencia el seguimiento anticipado 
  const vip=vipRadarTelegramMessage(fixtures);
  const publicAd=vipRadarOfficialTeaser(fixtures,{baseUrl:url});
  assert.match(vip,/ANÁLISIS ANTICIPADO/);
- assert.match(vip,/selecciones VIP validadas se publican por separado/);
+ assert.doesNotMatch(vip,/selecciones VIP validadas se publican por separado/);
  assert.match(publicAd,/análisis anticipado/);
- assert.match(publicAd,/selecciones VIP validadas se publican por separado/);
+ assert.doesNotMatch(publicAd,/selecciones VIP validadas se publican por separado/);
  assert.doesNotMatch(vip+publicAd,/NO SON FIJAS|no pronósticos VIP aprobados|resultados garantizados/i);
  assert.doesNotMatch(publicAd,/SECRET_44|PRIVADO_44|51\.0%|53\.0%|78\/100/);
  assert.match(publicAd,/Lima &lt;X&gt;/);
@@ -36,7 +36,7 @@ test('Anuncios de selección VIP y GOLD reservan el pronóstico completo',()=>{
   assert.match(txt,/FIJAS DE ÉLITE/);
   for(const secret of ['PRIVADO_44','SECRET_44','1.67','67'])assert.equal(txt.includes(secret),false,secret);
   assert.doesNotMatch(txt,/clientes\.html|plan=vip/);
-  assert.match(txt,/incertidumbre/);
+  assert.doesNotMatch(txt,/incertidumbre/);
  }
  assert.equal((publicGold.match(/🗓/g)||[]).length,1);
  const vipFull=telegramVipPost(pick);
@@ -44,26 +44,26 @@ test('Anuncios de selección VIP y GOLD reservan el pronóstico completo',()=>{
  for(const full of [vipFull,goldFull]){
   assert.match(full,/SECRET_44/);
   assert.match(full,/PRIVADO_44/);
-  assert.match(full,/incertidumbre|incierto/);
+  assert.doesNotMatch(full,/incertidumbre|incierto/);
  }
  const goldManual=goldOfficialAnnouncement(url,{...pick,visibility:'gold',auto_generated:false,title:'SECRET_44'});
  assert.doesNotMatch(goldManual,/SECRET_44/);
 });
 
-test('Avisa en comunidad sin detalles privados; comunicado gratuito conserva nivel de riesgo',()=>{
+test('Avisa en comunidad sin detalles privados y sin avisos redundantes',()=>{
  const free=telegramCommunityNotice('free',{channelUrl:'https://t.me/FijasDeEliteOficial',baseUrl:url});
  const vip=telegramCommunityNotice('vip',{baseUrl:url});
  assert.ok(free.length<180&&vip.length<180);
  assert.doesNotMatch(free+vip,/SECRET_44|PRIVADO_44|1.67/);
  const message=telegramFreeAutoPost({...pick,visibility:'free'},url);
- assert.match(message,/Nivel de riesgo: alto/);
+ assert.doesNotMatch(message,/Nivel de riesgo: alto/);
  assert.match(message,/probabilidad estimada/i);
- assert.match(message,/incertidumbre/);
+ assert.doesNotMatch(message,/incertidumbre/);
 });
 
 test('Notificaciones privadas mantienen beneficios y diferencian los rangos',()=>{
  assert.match(goldAuthorizationText('Abcde_22'),/lista blanca GOLD/);
  assert.match(formatPredictionNotice('vip',url),/VIP/);
- assert.match(formatPredictionNotice('free',url),/gratuito/);
+ assert.match(formatPredictionNotice('free',url),/análisis deportivo/);
  assert.doesNotMatch(formatPredictionNotice('vip',url),/PRIVADO_44|SECRET_44/);
 });

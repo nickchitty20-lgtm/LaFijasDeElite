@@ -43,7 +43,7 @@ test('FREE complete pick goes only to channel; group receives short linked annou
   assert.deepEqual(messages.map(x=>x.chat_id),['-10011111','-10022222']);
   assert.match(messages[0].text,/Más de 1.5 goles/);
   assert.match(messages[0].text,/https:\/\/fijas\.example\//);
-  assert.match(messages[1].text,/fija GRATIS/);
+  assert.match(messages[1].text,/análisis deportivo disponible/);
   assert.match(messages[1].text,/https:\/\/t\.me\/FijasDeEliteOficial/);
   assert.doesNotMatch(messages[1].text,/Más de 1.5 goles|Análisis deportivo|Sí/);
   assert.deepEqual(sqls.find(c=>/INSERT INTO telegram_prediction_messages/.test(c.sql)).params.slice(1,3),['free','-10011111']);
