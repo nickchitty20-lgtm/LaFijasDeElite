@@ -36,7 +36,7 @@ import {publicPerformanceFilters,performanceWhere,summaryFromGroups,publicRecent
 import {effectiveSiteTheme,sanitizeSiteTheme,SITE_THEMES,SITE_THEME_MODES,SITE_THEME_MOTION} from './site-themes.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
-const APP_VERSION = '3.8.2';
+const APP_VERSION = '3.8.3';
 const app = express();
 let telegramVipControl=null;
 let notificationControl=null;
@@ -126,7 +126,7 @@ app.get('/api/public/telegram',(req,res)=>res.json({
  free_channel_url:safeTelegramPublicUrl(process.env.TELEGRAM_FREE_CHANNEL_URL),
  free_group_url:safeTelegramPublicUrl(process.env.TELEGRAM_FREE_GROUP_URL)
 }));
-// v3.8.2: an optional seasonal background, with global owner-controlled persistence.
+// v3.8.3: an optional seasonal background, with global owner-controlled persistence.
 // Public GET exposes visual settings only; there are no privileged IDs or tokens.
 app.get('/api/public/site-theme',async(req,res)=>{
  try{

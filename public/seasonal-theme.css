@@ -1,32 +1,109 @@
-/* v3.8.2 · Fijas de Élite seasonal ambient theme. Fully decorative and non-interactive. */
-:root{--fe-season-a:rgba(210,165,85,.17);--fe-season-b:rgba(41,113,99,.09);--fe-season-accent:#d9b976;--fe-season-fleck:rgba(224,184,109,.55)}
-html[data-fe-theme="navidad"]{--fe-season-a:rgba(23,127,91,.23);--fe-season-b:rgba(166,55,55,.15);--fe-season-accent:#e6c68f;--fe-season-fleck:rgba(217,245,233,.70)}
-html[data-fe-theme="ano_nuevo"]{--fe-season-a:rgba(157,110,235,.15);--fe-season-b:rgba(220,182,85,.18);--fe-season-accent:#efd49b;--fe-season-fleck:rgba(238,204,128,.75)}
-html[data-fe-theme="san_valentin"]{--fe-season-a:rgba(163,63,106,.20);--fe-season-b:rgba(209,105,131,.11);--fe-season-accent:#ebafbd;--fe-season-fleck:rgba(236,148,171,.65)}
-html[data-fe-theme="fiestas_patrias"]{--fe-season-a:rgba(170,48,53,.21);--fe-season-b:rgba(225,215,204,.09);--fe-season-accent:#e9c6aa;--fe-season-fleck:rgba(237,156,154,.66)}
-html[data-fe-theme="halloween"]{--fe-season-a:rgba(173,83,25,.22);--fe-season-b:rgba(95,64,167,.13);--fe-season-accent:#eabb89;--fe-season-fleck:rgba(237,158,95,.62)}
-html[data-fe-theme="primavera"]{--fe-season-a:rgba(101,141,66,.20);--fe-season-b:rgba(188,111,149,.14);--fe-season-accent:#e1c6a2;--fe-season-fleck:rgba(202,223,136,.65)}
-.fe-seasonal-atmosphere{position:fixed;inset:0;overflow:hidden;pointer-events:none;user-select:none;z-index:1;contain:strict;isolation:isolate}
-.fe-seasonal-atmosphere::before{content:"";position:absolute;inset:-20%;background:radial-gradient(ellipse 55% 45% at 12% 15%,var(--fe-season-a),transparent 74%),radial-gradient(ellipse 45% 50% at 82% 75%,var(--fe-season-b),transparent 76%);opacity:.72;animation:fe-season-glow 30s ease-in-out infinite alternate}
-.fe-seasonal-atmosphere::after{content:"";position:absolute;inset:0;background-image:radial-gradient(circle,var(--fe-season-fleck) .6px,transparent 1px);background-size:97px 103px;opacity:.11;animation:fe-season-drift 48s linear infinite}
-.fe-seasonal-particle{position:absolute;left:var(--fe-x);top:var(--fe-y);font-size:var(--fe-size);color:var(--fe-season-fleck);opacity:.22;text-shadow:0 0 18px currentColor;line-height:1;animation:fe-season-float var(--fe-duration) ease-in-out var(--fe-delay) infinite alternate;will-change:transform}
-@keyframes fe-season-glow{to{transform:translate3d(4%, -3%,0) scale(1.08)}}
-@keyframes fe-season-drift{to{background-position:97px 103px}}
-@keyframes fe-season-float{0%{transform:translate3d(-8px,12px,0) rotate(-12deg);opacity:.08}50%{opacity:.33}100%{transform:translate3d(18px,-38px,0) rotate(14deg);opacity:.18}}
-html[data-fe-motion="suave"] .fe-seasonal-particle{opacity:.16;animation-duration:calc(var(--fe-duration) * 1.6)}
-html[data-fe-motion="suave"] .fe-seasonal-atmosphere::before{opacity:.45;animation-duration:45s}
-html[data-fe-motion="apagado"] .fe-seasonal-atmosphere::before{opacity:.27;animation:none}
-html[data-fe-motion="apagado"] .fe-seasonal-atmosphere::after{animation:none}
+/* Fijas de Élite v3.8.3: seasonal atmosphere, visible over dark layouts, never captures clicks. */
+:root{
+ --fe-season-a:rgba(215,168,78,.32);--fe-season-b:rgba(64,132,115,.20);
+ --fe-season-accent:#e8c780;--fe-season-fleck:rgba(252,209,116,.92);
+ --fe-season-edge:rgba(221,176,91,.53);--fe-season-glow:rgba(219,172,88,.12);
+}
+html[data-fe-theme="navidad"]{
+ --fe-season-a:rgba(16,157,111,.43);--fe-season-b:rgba(208,56,75,.34);
+ --fe-season-accent:#b2f2d2;--fe-season-fleck:rgba(227,255,243,.98);
+ --fe-season-edge:rgba(116,217,176,.59);--fe-season-glow:rgba(44,182,139,.18)
+}
+html[data-fe-theme="ano_nuevo"]{
+ --fe-season-a:rgba(141,78,226,.43);--fe-season-b:rgba(238,183,52,.34);
+ --fe-season-accent:#f8d893;--fe-season-fleck:rgba(253,221,134,.99);
+ --fe-season-edge:rgba(206,160,242,.61);--fe-season-glow:rgba(143,85,215,.18)
+}
+html[data-fe-theme="san_valentin"]{
+ --fe-season-a:rgba(208,72,131,.42);--fe-season-b:rgba(155,50,111,.30);
+ --fe-season-accent:#f6c1d3;--fe-season-fleck:rgba(255,175,206,.95);
+ --fe-season-edge:rgba(236,147,181,.61);--fe-season-glow:rgba(204,74,128,.18)
+}
+html[data-fe-theme="fiestas_patrias"]{
+ --fe-season-a:rgba(220,63,71,.48);--fe-season-b:rgba(239,221,199,.21);
+ --fe-season-accent:#ffe6dd;--fe-season-fleck:rgba(255,205,208,.96);
+ --fe-season-edge:rgba(243,141,141,.60);--fe-season-glow:rgba(221,61,77,.18)
+}
+html[data-fe-theme="halloween"]{
+ --fe-season-a:rgba(232,111,23,.46);--fe-season-b:rgba(129,65,204,.38);
+ --fe-season-accent:#f5bb78;--fe-season-fleck:rgba(255,183,117,.97);
+ --fe-season-edge:rgba(234,157,88,.65);--fe-season-glow:rgba(183,91,43,.19)
+}
+html[data-fe-theme="primavera"]{
+ --fe-season-a:rgba(103,177,78,.43);--fe-season-b:rgba(208,98,154,.33);
+ --fe-season-accent:#e8dfac;--fe-season-fleck:rgba(243,222,154,.97);
+ --fe-season-edge:rgba(177,221,139,.60);--fe-season-glow:rgba(112,181,86,.18)
+}
+/* This is a visible but translucent foreground lightscape. v3.8.2 placed it *behind*
+   solid main/hero/panel backgrounds, making the entire system look unchanged. */
+.fe-seasonal-atmosphere{
+ position:fixed;inset:0;overflow:hidden;pointer-events:none;user-select:none;
+ z-index:15;isolation:isolate;contain:strict;
+ background:radial-gradient(ellipse 39% 46% at 0% 8%,var(--fe-season-a),transparent 80%),
+ radial-gradient(ellipse 42% 54% at 100% 74%,var(--fe-season-b),transparent 83%);
+}
+.fe-seasonal-atmosphere::before{
+ content:"";position:absolute;inset:-17%;pointer-events:none;
+ background:radial-gradient(ellipse 33% 30% at 80% 8%,var(--fe-season-b),transparent 83%),
+ radial-gradient(ellipse 38% 43% at 20% 81%,var(--fe-season-a),transparent 84%);
+ opacity:.48;animation:fe-season-glow 27s ease-in-out infinite alternate
+}
+.fe-seasonal-atmosphere::after{
+ content:"";position:absolute;inset:0;pointer-events:none;
+ background-image:radial-gradient(circle,var(--fe-season-fleck) 1px,transparent 1.8px);
+ background-size:105px 101px;opacity:.26;animation:fe-season-drift 42s linear infinite
+}
+.fe-seasonal-particle{
+ position:absolute;left:var(--fe-x);top:var(--fe-y);font-size:var(--fe-size);
+ color:var(--fe-season-fleck);opacity:.48;line-height:1;
+ text-shadow:0 0 13px var(--fe-season-fleck),0 0 30px var(--fe-season-a);
+ animation:fe-season-float var(--fe-duration) ease-in-out var(--fe-delay) infinite alternate;
+ will-change:transform
+}
+@keyframes fe-season-glow{from{transform:translate3d(-2%,3%,0) scale(1)}to{transform:translate3d(6%,-4%,0) scale(1.1)}}
+@keyframes fe-season-drift{to{background-position:105px 101px}}
+@keyframes fe-season-float{0%{transform:translate3d(-12px,14px,0) rotate(-14deg);opacity:.20}50%{opacity:.70}100%{transform:translate3d(26px,-44px,0) rotate(17deg);opacity:.30}}
+/* Opaque sections also receive their own festival light so themes are visible when scrolling. */
+html[data-fe-theme] body{isolation:isolate;background-image:radial-gradient(ellipse at 8% 4%,var(--fe-season-a),transparent 38%),radial-gradient(ellipse at 97% 74%,var(--fe-season-b),transparent 46%)}
+html[data-fe-theme] .hero,
+html[data-fe-theme] .plans-section,
+html[data-fe-theme] .performance-section,
+html[data-fe-theme] .benefits-section,
+html[data-fe-theme] .membership-comparison{
+ background-image:radial-gradient(ellipse 68% 80% at 3% 4%,var(--fe-season-a),transparent 75%),radial-gradient(ellipse 68% 70% at 95% 99%,var(--fe-season-b),transparent 79%)!important;
+}
+html[data-fe-theme] #dashboard .admin-content{
+ background:radial-gradient(ellipse 70% 66% at 88% 4%,var(--fe-season-a),transparent 76%),
+ radial-gradient(ellipse 76% 64% at 8% 87%,var(--fe-season-b),transparent 79%),#101319
+}
+html[data-fe-theme] .auth-page .client-content,
+html[data-fe-theme] .auth-page .auth-layout{
+ background-image:radial-gradient(ellipse 65% 63% at 85% 12%,var(--fe-season-a),transparent 80%),
+ radial-gradient(ellipse 78% 70% at 12% 93%,var(--fe-season-b),transparent 83%)!important
+}
+html[data-fe-theme] .auth-page .client-sidebar,
+html[data-fe-theme] #dashboard .admin-sidebar{
+ background-image:radial-gradient(ellipse 100% 65% at 30% 0%,var(--fe-season-a),transparent 87%)
+}
+html[data-fe-theme] .tier-card,
+html[data-fe-theme] .auth-page .client-welcome,
+html[data-fe-theme] #dashboard .fe-season-settings{border-top-color:var(--fe-season-edge)}
+html[data-fe-theme]:not([data-fe-theme="elite"]) .topbar,
+html[data-fe-theme]:not([data-fe-theme="elite"]) #dashboard .admin-topline{
+ border-bottom-color:var(--fe-season-edge)
+}
+html[data-fe-motion="suave"] .fe-seasonal-atmosphere::before{animation-duration:43s;opacity:.43}
+html[data-fe-motion="suave"] .fe-seasonal-particle{animation-duration:calc(var(--fe-duration) * 1.55);opacity:.37}
+html[data-fe-motion="apagado"] .fe-seasonal-atmosphere::before,
+html[data-fe-motion="apagado"] .fe-seasonal-atmosphere::after,
+html[data-fe-motion="apagado"] .fe-seasonal-particle{animation:none;will-change:auto}
 html[data-fe-motion="apagado"] .fe-seasonal-particle{display:none}
-/* Keep the atmospheric layer behind the content and never above modals/menus. */
-body{isolation:isolate}
-body>.fe-seasonal-atmosphere{z-index:0}
-body>header,body>main,body>footer{position:relative;z-index:1}
-/* Apply the palette to the three independent site shells without changing contrast of cards. */
-html[data-fe-theme] .plans-section,html[data-fe-theme] .hero,html[data-fe-theme] .performance-section{background-image:radial-gradient(ellipse at 83% 15%,var(--fe-season-a),transparent 62%)}
-html[data-fe-theme] #dashboard .admin-content{background:radial-gradient(ellipse at 85% 0%,var(--fe-season-a),transparent 44%),radial-gradient(ellipse at 12% 84%,var(--fe-season-b),transparent 53%),#101319}
-html[data-fe-theme] .auth-page .client-content{background:radial-gradient(ellipse at 80% 1%,var(--fe-season-a),transparent 38%),radial-gradient(ellipse at 12% 83%,var(--fe-season-b),transparent 52%),#10161a}
-html[data-fe-theme] .auth-page .client-sidebar,html[data-fe-theme] #dashboard .admin-sidebar{background-image:radial-gradient(ellipse at top,var(--fe-season-a),transparent 60%)}
-html[data-fe-theme] .tier-card,html[data-fe-theme] .auth-page .client-welcome{border-top-color:var(--fe-season-accent)}
-@media(max-width:700px){.fe-seasonal-atmosphere::before{opacity:.34}.fe-seasonal-particle{opacity:.12;filter:none}}
-@media(prefers-reduced-motion:reduce){.fe-seasonal-atmosphere::before,.fe-seasonal-atmosphere::after,.fe-seasonal-particle{animation:none!important;will-change:auto!important}.fe-seasonal-particle{display:none!important}}
+@media(max-width:700px){
+ .fe-seasonal-atmosphere{background:radial-gradient(ellipse 72% 47% at -8% 13%,var(--fe-season-a),transparent 86%),radial-gradient(ellipse 73% 50% at 112% 78%,var(--fe-season-b),transparent 88%)}
+ .fe-seasonal-particle{font-size:clamp(13px,3.3vw,19px);text-shadow:0 0 14px var(--fe-season-fleck)}
+ .fe-seasonal-atmosphere::after{opacity:.14}
+}
+@media(prefers-reduced-motion:reduce){
+ .fe-seasonal-atmosphere::before,.fe-seasonal-atmosphere::after,.fe-seasonal-particle{animation:none!important;will-change:auto!important}
+ .fe-seasonal-particle{display:none!important}
+}

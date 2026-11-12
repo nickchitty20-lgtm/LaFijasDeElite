@@ -249,3 +249,6 @@
 .fe-season-date-guide h3{margin:0 0 16px;color:#e8d3a5;font-size:15px}.fe-season-date-guide p{margin:16px 0 0;font-size:12px}.fe-season-calendar{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}.fe-season-calendar span{padding:12px 11px;border:1px solid #ffffff17;background:#ffffff07;border-radius:10px;color:#d6d8d2;font-size:12px}.fe-season-calendar b{color:#e1c489;margin-right:5px}
 @media(max-width:1020px){#dashboard #seasonalThemeForm{grid-template-columns:1fr}.fe-season-calendar{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:600px){.fe-season-header{flex-direction:column}.fe-season-calendar{grid-template-columns:1fr}#dashboard #seasonalThemeForm .fe-season-buttons{flex-direction:column}#dashboard #seasonalThemeForm button{width:100%}}
+
+/* v3.8.3: make the manual versus automatic distinction obvious. */
+#dashboard .fe-season-guidance{margin:14px 0 12px;padding:12px 15px;border-left:3px solid #d1af6c;border-radius:8px;color:#e7d4a5;background:#d9b96912;font-size:13px;line-height:1.6}

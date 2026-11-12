@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 let currentAdminRole='';
-const ADMIN_PANEL_BUILD='3.8.2';
+const ADMIN_PANEL_BUILD='3.8.3';
 // Diagnose a partial/old Railway deployment instead of silently rendering stale UI.
 async function checkAdminBuild(){
  const label=$('adminBuildVersion'),status=$('adminBuildStatus');
@@ -1377,7 +1377,7 @@ $('footballSettleButton')?.addEventListener('click',async()=>{
  }catch(e){label.textContent=e.message;}finally{button.disabled=false;}
 });
 
-// v3.8.2 · Persistent seasonal theme editor (owner only).
+// v3.8.3 · Persistent seasonal theme editor (owner only).
 let seasonSaved=null;
 const seasonThemeNames={elite:'Élite clásico',navidad:'Navidad',ano_nuevo:'Año Nuevo',san_valentin:'San Valentín',fiestas_patrias:'Fiestas Patrias',halloween:'Halloween',primavera:'Primavera'};
 function seasonFormValues(){const f=$('seasonalThemeForm');return f?{mode:f.elements.mode.value,theme:f.elements.theme.value,motion:f.elements.motion.value}:null;}
@@ -1394,6 +1394,29 @@ async function loadSiteThemeSettings(){
   updateSeasonCurrent(settings);$('seasonStatus').textContent='';
  }catch(err){$('seasonStatus').textContent='No se pudo cargar: '+err.message;}
 }
+// v3.8.3: choosing a festival is an immediate manual preview. Previously the
+// form remained in automatic mode, so Save silently showed Élite in November.
+$('seasonTheme')?.addEventListener('change',()=>{
+ const f=$('seasonalThemeForm');if(!f||currentAdminRole!=='owner')return;
+ if(f.elements.theme.value!=='elite')f.elements.mode.value='manual';
+ const settings=seasonFormValues();window.FijasTheme?.preview(settings.theme,settings.motion);
+ $('seasonStatus').textContent='Vista previa activa. Guarda para aplicar este tema en toda la web.';
+});
+$('seasonMotion')?.addEventListener('change',()=>{
+ if(currentAdminRole!=='owner')return;
+ const settings=seasonFormValues();if(settings)window.FijasTheme?.preview(settings.theme,settings.motion);
+});
+$('seasonMode')?.addEventListener('change',()=>{
+ if(currentAdminRole!=='owner')return;
+ const f=$('seasonalThemeForm');if(!f)return;
+ if(f.elements.mode.value==='automatico'){
+  $('seasonStatus').textContent='Automático: la fecha de Perú decide el tema. Fuera de festividades se muestra Élite clásico.';
+  // The calendar may select another theme today; Save asks the server for the actual date-based theme.
+ }else{
+  const settings=seasonFormValues();window.FijasTheme?.preview(settings.theme,settings.motion);
+  $('seasonStatus').textContent='Manual: el ambiente elegido se mantendrá todo el año después de guardar.';
+ }
+});
 $('seasonPreview')?.addEventListener('click',()=>{
  if(currentAdminRole!=='owner')return;
  const s=seasonFormValues();if(!s)return;
@@ -1412,7 +1435,9 @@ $('seasonalThemeForm')?.addEventListener('submit',async event=>{
  try{
   const saved=await api('/api/admin/site-theme',{method:'PUT',body:JSON.stringify(values)});
   seasonSaved=saved;window.FijasTheme?.applyTheme(saved);updateSeasonCurrent(saved);
-  $('seasonStatus').textContent='✓ Configuración guardada. El nuevo tema se aplica en las siguientes visitas y al actualizar páginas abiertas.';
+  $('seasonStatus').textContent=saved.mode==='automatico'
+   ?`✓ Modo automático guardado. Hoy se aplica ${seasonThemeNames[saved.activeTheme]||'Élite clásico'}; las festividades cambian según el calendario.`
+   :`✓ Tema ${seasonThemeNames[saved.activeTheme]||'Élite clásico'} activado en toda la web. Actualiza otras pestañas para verlo.`;
  }catch(err){$('seasonStatus').textContent='Error: '+err.message;}
  finally{button.disabled=false;}
 });

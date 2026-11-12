@@ -1,3 +1,11 @@
+## v3.8.3 · Ambientación festiva visible y control intuitivo (2026-11-12)
+
+- Corregida la capa de ambiente: estaba detrás de fondos opacos, por eso casi no se percibían cambios.
+- Fondos animados y colores más visibles en portada, panel de clientes y administración, sin bloquear botones.
+- Al seleccionar una festividad, el panel elige automáticamente modo **manual** y activa una vista previa local.
+- Al guardar, el panel indica el tema realmente activo. El modo automático seguirá el calendario de Perú; fuera de las fechas señaladas se verá Élite clásico.
+- Se respetan dispositivos móviles y `prefers-reduced-motion`. No afecta pagos, MySQL, Telegram, membresías o motor de análisis.
+
 ## v3.8.2 · Fondo animado y temas festivos globales (2026-11-12)
 
 - Fondos ambientales suaves en la portada, panel de clientes y administración; sin imágenes, scripts externos ni efectos que bloqueen la interacción.

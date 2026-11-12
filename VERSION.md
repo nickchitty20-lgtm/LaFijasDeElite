@@ -1,3 +1,10 @@
+## v3.8.3 · Fondo festivo visible y selección manual intuitiva
+
+- La capa de partículas deja de quedar oculta tras superficies oscuras y ofrece colores temáticos perceptibles.
+- Seleccionar Navidad, Halloween u otra festividad cambia el formulario a modo manual y muestra una vista previa inmediatamente.
+- Las confirmaciones explican qué tema está realmente activo, especialmente en modo automático.
+- Conserva las protecciones de accesibilidad y las funciones deportivas, financieras y de Telegram.
+
 ## v3.8.2 · Fondo animado y temas festivos globales (2026-11-12)
 
 - Fondos ambientales suaves en la portada, panel de clientes y administración; sin imágenes, scripts externos ni efectos que bloqueen la interacción.
