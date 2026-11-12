@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 let currentAdminRole='';
-const ADMIN_PANEL_BUILD='3.8.1';
+const ADMIN_PANEL_BUILD='3.8.2';
 // Diagnose a partial/old Railway deployment instead of silently rendering stale UI.
 async function checkAdminBuild(){
  const label=$('adminBuildVersion'),status=$('adminBuildStatus');
@@ -396,7 +396,7 @@ async function loadAudit(){
 // Cada cargo ve solamente sus módulos autorizados; la navegación no depende
 // de la propiedad hidden del panel (que cambia cada vez que elegimos una pestaña).
 const ADMIN_SECTIONS_BY_ROLE={
- owner:['overview','predictions','performance-demo','football','sources','payments','finance','vip','plans','customers','staff','audit','telegram','mytelegram'],
+ owner:['overview','predictions','performance-demo','football','sources','visual-theme','payments','finance','vip','plans','customers','staff','audit','telegram','mytelegram'],
  general_admin:['overview','predictions','payments','finance','vip','plans','customers','audit','mytelegram'],
  payments_admin:['overview','payments','finance','vip','plans','customers','mytelegram'],
  analyst:['overview','predictions','mytelegram'],
@@ -430,8 +430,9 @@ function selectAdminSection(section){
   const ownOnly=panel.id==='paypalDiagnosticsPanel';
   panel.hidden=panel.dataset.panel!==section||!allowed.has(panel.dataset.panel)||(ownOnly&&currentAdminRole!=='owner');
  }
- document.querySelector('#dashboard .heading h1').textContent=({overview:'Resumen del negocio',predictions:'Gestión de pronósticos',payments:'Solicitudes de pago',finance:'Finanzas y conciliación',vip:'Gestión manual GOLD y VIP',plans:'Planes y precios',customers:'Clientes registrados',staff:'Gestión de personal',audit:'Historial de actividad',telegram:'Telegram y suscriptores VIP',mytelegram:'Mi Telegram VIP',football:'Análisis automático de fútbol',sources:'Fuentes deportivas','performance-demo':'Estadísticas de prueba · DEMO'})[section]||'Resumen del negocio';
+ document.querySelector('#dashboard .heading h1').textContent=({overview:'Resumen del negocio',predictions:'Gestión de pronósticos',payments:'Solicitudes de pago',finance:'Finanzas y conciliación',vip:'Gestión manual GOLD y VIP',plans:'Planes y precios',customers:'Clientes registrados',staff:'Gestión de personal',audit:'Historial de actividad',telegram:'Telegram y suscriptores VIP',mytelegram:'Mi Telegram VIP',football:'Análisis automático de fútbol',sources:'Fuentes deportivas','performance-demo':'Estadísticas de prueba · DEMO','visual-theme':'Temas y festividades'})[section]||'Resumen del negocio';
  if(section==='sources'&&currentAdminRole==='owner')loadSportsSources();
+ if(section==='visual-theme'&&currentAdminRole==='owner')loadSiteThemeSettings();
 }
 document.querySelectorAll('.admin-nav button[data-section]').forEach(button=>button.addEventListener('click',()=>selectAdminSection(button.dataset.section)));
 
@@ -1374,4 +1375,44 @@ $('footballSettleButton')?.addEventListener('click',async()=>{
   label.textContent=r.busy?'Ya hay una comprobación en curso.':`Comprobados: ${r.reviewed} · Actualizados: ${r.settled} · Ganadas: ${r.won} · Perdidas: ${r.lost} · Anuladas: ${r.void} · Sin marcador reciente verificable: ${r.invalid_source} · Mercado no reconocible: ${r.unsupported}.`;
   await loadFootballEngine();await loadPredictions();
  }catch(e){label.textContent=e.message;}finally{button.disabled=false;}
+});
+
+// v3.8.2 · Persistent seasonal theme editor (owner only).
+let seasonSaved=null;
+const seasonThemeNames={elite:'Élite clásico',navidad:'Navidad',ano_nuevo:'Año Nuevo',san_valentin:'San Valentín',fiestas_patrias:'Fiestas Patrias',halloween:'Halloween',primavera:'Primavera'};
+function seasonFormValues(){const f=$('seasonalThemeForm');return f?{mode:f.elements.mode.value,theme:f.elements.theme.value,motion:f.elements.motion.value}:null;}
+function updateSeasonCurrent(settings){
+ const item=$('seasonCurrent');if(!item)return;
+ item.textContent=`Tema activo: ${seasonThemeNames[settings.activeTheme]||'Élite clásico'} · Modo ${settings.mode==='manual'?'manual':'automático'} · Animación ${settings.motion}.`;
+}
+async function loadSiteThemeSettings(){
+ if(currentAdminRole!=='owner')return;
+ try{
+  const settings=await api('/api/admin/site-theme');seasonSaved=settings;
+  const f=$('seasonalThemeForm');if(!f)return;
+  f.elements.mode.value=settings.mode;f.elements.theme.value=settings.theme;f.elements.motion.value=settings.motion;
+  updateSeasonCurrent(settings);$('seasonStatus').textContent='';
+ }catch(err){$('seasonStatus').textContent='No se pudo cargar: '+err.message;}
+}
+$('seasonPreview')?.addEventListener('click',()=>{
+ if(currentAdminRole!=='owner')return;
+ const s=seasonFormValues();if(!s)return;
+ window.FijasTheme?.preview(s.theme,s.motion);
+ $('seasonStatus').textContent='Vista previa local. Para aplicarla a toda la web pulsa Guardar.';
+});
+$('seasonResetPreview')?.addEventListener('click',()=>{
+ if(!seasonSaved)return;
+ window.FijasTheme?.applyTheme(seasonSaved);
+ $('seasonStatus').textContent='Vista previa restablecida.';
+});
+$('seasonalThemeForm')?.addEventListener('submit',async event=>{
+ event.preventDefault();if(currentAdminRole!=='owner')return;
+ const values=seasonFormValues(),button=$('seasonSave');button.disabled=true;
+ $('seasonStatus').textContent='Guardando el tema…';
+ try{
+  const saved=await api('/api/admin/site-theme',{method:'PUT',body:JSON.stringify(values)});
+  seasonSaved=saved;window.FijasTheme?.applyTheme(saved);updateSeasonCurrent(saved);
+  $('seasonStatus').textContent='✓ Configuración guardada. El nuevo tema se aplica en las siguientes visitas y al actualizar páginas abiertas.';
+ }catch(err){$('seasonStatus').textContent='Error: '+err.message;}
+ finally{button.disabled=false;}
 });

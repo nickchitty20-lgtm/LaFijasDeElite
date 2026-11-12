@@ -11,6 +11,17 @@ export async function initializeDatabase() {
     for (const statement of statements) {
       await connection.query(statement);
     }
+    // v3.8.2 · Site-wide visual theme, managed only by the owner.
+    // Single row, additive migration; no existing records are touched.
+    await connection.query(`CREATE TABLE IF NOT EXISTS site_theme_settings (
+      id TINYINT UNSIGNED NOT NULL PRIMARY KEY,
+      mode VARCHAR(16) NOT NULL DEFAULT 'automatico',
+      theme VARCHAR(32) NOT NULL DEFAULT 'elite',
+      motion VARCHAR(16) NOT NULL DEFAULT 'suave',
+      updated_by BIGINT UNSIGNED NULL,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB`);
+    await connection.execute("INSERT IGNORE INTO site_theme_settings(id,mode,theme,motion) VALUES (1,'automatico','elite','suave')");
     // v3.5.1: keep every existing plan VIP; GOLD is an independent tier.
     const [planCols]=await connection.query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='plans'");
     if(!planCols.some(c=>c.COLUMN_NAME==='tier'))await connection.query("ALTER TABLE plans ADD COLUMN tier ENUM('gold','vip') NOT NULL DEFAULT 'vip'");

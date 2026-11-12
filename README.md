@@ -1,3 +1,11 @@
+## v3.8.2 · Fondo animado y temas festivos globales (2026-11-12)
+
+- Fondos ambientales suaves en la portada, panel de clientes y administración; sin imágenes, scripts externos ni efectos que bloqueen la interacción.
+- Temas: Élite clásico, Navidad, Año Nuevo, San Valentín, Fiestas Patrias, Halloween y Primavera. Activación automática por fecha de Perú (America/Lima) o elección manual del propietario.
+- Administración → **Temas y festividades**: vista previa local, intensidad de animación (suave, normal, apagada), guardar/restablecer. Configuración única en MySQL y registro de auditoría.
+- Respeta la preferencia de accesibilidad `prefers-reduced-motion`; menos elementos en móviles, sin animaciones al desactivarlas.
+- Migración aditiva `site_theme_settings`, sin cambios a pagos, membresías, motores deportivos ni Telegram. Después de subir a Railway, recarga la portada para aplicar el tema.
+
 ## v3.8.1 · Corrección de tarjetas de precios en escritorio
 
 Se compactaron las tarjetas GOLD/VIP de la landing para pantallas de PC o portátiles con poco alto disponible (p. ej. 1083×680). Los botones permanecen visibles dentro de la tarjeta; las tarjetas no tienen scroll interno. Se mantiene el diseño vertical en móvil. Sin cambios de pagos, precios configurados, suscripciones ni integraciones.

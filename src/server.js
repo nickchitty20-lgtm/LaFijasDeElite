@@ -33,9 +33,10 @@ import {peruLocalToUtc} from './match-schedule.js';
 import {publishedFootballDetails} from './football-report.js';
 import {publicAnalysisText} from './public-branding.js';
 import {publicPerformanceFilters,performanceWhere,summaryFromGroups,publicRecentResults} from './performance-stats.js';
+import {effectiveSiteTheme,sanitizeSiteTheme,SITE_THEMES,SITE_THEME_MODES,SITE_THEME_MOTION} from './site-themes.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
-const APP_VERSION = '3.8.1';
+const APP_VERSION = '3.8.2';
 const app = express();
 let telegramVipControl=null;
 let notificationControl=null;
@@ -125,6 +126,40 @@ app.get('/api/public/telegram',(req,res)=>res.json({
  free_channel_url:safeTelegramPublicUrl(process.env.TELEGRAM_FREE_CHANNEL_URL),
  free_group_url:safeTelegramPublicUrl(process.env.TELEGRAM_FREE_GROUP_URL)
 }));
+// v3.8.2: an optional seasonal background, with global owner-controlled persistence.
+// Public GET exposes visual settings only; there are no privileged IDs or tokens.
+app.get('/api/public/site-theme',async(req,res)=>{
+ try{
+  const [[row]]=await db.query('SELECT mode,theme,motion FROM site_theme_settings WHERE id=1');
+  res.json(effectiveSiteTheme(row||{}));
+ }catch(e){console.error('site theme public',e.code||e.message);res.status(503).json({error:'No se pudo cargar el tema visual'});}
+});
+app.get('/api/admin/site-theme',authenticateSiteTheme,async(req,res)=>{
+ try{const [[row]]=await db.query('SELECT mode,theme,motion,updated_at FROM site_theme_settings WHERE id=1');res.json({...effectiveSiteTheme(row||{}),updatedAt:row?.updated_at||null});}
+ catch(e){console.error('site theme admin',e.code||e.message);res.status(503).json({error:'No se pudo cargar la configuración'});}
+});
+const themeWriteLimit=apiRateLimit({windowMs:15*60*1000,limit:18,standardHeaders:'draft-7',legacyHeaders:false});
+app.put('/api/admin/site-theme',themeWriteLimit,authenticateSiteTheme,async(req,res)=>{
+ const schema=z.object({mode:z.enum(SITE_THEME_MODES),theme:z.enum(SITE_THEMES),motion:z.enum(SITE_THEME_MOTION)}).strict();
+ const parsed=schema.safeParse(req.body);
+ if(!parsed.success)return res.status(400).json({error:'Configuración del tema inválida'});
+ const settings=sanitizeSiteTheme(parsed.data);
+ const conn=await db.getConnection();
+ try{
+  await conn.beginTransaction();
+  await conn.execute(`INSERT INTO site_theme_settings (id,mode,theme,motion,updated_by)
+    VALUES (1,?,?,?,?) ON DUPLICATE KEY UPDATE mode=VALUES(mode),theme=VALUES(theme),motion=VALUES(motion),updated_by=VALUES(updated_by)`,
+    [settings.mode,settings.theme,settings.motion,req.admin.id]);
+  await conn.execute(`INSERT INTO audit_logs(actor_admin_id,action,entity_type,entity_id,details)
+    VALUES (?,'site_theme_changed','site_theme','1',?)`,[req.admin.id,JSON.stringify(settings)]);
+  await conn.commit();res.json({...effectiveSiteTheme(settings),saved:true});
+ }catch(e){try{await conn.rollback();}catch{}console.error('site theme save',e.code||e.message);res.status(500).json({error:'No se pudo guardar el tema'});}
+ finally{conn.release();}
+});
+// Declared in this scope to permit routing before the regular authenticate definition.
+async function authenticateSiteTheme(req,res,next){
+ await authenticate(req,res,()=>req.admin?.role==='owner'?next():res.status(403).json({error:'Solo el propietario puede cambiar el tema'}));
+}
 app.get('/health',async(req,res)=>{try{await db.query('SELECT 1');res.json({status:'ok',database:'connected',version:APP_VERSION});}catch{res.status(503).json({status:'unavailable',version:APP_VERSION});}});
 
 const loginSchema=z.object({email:z.string().email().max(254),password:z.string().min(1).max(256)}).strict();
