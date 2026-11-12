@@ -1,0 +1,20 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+const read = name => readFileSync(new URL('../'+name,import.meta.url),'utf8');
+test('tarjetas GOLD y VIP tienen layout compacto desktop y CTA sin posicionamiento fijo', () => {
+  const css = read('public/landing.css');
+  const landing = read('public/landing.js');
+  const html = read('public/index.html');
+  assert.match(css, /v3\.8\.1 · Membership price cards desktop/);
+  assert.match(css, /@media \(min-width:721px\)/);
+  assert.match(css, /\.plans-section \.tier-card \{min-width:0;min-height:0/);
+  assert.match(css, /\.plans-section \.tier-card>\.button \{width:100%;margin-top:auto;min-height:44px/);
+  assert.match(css, /@media \(min-width:721px\) and \(max-height:740px\)/);
+  assert.match(css, /@media \(max-width:720px\)/);
+  assert.doesNotMatch(landing,/Precio configurado en el sistema/);
+  assert.match(landing,/por mensaje directo/);
+  assert.match(landing,/Acceder a GOLD/);
+  assert.match(landing,/Acceder a VIP/);
+  assert.match(html,/landing\.css\?v=3\.8\.1/);
+});
