@@ -1,3 +1,9 @@
+## v3.8.1 · Tarjetas GOLD/VIP adaptadas a pantallas de escritorio (2026-11-12)
+
+- Corrección visual de las dos tarjetas de precios de la portada para navegadores de escritorio de poca altura: espaciados y contenido más compactos; botones accesibles dentro del flujo normal y sin alturas ni posición fijas.
+- Descripciones breves y precios sin coletillas internas en la portada; se conservan los beneficios GOLD y VIP, la tabla comparativa, las duraciones, los enlaces reales y los descuentos.
+- Se conservan todos los controles de servidor, base de datos, Telegram, suscripciones y pagos. No requiere migraciones MySQL.
+
 ## v3.8.0 · Comparativa adaptable y anuncios limpios (2026-11-12)
 
 - Comparativa GOLD/VIP reestructurada con mejor alineación, saltos de línea y ancho disponible. En móvil cada beneficio tiene una fila independiente con dos columnas GOLD/VIP; en escritorio conserva tabla de tres columnas. Se comprobó que no aparece scroll horizontal en siete tamaños de pantalla.

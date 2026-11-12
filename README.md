@@ -1,3 +1,7 @@
+## v3.8.1 · Corrección de tarjetas de precios en escritorio
+
+Se compactaron las tarjetas GOLD/VIP de la landing para pantallas de PC o portátiles con poco alto disponible (p. ej. 1083×680). Los botones permanecen visibles dentro de la tarjeta; las tarjetas no tienen scroll interno. Se mantiene el diseño vertical en móvil. Sin cambios de pagos, precios configurados, suscripciones ni integraciones.
+
 ## v3.8.0 · Anuncios sin leyendas repetitivas y comparativa GOLD/VIP adaptable (2026-11-12)
 
 - Se eliminaron los pies de aviso repetidos sobre estimaciones, incertidumbre o promesas de resultado de la portada, fichas públicas y mensajes Telegram GOLD, VIP, Radar VIP, canal oficial, comunidad y confirmaciones del bot. Las cifras y estados siguen representándose tal como son; no se crean promesas de acierto.

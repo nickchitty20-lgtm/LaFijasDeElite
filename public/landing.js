@@ -10,20 +10,20 @@ function renderMembershipPlans(plans){
  const goldPlans=Array.isArray(plans)?plans.filter(p=>p.tier==='gold'&&Number(p.price_pen)>0):[];
  const goldMonthly=goldPlans.find(p=>Number(p.duration_days)===30)||goldPlans[0];
  const monthly=vipPlans.find(p=>Number(p.duration_days)===30)||vipPlans.find(p=>Number(p.duration_days)>=30)||vipPlans[0];
- const vipPrice=monthly?`<div class="price"><small>S/</small>${price(monthly.price_pen)}</div>${offer(monthly)}<span class="duration">${days(monthly.duration_days)} · Precio configurado en el sistema</span>`:'<p class="plan-price-pending">Precios disponibles próximamente</p>';
+ const vipPrice=monthly?`<div class="price"><small>S/</small>${price(monthly.price_pen)}</div>${offer(monthly)}<span class="duration">${days(monthly.duration_days)} de acceso</span>`:'<p class="plan-price-pending">Precios disponibles próximamente</p>';
  const vipOffers=vipPlans.length?`<div class="membership-terms"><span>Duraciones disponibles</span><div>${vipPlans.map(p=>`<a href="/clientes.html?plan=${encodeURIComponent(p.id)}" data-plan-auth="${encodeURIComponent(p.id)}" data-plan-name="${clean(p.name)}">${days(p.duration_days)} · S/ ${price(p.price_pen)}</a>`).join('')}</div></div>`:'<p class="membership-terms">Consulta la disponibilidad del plan VIP.</p>';
  return `<article class="plan tier-card tier-gold" aria-label="Membresía Élite Gold">
    <span class="tier-kicker">✧ MEMBRESÍA INTERMEDIA</span><h3>ÉLITE <em>GOLD</em></h3>
-   ${goldMonthly?`<div class="price"><small>S/</small>${price(goldMonthly.price_pen)}</div>${offer(goldMonthly)}<span class="duration">${days(goldMonthly.duration_days)} · Precio configurado en el sistema</span>`:'<p class="plan-price-pending">Precios próximamente</p>'}
-   <p class="tier-explainer">Selecciones GOLD por mensaje directo a tu Telegram vinculado, con acceso controlado y lista blanca propia del nivel GOLD.</p>
-   <ul><li>Selecciones GOLD exclusivas</li><li>Análisis y evaluación de riesgos</li><li>Avisos automáticos al aprobar nuevas selecciones GOLD</li><li>Lista blanca GOLD ligada a tu Telegram vinculado</li><li>Sin exposición pública de la selección completa</li></ul>
+   ${goldMonthly?`<div class="price"><small>S/</small>${price(goldMonthly.price_pen)}</div>${offer(goldMonthly)}<span class="duration">${days(goldMonthly.duration_days)} de acceso</span>`:'<p class="plan-price-pending">Precios próximamente</p>'}
+   <p class="tier-explainer">Recibe selecciones GOLD por mensaje directo en tu Telegram vinculado.</p>
+   <ul><li>Selecciones GOLD exclusivas</li><li>Análisis y evaluación de riesgos</li><li>Avisos al publicarse nuevas selecciones GOLD</li><li>Acceso por lista blanca GOLD</li><li>Selecciones completas solo para miembros</li></ul>
    ${goldPlans.length?`<div class="membership-terms"><span>Duraciones disponibles</span><div>${goldPlans.map(p=>`<a href="/clientes.html?plan=${encodeURIComponent(p.id)}" data-plan-auth="${encodeURIComponent(p.id)}" data-plan-name="${clean(p.name)}">${days(p.duration_days)} · S/ ${price(p.price_pen)}</a>`).join('')}</div></div>`:''}
    ${goldMonthly?`<a class="button gold" href="/clientes.html?plan=${encodeURIComponent(goldMonthly.id)}" data-plan-auth="${encodeURIComponent(goldMonthly.id)}" data-plan-name="${clean(goldMonthly.name)}">Acceder a GOLD ↗</a>`:'<span class="tier-soon">Inscripciones temporalmente no disponibles</span>'}
  </article>
  <article class="plan tier-card tier-vip featured" aria-label="Membresía Élite VIP">
    <span class="tag">NIVEL MÁXIMO</span><span class="tier-kicker">♛ MEMBRESÍA SUPERIOR</span><h3>ÉLITE <em>VIP</em></h3>
-   ${vipPrice}<p class="tier-explainer">Nuestro nivel máximo, con filtros más exigentes, acceso preferente y la cobertura más completa del servicio.</p>
-   <ul><li>Pronósticos VIP con filtros exigentes</li><li>Informes detallados y evaluación de riesgos</li><li>Canal privado VIP y alertas</li><li>Radar VIP: análisis anticipados y seguimiento deportivo</li><li>Comparación estadística con modelos predictivos experimentales</li><li>Incluye también las selecciones GOLD por privado</li></ul>
+   ${vipPrice}<p class="tier-explainer">Canal privado VIP, análisis avanzados y Radar VIP de próximos encuentros.</p>
+   <ul><li>Pronósticos VIP con filtros exigentes</li><li>Informes y evaluación de riesgos</li><li>Canal privado VIP y alertas</li><li>Radar VIP: análisis anticipados</li><li>Comparación de modelos predictivos</li><li>Incluye selecciones GOLD por privado</li></ul>
    ${vipOffers}
    ${monthly?`<a class="button gold" href="/clientes.html?plan=${encodeURIComponent(monthly.id)}" data-plan-auth="${encodeURIComponent(monthly.id)}" data-plan-name="${clean(monthly.name)}">Acceder a VIP ↗</a>`:'<span class="tier-soon">Inscripciones temporalmente no disponibles</span>'}
  </article>

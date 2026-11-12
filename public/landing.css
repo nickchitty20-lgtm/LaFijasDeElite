@@ -85,3 +85,41 @@
 @media(max-width:380px){.membership-comparison{padding:14px 10px}.membership-comparison-table tbody th{padding:11px 10px}.membership-comparison-table tbody td{padding:9px 4px 11px}}
 .plan-discount{display:inline-block;margin:6px 0;padding:5px 10px;border-radius:999px;color:#f4d58e;background:rgba(184,137,46,.14);font-size:.75rem;font-weight:700}
 .plan-old-price{display:block;color:#9ca3af;font-size:.8rem;margin:2px 0 8px}
+
+
+/* v3.8.1 · Membership price cards desktop: fit usable laptop viewports, not just mobile.
+   Keeps the CTA in normal document flow, no fixed heights or clipped overflow. */
+@media (min-width:721px) {
+ .plans-section .plan-grid {align-items:stretch;gap:clamp(14px,2vw,22px);}
+ .plans-section .tier-card {min-width:0;min-height:0;padding:clamp(22px,2.6vw,28px) clamp(18px,2.6vw,28px) 22px;overflow:visible;}
+ .plans-section .tier-kicker {margin-bottom:5px;line-height:1.4;}
+ .plans-section .tier-card h3 {font-size:clamp(26px,2.9vw,33px);line-height:1.25;margin:2px 0 3px;}
+ .plans-section .tier-card .price {font-size:clamp(35px,4vw,47px);line-height:1.13;margin-top:2px;}
+ .plans-section .tier-card .duration {display:block;line-height:1.4;margin-top:3px;}
+ .plans-section .tier-explainer {margin:10px 0 0;font-size:13px;line-height:1.55;}
+ .plans-section .tier-card ul {line-height:1.45;font-size:12px;margin:13px 0 8px;padding:0;}
+ .plans-section .tier-card li {margin:0 0 7px;line-height:1.5;overflow-wrap:break-word;}
+ .plans-section .plan-discount {align-self:flex-start;max-width:100%;white-space:normal;overflow-wrap:anywhere;}
+ .plans-section .membership-terms {margin:0 0 10px;padding-top:8px;line-height:1.4;}
+ .plans-section .membership-terms>span {margin-bottom:6px;}
+ .plans-section .membership-terms>div {gap:6px;}
+ .plans-section .membership-terms a {display:inline-flex;align-items:center;padding:6px 8px;min-height:31px;line-height:1.35;}
+ .plans-section .tier-card>.button {width:100%;margin-top:auto;min-height:44px;padding:10px 14px;}
+ .plans-section .tier-card .tag {top:15px;right:15px;}
+}
+@media (min-width:721px) and (max-width:980px) {
+ .plans-section .tier-card {padding:22px 18px 20px;}
+ .plans-section .tier-explainer {font-size:12px;}
+ .plans-section .tier-card ul {font-size:12px;}
+}
+@media (min-width:721px) and (max-height:740px) {
+ .plans-section .tier-card {padding-top:20px;padding-bottom:17px;}
+ .plans-section .tier-card ul {margin-top:10px;margin-bottom:4px;}
+ .plans-section .tier-card li {margin-bottom:5px;}
+ .plans-section .membership-terms {padding-top:5px;margin-bottom:8px;}
+}
+/* Keep the original stacked mobile layout, but never clip the action. */
+@media (max-width:720px) {
+ .plans-section .tier-card {overflow:hidden;}
+ .plans-section .tier-card>.button {width:100%;flex-shrink:0;}
+}
