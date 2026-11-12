@@ -27,18 +27,18 @@ function renderMembershipPlans(plans){
    ${vipOffers}
    ${monthly?`<a class="button gold" href="/clientes.html?plan=${encodeURIComponent(monthly.id)}" data-plan-auth="${encodeURIComponent(monthly.id)}" data-plan-name="${clean(monthly.name)}">Acceder a VIP ↗</a>`:'<span class="tier-soon">Inscripciones temporalmente no disponibles</span>'}
  </article>
- <section class="membership-comparison" aria-label="Comparación GOLD y VIP">
- <h3>Compara las membresías</h3>
- <div class="membership-comparison-scroll"><table><thead><tr><th>Servicio</th><th>GOLD</th><th>VIP</th></tr></thead><tbody>
- <tr><th>Selecciones GOLD por Telegram privado</th><td>Incluidas</td><td>Incluidas</td></tr>
- <tr><th>Lista blanca y autorización del bot</th><td>GOLD</td><td>GOLD y VIP</td></tr>
- <tr><th>Selecciones VIP validadas</th><td>—</td><td>Incluidas cuando existen</td></tr>
- <tr><th>Canal privado VIP</th><td>—</td><td>Incluido</td></tr>
- <tr><th>Radar de análisis anticipados</th><td>—</td><td>Incluido</td></tr>
- <tr><th>Informes de mercados y seguimiento</th><td>GOLD</td><td>GOLD + VIP</td></tr>
- <tr><th>Duración</th><td>7, 30 y 90 días según disponibilidad</td><td>Según plan disponible</td></tr>
+ <section class="membership-comparison" aria-labelledby="membershipCompareTitle">
+ <div class="membership-comparison-heading"><span class="membership-comparison-kicker">ELIGE TU ACCESO</span><h3 id="membershipCompareTitle">Compara las membresías</h3></div>
+ <div class="membership-comparison-scroll"><table class="membership-comparison-table" aria-label="Servicios incluidos en GOLD y VIP"><colgroup><col class="compare-feature-col"><col class="compare-plan-col"><col class="compare-plan-col"></colgroup>
+ <thead><tr><th scope="col">Beneficios</th><th scope="col">✦ GOLD</th><th scope="col">♛ VIP</th></tr></thead><tbody>
+ <tr><th scope="row">Selecciones GOLD por mensaje privado</th><td data-label="GOLD"><span class="compare-yes">✓ Incluido</span></td><td data-label="VIP"><span class="compare-yes">✓ Incluido</span></td></tr>
+ <tr><th scope="row">Lista blanca y acceso por Telegram</th><td data-label="GOLD">GOLD</td><td data-label="VIP">GOLD y VIP</td></tr>
+ <tr><th scope="row">Selecciones VIP validadas</th><td data-label="GOLD"><span class="compare-no" aria-label="No incluido">—</span></td><td data-label="VIP"><span class="compare-yes">✓ Según disponibilidad</span></td></tr>
+ <tr><th scope="row">Canal privado VIP</th><td data-label="GOLD"><span class="compare-no" aria-label="No incluido">—</span></td><td data-label="VIP"><span class="compare-yes">✓ Incluido</span></td></tr>
+ <tr><th scope="row">Radar de análisis anticipados</th><td data-label="GOLD"><span class="compare-no" aria-label="No incluido">—</span></td><td data-label="VIP"><span class="compare-yes">✓ Incluido</span></td></tr>
+ <tr><th scope="row">Análisis y seguimiento</th><td data-label="GOLD">GOLD</td><td data-label="VIP">GOLD + VIP</td></tr>
+ <tr><th scope="row">Duraciones disponibles</th><td data-label="GOLD">7 / 30 / 90 días</td><td data-label="VIP">Según el plan</td></tr>
  </tbody></table></div>
- <p>Las predicciones son estimaciones, no garantías de resultado. El Radar VIP se distingue de las selecciones VIP validadas.</p>
  </section>`;
 }
 async function loadPlans(){
@@ -143,7 +143,7 @@ async function loadPublicPerformance(){
    return `<div class="performance-result"><span class="performance-result-match"><strong>${clean(p.title)}</strong><small>#${clean(p.id)} · ${clean(p.league||'Fútbol')} · ${p.visibility==='vip'?'VIP':p.visibility==='gold'?'GOLD':'ABIERTO'} · ${clean(dateText)}${p.withdrawn?' · Retirado':''}${p.score?' · Marcador '+clean(p.score):''} · ${p.result_source==='automatic'?'Cotejo automático':p.result_source==='manual'?'Registro manual':'Registro anterior'}</small></span><span class="performance-tag ${style}">${label}</span></div>`;
   }).join('');
   const withdrawn=Number(v.archived||0);
-  el('performanceNote').textContent=`Resultados registrados: ${perfNumber(v.source_checked)} cotejos automáticos y ${perfNumber(v.manual_checked)} registros manuales. ${withdrawn?`Se incluyen ${withdrawn} pronóstico(s) retirado(s) en el historial; ${perfNumber(v.retired_unsettled)} retirado(s) sin resultado no cuentan como pendientes. `:''}La tasa de acierto considera ganadas y perdidas, sin pendientes ni anuladas. Los resultados anteriores no garantizan futuros aciertos.`;
+  el('performanceNote').textContent=`Resultados registrados: ${perfNumber(v.source_checked)} cotejos automáticos y ${perfNumber(v.manual_checked)} registros manuales. ${withdrawn?`Se incluyen ${withdrawn} pronóstico(s) retirado(s) en el historial; ${perfNumber(v.retired_unsettled)} retirado(s) sin resultado no cuentan como pendientes. `:''}La tasa de acierto considera ganadas y perdidas, sin pendientes ni anuladas. `;
   el('performanceUpdated').textContent='Actualizado: '+new Intl.DateTimeFormat('es-PE',{dateStyle:'short',timeStyle:'short',timeZone:'America/Lima'}).format(new Date(data.generated_at));
  }catch(e){summary.innerHTML='<p class="performance-empty">Las estadísticas no están disponibles en este momento.</p>';breakdown.replaceChildren();history.innerHTML='<p class="performance-empty">Vuelve a intentar más tarde.</p>';el('performanceUpdated').textContent='Sin conexión';}
 }

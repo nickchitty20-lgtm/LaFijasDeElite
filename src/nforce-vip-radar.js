@@ -109,23 +109,21 @@ export function prepareVipRadar(matches,{now=new Date(),days=VIP_RADAR_MAX_DAYS,
     `${counts.near_term_eligible} encuentros próximos tienen modelo y hora conocida.`},
   next_eligible_at:chosen[0]?.kickoff||null,
   counts,from_hours:VIP_RADAR_MIN_LEAD_HOURS,lookahead_days:days,
-  official_vip_count:0,disclaimer:'Radar VIP: seguimiento anticipado, distinto de las selecciones VIP validadas. Probabilidades estimadas sujetas a incertidumbre.'};
+  official_vip_count:0};
 }
 
 export function vipRadarTelegramMessage(report,{asOf=new Date()}={}){
  if(!report?.items?.length)return '';
- const head='👑 <b>FIJAS DE ÉLITE · RADAR VIP</b>\n📡 <b>Estudios de partidos próximos</b>\n\n';
+ const head='👑 <b>FIJAS DE ÉLITE · RADAR VIP · ANÁLISIS ANTICIPADO</b>\n📡 <b>Estudios de partidos próximos</b>\n\n';
  const rows=report.items.slice(0,5).map((f,i)=>{
   const dt=new Intl.DateTimeFormat('es-PE',{timeZone:'America/Lima',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(f.kickoff));
   const p=f.probabilities;
   return `<b>${i+1}. ${h(f.home)} vs. ${h(f.away)}</b>\n🏆 ${h(f.league)} · 🕒 ${h(dt)} (Perú)\n`+
    `📊 Modelo base 1 / X / 2: ${pct(p.home)} / ${pct(p.draw)} / ${pct(p.away)}`+
    (f.ai?`\n📈 Proyección complementaria 1 / X / 2: ${pct(f.ai.hybrid.home)} / ${pct(f.ai.hybrid.draw)} / ${pct(f.ai.hybrid.away)}`:'')+
-   `\n📚 Cobertura estadística: ${Number(f.quality)}/100 (no es una tasa de aciertos).`;
+   `\n📚 Cobertura estadística: ${Number(f.quality)}/100`;
  }).join('\n\n');
- return head+rows+'\n\n🔎 <b>RADAR VIP · ANÁLISIS ANTICIPADO</b>\n'+
-  'Estos estudios muestran encuentros en seguimiento. Las selecciones VIP validadas se publican por separado.\n'+
-  'ℹ️ Probabilidades estimadas, no tasas históricas de acierto. Los resultados son inciertos.';
+ return head+rows;
 }
 
 /** Public teaser for a successfully delivered VIP scouting bulletin.
@@ -145,6 +143,5 @@ export function vipRadarOfficialTeaser(report,{baseUrl}={}){
   `📣 <b>Nuevo boletín exclusivo de análisis anticipado</b>\n`+
   `⚽ <b>${count} ${count===1?'partido estudiado':'partidos estudiados'}</b>${fixture}${competition}${kickoff}\n\n`+
   `🔒 Las probabilidades y el estudio completo están disponibles en el canal VIP.\n`+
-  `🔎 Radar VIP ofrece seguimiento anticipado; las selecciones VIP validadas se publican por separado.\n\n`+
   `✨ Descubre la membresía: ${h(telegramHomeUrl(baseUrl))}`;
 }

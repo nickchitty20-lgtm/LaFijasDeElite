@@ -20,9 +20,7 @@ export function goldOfficialAnnouncement(baseUrl,p=null){
 
 🔐 El pronóstico completo y sus fundamentos llegan por privado a miembros GOLD y VIP verificados.
 
-✨ Descubre el acceso GOLD: ${landing}
-
-<i>Evaluación estadística sujeta a incertidumbre.</i>`;
+✨ Descubre el acceso GOLD: ${landing}`;
 }
 
 /** One announcement per *published* GOLD prediction, official channel only.

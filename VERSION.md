@@ -1,3 +1,9 @@
+## v3.8.0 · Comparativa adaptable y anuncios limpios (2026-11-12)
+
+- Comparativa GOLD/VIP reestructurada con mejor alineación, saltos de línea y ancho disponible. En móvil cada beneficio tiene una fila independiente con dos columnas GOLD/VIP; en escritorio conserva tabla de tres columnas. Se comprobó que no aparece scroll horizontal en siete tamaños de pantalla.
+- Se retiraron comentarios comerciales repetitivos de la landing y los mensajes Telegram. No se alteran textos de estado técnicos necesarios para evitar publicar partidos sin datos válidos.
+- Sin migraciones destructivas ni cambios de comportamiento en Telegram, membresías, pagos o modelos. Las plantillas nuevas afectan solo a mensajes futuros.
+
 ## v3.7.9 · Descuentos, GOLD manual y comparativa (2026-11-12)
 
 - Promociones temporales o indefinidas, por porcentaje o importe fijo, con motivo obligatorio, gestionadas solo por el propietario en **Planes y precios**. Precio base intacto; promoción visible en la landing y en las opciones del cliente. Los pagos Yape/Plin y PayPal toman el precio promocional vigente al abrir la solicitud, guardando el importe en el recibo; cambios futuros no afectan pagos creados.

@@ -1,3 +1,10 @@
+## v3.8.0 · Anuncios sin leyendas repetitivas y comparativa GOLD/VIP adaptable (2026-11-12)
+
+- Se eliminaron los pies de aviso repetidos sobre estimaciones, incertidumbre o promesas de resultado de la portada, fichas públicas y mensajes Telegram GOLD, VIP, Radar VIP, canal oficial, comunidad y confirmaciones del bot. Las cifras y estados siguen representándose tal como son; no se crean promesas de acierto.
+- Se mantuvieron los encabezados que distinguen Radar VIP (análisis anticipados) de las selecciones VIP validadas, y no se revelan picks, cuotas o probabilidades privadas en anuncios públicos.
+- Comparación GOLD/VIP renovada: tabla semántica de tres columnas en escritorio, formato de filas con GOLD/VIP en móvil, sin ancho mínimo fijo ni desplazamiento lateral. Comprobado en 320, 360, 390, 768, 1024, 1440 y 1920 px con Chromium.
+- Solo cambios de presentación y textos: sin migraciones MySQL, sin cambios en cobros, envíos, permisos, precios, filtros ni publicación. Los anuncios ya enviados en Telegram no se editan retroactivamente.
+
 ## v3.7.9 · Descuentos, GOLD manual y comparativa (2026-11-12)
 
 - Promociones temporales o indefinidas, por porcentaje o importe fijo, con motivo obligatorio, gestionadas solo por el propietario en **Planes y precios**. Precio base intacto; promoción visible en la landing y en las opciones del cliente. Los pagos Yape/Plin y PayPal toman el precio promocional vigente al abrir la solicitud, guardando el importe en el recibo; cambios futuros no afectan pagos creados.

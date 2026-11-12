@@ -28,7 +28,7 @@ function goals(p){
  if(probs&&(probs.home!=null||probs.draw!=null||probs.away!=null)){
   body.append(el('p','fe-goal-probabilities',`Estimación 1X2 (${f.probability_source||'proveedor'}): local ${probs.home??'—'} % · empate ${probs.draw??'—'} % · visitante ${probs.away??'—'} %. No es una tasa real de acierto.`));
  }
- body.append(el('small','fe-goal-warning',f.disclaimer||'Datos orientativos sin garantías.'));
+
  return body;
 }
 function advanced(p){
@@ -53,7 +53,7 @@ function advanced(p){
   root.append(part);
  }
  if(a.risks?.length)root.append(el('p','fe-goal-warning',a.risks.join(' ')));
- root.append(el('small','fe-goal-warning','Información del proveedor; no asegura que el once sea definitivo ni que una baja determine el resultado.'));
+
  return root;
 }
 function pickInfo(p){

@@ -13,5 +13,5 @@ export function telegramGoldUsernameMatches(expected,actual){
 }
 export function goldAuthorizationText(username){
  const name=normalizeTelegramUsername(username);
- return `💎 FIJAS DE ÉLITE · ACCESO GOLD CONFIRMADO\n\n✅ Tu cuenta ${name?'@'+name:'de Telegram'} está verificada y autorizada en la lista blanca GOLD.\n\n🔔 Recibirás aquí los pronósticos GOLD completos mientras tu membresía GOLD o VIP permanezca activa.\n👑 Las selecciones VIP se publican exclusivamente en el canal VIP.\n\nℹ️ Las proyecciones deportivas están sujetas a incertidumbre.`;
+ return `💎 FIJAS DE ÉLITE · ACCESO GOLD CONFIRMADO\n\n✅ Tu cuenta ${name?'@'+name:'de Telegram'} está verificada y autorizada en la lista blanca GOLD.\n\n🔔 Recibirás aquí los pronósticos GOLD completos mientras tu membresía GOLD o VIP permanezca activa.\n👑 Las selecciones VIP se publican exclusivamente en el canal VIP.`;
 }

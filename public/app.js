@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 let currentAdminRole='';
-const ADMIN_PANEL_BUILD='3.7.9';
+const ADMIN_PANEL_BUILD='3.8.0';
 // Diagnose a partial/old Railway deployment instead of silently rendering stale UI.
 async function checkAdminBuild(){
  const label=$('adminBuildVersion'),status=$('adminBuildStatus');
@@ -725,7 +725,7 @@ async function loadSportsFixturePreview(){
   list.replaceChildren();
   if(!data.fixtures.length){notice.textContent='No hay partidos futuros importados. Revisa la última importación, que la fuente complementaria esté activada y los límites de cobertura.';return;}
   const withTime=data.fixtures.filter(x=>x.scheduled_time_known&&x.kick_off).length;
-  notice.textContent=`${data.fixtures.length} partidos cargados · ${withTime} con hora · ${data.fixtures.length-withTime} sin hora (21 días). Aún no son pronósticos.`;
+  notice.textContent=`${data.fixtures.length} partidos cargados · ${withTime} con hora · ${data.fixtures.length-withTime} sin hora (21 días).`;
   for(const fixture of data.fixtures.slice(0,35)){
    const item=document.createElement('article');item.className='sports-fixture-item';
    const title=document.createElement('strong');title.textContent=`${fixture.home_team} vs ${fixture.away_team}`;
@@ -800,7 +800,7 @@ async function loadFootballEngine(){
    ['Backtest por tipo de fútbol',status.backtest?.by_context?Object.entries(status.backtest.by_context).map(([key,v])=>`${key==='national'?'Selecciones':'Clubes'}: ${v.evaluated||0} partidos modelados, ${(Object.values(v.by_market||{}).map(m=>m.evaluated||0).reduce((a,b)=>a+b,0))} selecciones por mercado (exige 32 por mercado VIP)`).join(' | '):'Validar modelo 1.9 para separar clubes y selecciones'],
    ['Evaluación por mercado',status.backtest?.by_market?Object.entries(status.backtest.by_market).map(([market,v])=>`${market}: ${v.evaluated} pruebas · ${v.accuracy}%`).join(' | ')||'Sin selecciones históricas validadas':'Pendiente'],
    ['Comparación con el motor anterior (Brier)',status.backtest?.comparison_previous?.paired_evaluated?
-    `Anterior: ${status.backtest.comparison_previous.previous_brier} · Nuevo: ${status.backtest.comparison_previous.current_brier} · ${status.backtest.comparison_previous.paired_evaluated} partidos pareados. ${status.backtest.comparison_previous.brier_difference<0?'Mejora retrospectiva':status.backtest.comparison_previous.brier_difference>0?'Sin mejora retrospectiva':'Mismo error'} (menor es mejor; no garantiza futuro).`:'Ejecuta Validar modelo']]:[]),
+    `Anterior: ${status.backtest.comparison_previous.previous_brier} · Nuevo: ${status.backtest.comparison_previous.current_brier} · ${status.backtest.comparison_previous.paired_evaluated} partidos pareados. ${status.backtest.comparison_previous.brier_difference<0?'Mejora retrospectiva':status.backtest.comparison_previous.brier_difference>0?'Sin mejora retrospectiva':'Mismo error'} (menor es mejor).`:'Ejecuta Validar modelo']]:[]),
    ['Búsqueda automática',status.auto_scan?'Activada':'Desactivada'],
    ['Publicación automática',status.auto_publish?'Activada':'Solo revisión'],
    ['Telegram canal oficial',status.telegram_free_ready?'Configurado':'Falta token o chat ID'],
@@ -869,7 +869,7 @@ async function loadFootballEngine(){
       `Escenario: ${goals.illustrative_score} · Diferencia: ${goals.illustrative_margin} ${goals.illustrative_margin===1?'gol':'goles'}`:
       'Marcador exacto: sin estimación por falta de datos suficientes.';
     goalBox.append(score);
-    const disclaimer=document.createElement('small');disclaimer.textContent=`Proyecciones orientativas, no garantizadas. Mercado seleccionado: ${c.market}. El marcador más probable no es una apuesta de resultado exacto.`;goalBox.append(disclaimer);
+
     item.append(goalBox);
    }
    if(c.advanced){
@@ -887,7 +887,7 @@ async function loadFootballEngine(){
    if(c.vip_validation){
     const badge=document.createElement('p');badge.className='football-meta';
     badge.textContent=c.vip_validation.approved?
-     `👑 VIP verificada retrospectivamente: ${c.vip_validation.evaluated} pruebas · ${c.vip_validation.accuracy}% observado (no garantizado).`:
+     `👑 VIP verificada retrospectivamente: ${c.vip_validation.evaluated} pruebas · ${c.vip_validation.accuracy}% observado.`:
      `⚠️ VIP sin validación suficiente: ${c.vip_validation.reason}`;
     badge.style.color=c.vip_validation.approved?'#d3b468':'#edb2a9';item.append(badge);
    }
@@ -1183,7 +1183,7 @@ $('footballBacktestButton')?.addEventListener('click',async()=>{
   const byGroup=Object.entries(r.by_context||{}).map(([key,v])=>`${key==='national'?'Selecciones':'Clubes'}: ${v.evaluated||0} partidos modelados`).join(' · ');
   const comparison=r.comparison_previous?.paired_evaluated?
    ` Comparación sobre ${r.comparison_previous.paired_evaluated} partidos: anterior Brier ${r.comparison_previous.previous_brier}, nuevo Brier ${r.comparison_previous.current_brier}. ${r.comparison_previous.brier_difference<0?'Menor error en la muestra.':'No hay mejora demostrada en esta muestra.'}`:'';
-  label.textContent=`Backtesting 1X2: ${r.evaluated} partidos · ${r.accuracy??'—'}% aciertos observados · Brier ${r.brier??'—'} · ${r.validated?'Muestra general alcanzada':'Muestra general insuficiente'}. ${byMarket?'Mercados: '+byMarket+'.':'Sin selecciones por mercado validadas.'} ${byGroup?byGroup+'. ':''}${comparison} No garantiza resultados futuros.`;
+  label.textContent=`Backtesting 1X2: ${r.evaluated} partidos · ${r.accuracy??'—'}% aciertos observados · Brier ${r.brier??'—'} · ${r.validated?'Muestra general alcanzada':'Muestra general insuficiente'}. ${byMarket?'Mercados: '+byMarket+'.':'Sin selecciones por mercado validadas.'} ${byGroup?byGroup+'. ':''}${comparison}`;
   await loadFootballEngine();
  }catch(e){label.textContent=e.message;}finally{button.disabled=false;}
 });
@@ -1201,7 +1201,7 @@ function renderNearTermScouting(report,container,notice){
   const detail=document.createElement('p');
   const when=match.kickoff?new Date(match.kickoff).toLocaleString('es-PE',{timeZone:'America/Lima'}):`${match.date||'Fecha pendiente'} (hora sin confirmar)`;
   detail.textContent=`${match.league} · ${when} · ${match.reason_text||'Pendiente de revisión'}`;card.append(detail);
-  const note=document.createElement('small');note.textContent='En observación: no es una selección VIP ni se enviará como pronóstico aprobado.';card.append(note);
+
   container.append(card);
  }
  if(!(report.watchlist||[]).length){
@@ -1220,7 +1220,7 @@ async function renderVipRadar(){
   const auto=$('footballVipRadarAuto');if(auto)auto.checked=Boolean(result.enabled);
   const last=result.last?.status?` · Último boletín VIP: ${result.last.status} · Adelanto oficial: ${result.last.public_status||'pendiente'}`:'';
   const first=result.next_eligible_at?` · Primer modelo apto: ${new Date(result.next_eligible_at).toLocaleString('es-PE',{timeZone:'America/Lima'})} (Perú)`:' · No hay un primer modelo apto';
-  label.textContent=`${result.eligible_total} partidos modelados desde ${result.from_hours} horas hasta ${result.lookahead_days} días · ${result.counts.without_history} sin historial${first}${last}. No son VIP oficiales.`;
+  label.textContent=`${result.eligible_total} partidos modelados desde ${result.from_hours} horas hasta ${result.lookahead_days} días · ${result.counts.without_history} sin historial${first}${last}.`;
   for(const match of result.items||[]){
    const card=document.createElement('div');card.className='football-ai-preview';
    const head=document.createElement('strong');head.textContent=`${match.home} vs ${match.away}`;card.append(head);
@@ -1228,7 +1228,7 @@ async function renderVipRadar(){
    const pp=match.probabilities;
    const probs=document.createElement('p');probs.textContent=`Estimación 1 / X / 2: ${pp.home}% / ${pp.draw}% / ${pp.away}%`;card.append(probs);
    if(match.ai){const ai=document.createElement('p');ai.textContent=`Híbrido IA exploratorio 1 / X / 2: ${match.ai.hybrid.home}% / ${match.ai.hybrid.draw}% / ${match.ai.hybrid.away}%`;card.append(ai);}
-   const small=document.createElement('small');small.textContent='Análisis informativo · No constituye una apuesta VIP aprobada';card.append(small);
+
    list.append(card);
   }
   if(!(result.items||[]).length){const empty=document.createElement('p');empty.textContent='No hay encuentros con modelo y horario fiable a partir de 2 horas. Mira el diagnóstico de siete días debajo.';list.append(empty);}
@@ -1274,7 +1274,7 @@ $('footballRadarOfficialTest')?.addEventListener('click',async()=>{
 });
 $('footballVipRadarSend')?.addEventListener('click',async()=>{
  const btn=$('footballVipRadarSend'),label=$('footballVipRadarStatus');
- if(!confirm('¿Enviar el boletín informativo al canal VIP y un pequeño adelanto al canal oficial? No son pronósticos VIP aprobados. Máximo un envío diario.'))return;
+ if(!confirm('¿Enviar el boletín informativo al canal VIP y un pequeño adelanto al canal oficial? Máximo un envío diario.'))return;
  btn.disabled=true;label.textContent='Revisando destino y preparando el boletín privado…';
  try{const result=await api('/api/admin/football/vip-radar/send',{method:'POST',body:'{}'});
   if(result.needs_confirmation){
@@ -1358,12 +1358,12 @@ $('footballAiForecastButton')?.addEventListener('click',async()=>{
   }
   if(!(r.forecasts||[]).length)row('Sin pronósticos mostrables','Importa encuentros y amplía el historial; los partidos sin modelo no producen predicciones IA.');
   if((r.watchlist||[]).length){
-   row('Próximos encuentros que todavía no puede analizar la IA','Partidos detectados, pero no aprobados para una predicción con suficiente evidencia:');
+   row('Próximos encuentros que todavía no puede analizar la IA','Partidos detectados que todavía requieren más datos para un modelo completo:');
    for(const m of r.watchlist.slice(0,8))row(`${m.home} vs. ${m.away}`,`${m.date||'Fecha pendiente'} · ${m.reason_text}`);
   }else if(r.near_term?.missing_calendar){
    row('Cobertura de los próximos 7 días','La base MySQL no contiene partidos próximos detectados para ese período. Activa una fuente compatible e importa el calendario.');
   }
-  row('Seguridad','Herramienta experimental de análisis: no autoriza publicaciones ni garantiza aciertos.');
+
  }catch(e){notice.textContent=e.message;}finally{button.disabled=false;}
 });
 
