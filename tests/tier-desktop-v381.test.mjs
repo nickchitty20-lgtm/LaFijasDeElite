@@ -16,5 +16,5 @@ test('tarjetas GOLD y VIP tienen layout compacto desktop y CTA sin posicionamien
   assert.match(landing,/por mensaje directo/);
   assert.match(landing,/Acceder a GOLD/);
   assert.match(landing,/Acceder a VIP/);
-  assert.match(html,/landing\.css\?v=3\.8\.1/);
+  assert.match(html,/landing\.css\?v=3\.8\.2/);
 });
