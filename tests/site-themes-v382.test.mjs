@@ -28,8 +28,8 @@ test('pages load theme script/css; panel exposes only-owner nav',()=>{
  const root=new URL('../',import.meta.url);
  const read=f=>readFileSync(new URL(f,root),'utf8');
  for(const f of ['public/index.html','public/clientes.html','views/panel.html']){
-  assert.match(read(f),/seasonal-theme\.css\?v=3\.8\.2/);
-  assert.match(read(f),/seasonal-theme\.js\?v=3\.8\.2/);
+  assert.match(read(f),/seasonal-theme\.css\?v=3\.8\.3/);
+  assert.match(read(f),/seasonal-theme\.js\?v=3\.8\.3/);
  }
  assert.match(read('views/panel.html'),/data-section="visual-theme"/);
  assert.match(read('views/panel.html'),/id="seasonalThemeForm"/);
