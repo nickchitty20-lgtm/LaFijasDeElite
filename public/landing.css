@@ -48,3 +48,15 @@
 .plans-section .section-heading h2,.plans-section .tier-card h3{color:#f7f0e4}
 .plans-section .section-heading .kicker{color:#dfbb76}
 .plans-section .section-heading p{color:#b6bfba}
+
+/* v3.7.9 · comparison and transparent discounted pricing */
+.membership-comparison{grid-column:1/-1;margin-top:18px;padding:24px;border:1px solid rgba(209,169,87,.28);border-radius:18px;background:rgba(9,14,18,.8)}
+.membership-comparison h3{margin:0 0 16px;color:#eacb8a;font-size:1.3rem}
+.membership-comparison-scroll{overflow-x:auto}
+.membership-comparison table{width:100%;border-collapse:collapse;min-width:480px;text-align:left;font-size:.94rem}
+.membership-comparison th,.membership-comparison td{padding:12px 10px;border-bottom:1px solid rgba(255,255,255,.10)}
+.membership-comparison th:first-child{max-width:350px}
+.membership-comparison thead th{color:#ead096}
+.membership-comparison p{color:#b6bbc3;font-size:.83rem;margin:16px 0 0}
+.plan-discount{display:inline-block;margin:6px 0;padding:5px 10px;border-radius:999px;color:#f4d58e;background:rgba(184,137,46,.14);font-size:.75rem;font-weight:700}
+.plan-old-price{display:block;color:#9ca3af;font-size:.8rem;margin:2px 0 8px}

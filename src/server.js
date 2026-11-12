@@ -18,6 +18,7 @@ import {getVipEntitlement,getGoldEntitlement,effectiveVipSql} from './vip-access
 import {installGoldDeliveryWorker} from './gold-telegram.js';
 import {publishGoldTelegram} from './gold-public-announcement.js';
 import {manualVipPeriod} from './manual-vip.js';
+import {discountForPlan,PLAN_DISCOUNT_COLUMNS,validateDiscount} from './plan-discounts.js';
 import {evaluateMembershipArchive} from './membership-archive-policy.js';
 import {paypalReadiness,validatePaypalCapture,refundState,usdCents,captureIdFromRefund} from './paypal-rules.js';
 import {sendPredictionToTelegram,telegramApi,inspectFreeTelegramChannel,inspectVipTelegramChannel} from './telegram-bridge.js';
@@ -34,7 +35,7 @@ import {publicAnalysisText} from './public-branding.js';
 import {publicPerformanceFilters,performanceWhere,summaryFromGroups,publicRecentResults} from './performance-stats.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
-const APP_VERSION = '3.7.8';
+const APP_VERSION = '3.7.9';
 const app = express();
 let telegramVipControl=null;
 let notificationControl=null;
@@ -429,7 +430,15 @@ const customerRegister=z.object({email:z.string().email().max(254),password:z.st
 const planSchema=z.object({name:z.string().trim().min(3).max(100),duration_days:z.coerce.number().int().min(1).max(365),price_pen:z.coerce.number().min(0).max(100000),tier:z.enum(['gold','vip']).default('vip')}).strict();
 const paymentRequest=z.object({plan_id:z.coerce.number().int().positive(),method:z.enum(['yape','plin','direct']),reference:z.string().trim().min(4).max(190)}).strict();
 const canManagePayments=a=>['owner','general_admin','payments_admin'].includes(a.role);
-app.get('/api/plans',async(req,res)=>{try{const [plans]=await db.query('SELECT id,name,duration_days,price_pen,tier FROM plans WHERE active=1 ORDER BY price_pen,id');res.json({plans});}catch{res.status(500).json({error:'No se pudieron consultar los planes'});}});
+// Only the quoted price applies to a newly created payment: never modify existing receipts.
+const pricedPlanQuery=`SELECT p.id,p.name,p.duration_days,p.price_pen,p.tier,p.active,${PLAN_DISCOUNT_COLUMNS}
+ FROM plans p LEFT JOIN plan_discounts d ON d.plan_id=p.id`;
+app.get('/api/plans',async(req,res)=>{
+ try{const [rows]=await db.query(`${pricedPlanQuery} WHERE p.active=1 ORDER BY p.tier,p.duration_days,p.id`);
+  res.json({plans:rows.map(row=>({id:row.id,name:row.name,duration_days:row.duration_days,
+   tier:row.tier,...discountForPlan(row)}))});}
+ catch(e){console.error('public plans',e.code||e.message);res.status(500).json({error:'No se pudieron consultar los planes'});}
+});
 app.post('/api/customers/register',registerLimit,async(req,res)=>{
  const p=customerRegister.safeParse(req.body);if(!p.success)return res.status(400).json({error:'Revisa los datos y utiliza una contraseña de 12 caracteres como mínimo'});
  try{const [[existingAdmin]]=await db.execute('SELECT id FROM admins WHERE email=? LIMIT 1',[emailKey(p.data.email)]);if(existingAdmin)return res.status(409).json({error:'Correo ya registrado'});const hash=await bcrypt.hash(p.data.password,12);const [r]=await db.execute('INSERT INTO users(email,display_name,password_hash) VALUES (?,?,?)',[emailKey(p.data.email),p.data.display_name,hash]);res.status(201).json({ok:true,user_id:r.insertId});}
@@ -558,11 +567,58 @@ app.get('/api/customers/me',customerAuth,async(req,res)=>{
 });
 app.post('/api/customers/payment-requests',customerAuth,async(req,res)=>{
  const p=paymentRequest.safeParse(req.body);if(!p.success)return res.status(400).json({error:'Datos de solicitud inválidos'});
- const conn=await db.getConnection();try{await conn.beginTransaction();const [[plan]]=await conn.execute('SELECT id,price_pen FROM plans WHERE id=? AND active=1',[p.data.plan_id]);if(!plan){await conn.rollback();return res.status(404).json({error:'Plan no disponible'});}
- const [m]=await conn.execute("INSERT INTO memberships(user_id,plan_id,status) VALUES (?,?,'pending')",[req.customer.id,plan.id]);const [pay]=await conn.execute("INSERT INTO payments(user_id,membership_id,method,amount_pen,status,external_reference) VALUES (?,?,?,?, 'pending',?)",[req.customer.id,m.insertId,p.data.method,plan.price_pen,p.data.reference]);await conn.commit();res.status(201).json({payment_id:pay.insertId,status:'pending',message:'Solicitud recibida. No implica que el pago esté confirmado.'});}
+ const conn=await db.getConnection();try{await conn.beginTransaction();const [[plan]]=await conn.execute(`${pricedPlanQuery} WHERE p.id=? AND p.active=1 FOR UPDATE`,[p.data.plan_id]);if(!plan){await conn.rollback();return res.status(404).json({error:'Plan no disponible'});}
+ const [m]=await conn.execute("INSERT INTO memberships(user_id,plan_id,status) VALUES (?,?,'pending')",[req.customer.id,plan.id]);const [pay]=await conn.execute("INSERT INTO payments(user_id,membership_id,method,amount_pen,status,external_reference) VALUES (?,?,?,?, 'pending',?)",[req.customer.id,m.insertId,p.data.method,discountForPlan(plan).price_pen,p.data.reference]);await conn.commit();res.status(201).json({payment_id:pay.insertId,amount_pen:discountForPlan(plan).price_pen,status:'pending',message:'Solicitud recibida. El importe queda fijado en esta solicitud; no implica que el pago esté confirmado.'});}
  catch(e){await conn.rollback();console.error('payment request',e.code||e.message);res.status(500).json({error:'No se pudo guardar la solicitud'});}finally{conn.release();}
 });
-app.get('/api/admin/plans',authenticate,async(req,res)=>{if(!canManagePayments(req.admin))return res.status(403).json({error:'Sin permisos'});const [plans]=await db.query('SELECT id,name,duration_days,price_pen,tier,active FROM plans ORDER BY id DESC LIMIT 100');res.json({plans});});
+app.get('/api/admin/plans',authenticate,async(req,res)=>{
+ if(!canManagePayments(req.admin))return res.status(403).json({error:'Sin permisos'});
+ try{const [rows]=await db.query(`${pricedPlanQuery} ORDER BY p.id DESC LIMIT 100`);
+  res.json({plans:rows.map(row=>({...row,effective_price_pen:discountForPlan(row).price_pen,discount:discountForPlan(row).discount}))});}
+ catch(e){console.error('admin plans',e.code||e.message);res.status(503).json({error:'No se pudieron cargar los planes'});}
+});
+const discountSchema=z.object({kind:z.enum(['percent','fixed']),amount:z.coerce.number().positive(),reason:z.string().trim().min(5).max(200),
+ starts_at:z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),ends_at:z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional()}).strict();
+app.post('/api/admin/plans/:id/discount',authenticate,async(req,res)=>{
+ if(req.admin.role!=='owner')return res.status(403).json({error:'Solo el propietario puede configurar descuentos'});
+ if(!/^\d{1,18}$/.test(req.params.id))return res.status(400).json({error:'Plan inválido'});
+ const p=discountSchema.safeParse(req.body);
+ if(!p.success)return res.status(400).json({error:'Indica tipo, importe, motivo (5-200 caracteres) y fechas válidas'});
+ const {kind,amount,reason,starts_at=null,ends_at=null}=p.data;
+ if(starts_at&&ends_at&&starts_at>ends_at)return res.status(400).json({error:'La fecha final debe ser posterior a la inicial'});
+ for(const date of [starts_at,ends_at].filter(Boolean))if(!Number.isFinite(Date.parse(date+'T00:00:00Z'))||new Date(date+'T00:00:00Z').toISOString().slice(0,10)!==date)
+  return res.status(400).json({error:'Fecha inválida'});
+ const conn=await db.getConnection();
+ try{await conn.beginTransaction();
+  const [[plan]]=await conn.execute('SELECT id,price_pen FROM plans WHERE id=? AND active=1 FOR UPDATE',[req.params.id]);
+  if(!plan){await conn.rollback();return res.status(404).json({error:'Plan no disponible'});}
+  try{validateDiscount(plan.price_pen,kind,amount);}catch(e){await conn.rollback();return res.status(400).json({error:e.message});}
+  await conn.execute(`INSERT INTO plan_discounts(plan_id,kind,amount,reason,starts_at,ends_at,active,updated_by)
+   VALUES (?,?,?,?,?,?,1,?) ON DUPLICATE KEY UPDATE kind=VALUES(kind),amount=VALUES(amount),reason=VALUES(reason),
+   starts_at=VALUES(starts_at),ends_at=VALUES(ends_at),active=1,updated_by=VALUES(updated_by)`,
+   [plan.id,kind,amount,reason,starts_at,ends_at,req.admin.id]);
+  await conn.execute(`INSERT INTO audit_logs(actor_admin_id,action,entity_type,entity_id,details)
+   VALUES (?,'plan_discount_set','plan',?,JSON_OBJECT('kind',?,'amount',?,'reason',?,'starts_at',?,'ends_at',?))`,
+   [req.admin.id,String(plan.id),kind,amount,reason,starts_at,ends_at]);
+  await conn.commit();res.json({ok:true,message:'Promoción guardada. Se aplicará a nuevas compras durante su vigencia.'});
+ }catch(e){try{await conn.rollback();}catch{}console.error('discount save',e.code||e.message);res.status(503).json({error:'No se pudo guardar el descuento'});}
+ finally{conn.release();}
+});
+app.delete('/api/admin/plans/:id/discount',authenticate,async(req,res)=>{
+ if(req.admin.role!=='owner')return res.status(403).json({error:'Solo el propietario puede quitar descuentos'});
+ if(!/^\d{1,18}$/.test(req.params.id))return res.status(400).json({error:'Plan inválido'});
+ const reason=z.object({reason:z.string().trim().min(5).max(200)}).strict().safeParse(req.body);
+ if(!reason.success)return res.status(400).json({error:'Indica el motivo para retirar el descuento'});
+ const conn=await db.getConnection();
+ try{await conn.beginTransaction();
+  const [result]=await conn.execute('UPDATE plan_discounts SET active=0,updated_by=? WHERE plan_id=? AND active=1',[req.admin.id,req.params.id]);
+  if(result.affectedRows===0){await conn.rollback();return res.status(404).json({error:'No existe un descuento activo'});}
+  await conn.execute(`INSERT INTO audit_logs(actor_admin_id,action,entity_type,entity_id,details)
+   VALUES (?,'plan_discount_disabled','plan',?,JSON_OBJECT('reason',?))`,[req.admin.id,String(req.params.id),reason.data.reason]);
+  await conn.commit();res.json({ok:true});
+ }catch(e){try{await conn.rollback();}catch{}console.error('discount disable',e.code||e.message);res.status(503).json({error:'No se pudo retirar el descuento'});}
+ finally{conn.release();}
+});
 app.post('/api/admin/plans',authenticate,async(req,res)=>{if(!canManagePayments(req.admin))return res.status(403).json({error:'Sin permisos'});const p=planSchema.safeParse(req.body);if(!p.success)return res.status(400).json({error:'Plan inválido'});try{const [r]=await db.execute('INSERT INTO plans(name,duration_days,price_pen,tier,active) VALUES (?,?,?,?,1)',[p.data.name,p.data.duration_days,p.data.price_pen,p.data.tier]);await db.execute("INSERT INTO audit_logs(actor_admin_id,action,entity_type,entity_id) VALUES (?,'plan_created','plan',?)",[req.admin.id,String(r.insertId)]);res.status(201).json({id:r.insertId});}catch{res.status(500).json({error:'No se pudo crear el plan'});}});
 app.get('/api/admin/customers',authenticate,async(req,res)=>{if(!canViewCustomers(req.admin))return res.status(403).json({error:'Sin permisos'});const [users]=await db.query('SELECT id,email,display_name,created_at FROM users ORDER BY id DESC LIMIT 100');res.json({users});});
 app.get('/api/admin/payments',authenticate,async(req,res)=>{if(!canManagePayments(req.admin))return res.status(403).json({error:'Sin permisos'});const [payments]=await db.query('SELECT py.id,py.method,py.amount_pen,py.status,py.external_reference,py.created_at,u.email,p.name AS plan FROM payments py JOIN users u ON u.id=py.user_id JOIN memberships m ON m.id=py.membership_id JOIN plans p ON p.id=m.plan_id ORDER BY py.id DESC LIMIT 100');res.json({payments});});
@@ -591,7 +647,7 @@ app.post('/api/admin/payments/:id/decision',authenticate,async(req,res)=>{
 const vipTargetId=id=>/^\d{1,18}$/.test(String(id));
 const vipReason=z.string().trim().min(4).max(350);
 const manualVipGrantSchema=z.object({plan_id:z.coerce.number().int().positive(),reason:vipReason}).strict();
-const manualVipRevokeSchema=z.object({reason:vipReason}).strict();
+const manualVipRevokeSchema=z.object({reason:vipReason,tier:z.enum(['gold','vip']).default('vip')}).strict();
 
 app.get('/api/admin/vip/search',authenticate,async(req,res)=>{
  if(!canManagePayments(req.admin))return res.status(403).json({error:'Sin permisos para gestionar VIP'});
@@ -603,10 +659,12 @@ app.get('/api/admin/vip/search',authenticate,async(req,res)=>{
   const matches=`%${query.replace(/[!%_]/g,'!$&')}%`;
   const [users]=await db.execute(`SELECT u.id,u.email,u.display_name,u.account_status,
    EXISTS(SELECT 1 FROM memberships m JOIN plans p ON p.id=m.plan_id WHERE m.user_id=u.id AND p.tier='vip' AND m.status='active' AND m.archived_at IS NULL
-    AND m.starts_at<=UTC_TIMESTAMP() AND m.ends_at>UTC_TIMESTAMP()) AS has_vip
+    AND m.starts_at<=UTC_TIMESTAMP() AND m.ends_at>UTC_TIMESTAMP()) AS has_vip,
+   EXISTS(SELECT 1 FROM memberships m JOIN plans p ON p.id=m.plan_id WHERE m.user_id=u.id AND p.tier='gold' AND m.status='active' AND m.archived_at IS NULL
+    AND m.starts_at<=UTC_TIMESTAMP() AND m.ends_at>UTC_TIMESTAMP()) AS has_gold
    FROM users u WHERE u.email LIKE ? ESCAPE '!' OR u.display_name LIKE ? ESCAPE '!'
     OR u.id=? ORDER BY u.id DESC LIMIT 25`,[matches,matches,/^\d{1,18}$/.test(query)?query:'0']);
-  res.json({users:users.map(u=>({...u,has_vip:Boolean(u.has_vip)}))});
+  res.json({users:users.map(u=>({...u,has_vip:Boolean(u.has_vip),has_gold:Boolean(u.has_gold)}))});
  }catch(e){console.error('vip search',e.code||e.message);res.status(500).json({error:'No se pudo buscar clientes'});}
 });
 app.get('/api/admin/vip/customers/:id',authenticate,async(req,res)=>{
@@ -619,19 +677,21 @@ app.get('/api/admin/vip/customers/:id',authenticate,async(req,res)=>{
    EXISTS(SELECT 1 FROM memberships m JOIN plans p ON p.id=m.plan_id WHERE m.user_id=? AND p.tier='vip' AND m.status='active' AND m.archived_at IS NULL AND starts_at<=UTC_TIMESTAMP() AND ends_at>UTC_TIMESTAMP()) AS has_vip,
    (SELECT MAX(m.ends_at) FROM memberships m JOIN plans p ON p.id=m.plan_id WHERE m.user_id=? AND p.tier='vip' AND m.status='active' AND m.archived_at IS NULL AND ends_at>UTC_TIMESTAMP()) AS vip_until,
    (SELECT COUNT(*) FROM memberships m JOIN plans p ON p.id=m.plan_id WHERE m.user_id=? AND p.tier='vip' AND m.status='pending' AND m.archived_at IS NULL) AS pending_requests,
-   (SELECT COUNT(*) FROM memberships m JOIN plans p ON p.id=m.plan_id WHERE m.user_id=? AND p.tier='vip' AND m.status='active' AND m.archived_at IS NULL AND ends_at>UTC_TIMESTAMP()) AS confirmed_count`,[user.id,user.id,user.id,user.id]);
+   (SELECT COUNT(*) FROM memberships m JOIN plans p ON p.id=m.plan_id WHERE m.user_id=? AND p.tier='vip' AND m.status='active' AND m.archived_at IS NULL AND ends_at>UTC_TIMESTAMP()) AS confirmed_count,
+   (SELECT MAX(m.ends_at) FROM memberships m JOIN plans p ON p.id=m.plan_id WHERE m.user_id=? AND p.tier='gold' AND m.status='active' AND m.archived_at IS NULL AND ends_at>UTC_TIMESTAMP()) AS gold_until,
+   (SELECT COUNT(*) FROM memberships m JOIN plans p ON p.id=m.plan_id WHERE m.user_id=? AND p.tier='gold' AND m.status='active' AND m.archived_at IS NULL AND ends_at>UTC_TIMESTAMP()) AS gold_confirmed_count`,[user.id,user.id,user.id,user.id,user.id,user.id]);
   const [memberships]=await db.execute(`SELECT m.id,m.status,m.source,m.starts_at,m.ends_at,m.created_at,
-   m.grant_reason,m.revoked_at,m.revoke_reason,p.name AS plan,
+   m.grant_reason,m.revoked_at,m.revoke_reason,p.name AS plan,p.tier,
    EXISTS(SELECT 1 FROM payments py WHERE py.membership_id=m.id AND py.status='verified') AS paid
    FROM memberships m JOIN plans p ON p.id=m.plan_id
-   WHERE m.user_id=? AND p.tier='vip' AND m.archived_at IS NULL ORDER BY m.id DESC LIMIT 35`,[user.id]);
-  res.json({user,has_vip:Boolean(status.has_vip),vip_until:status.vip_until,
+   WHERE m.user_id=? AND p.tier IN ('gold','vip') AND m.archived_at IS NULL ORDER BY m.id DESC LIMIT 35`,[user.id]);
+  res.json({user,has_vip:Boolean(status.has_vip),vip_until:status.vip_until,gold_until:status.gold_until,gold_confirmed_count:Number(status.gold_confirmed_count||0),
    pending_requests:Number(status.pending_requests||0),confirmed_count:Number(status.confirmed_count||0),
    memberships:memberships.map(m=>({...m,paid:Boolean(m.paid)}))});
  }catch(e){console.error('vip detail',e.code||e.message);res.status(500).json({error:'No se pudo consultar la membresía'});}
 });
 app.post('/api/admin/vip/customers/:id/grant',authenticate,async(req,res)=>{
- if(!canManagePayments(req.admin))return res.status(403).json({error:'Sin permisos para otorgar VIP'});
+ if(!canManagePayments(req.admin))return res.status(403).json({error:'Sin permisos para otorgar membresías'});
  if(!vipTargetId(req.params.id))return res.status(400).json({error:'ID inválido'});
  const parsed=manualVipGrantSchema.safeParse(req.body);
  if(!parsed.success)return res.status(400).json({error:'Selecciona un plan y escribe un motivo (4 a 350 caracteres)'});
@@ -642,25 +702,25 @@ app.post('/api/admin/vip/customers/:id/grant',authenticate,async(req,res)=>{
   const [[user]]=await conn.execute('SELECT id,account_status,password_hash FROM users WHERE id=? FOR UPDATE',[req.params.id]);
   if(!user||!user.password_hash){await conn.rollback();return res.status(404).json({error:'El cliente debe estar registrado'});}
   if(isBlacklisted(user)){await conn.rollback();return res.status(403).json({error:'La cuenta está en lista negra. Debes desbloquearla primero'});}
-  const [[plan]]=await conn.execute("SELECT id,name,duration_days FROM plans WHERE id=? AND active=1 AND tier='vip' LIMIT 1",[parsed.data.plan_id]);
-  if(!plan){await conn.rollback();return res.status(404).json({error:'Plan VIP no disponible'});}
+  const [[plan]]=await conn.execute("SELECT id,name,duration_days,tier FROM plans WHERE id=? AND active=1 AND tier IN ('gold','vip') LIMIT 1",[parsed.data.plan_id]);
+  if(!plan){await conn.rollback();return res.status(404).json({error:'Plan GOLD o VIP no disponible'});}
   const [[last]]=await conn.execute("SELECT MAX(m.ends_at) AS last_end FROM memberships m JOIN plans p ON p.id=m.plan_id WHERE m.user_id=? AND p.tier=(SELECT tier FROM plans WHERE id=?) AND m.status='active' AND m.archived_at IS NULL",[user.id,plan.id]);
   const {start,end}=manualVipPeriod(last?.last_end,Number(plan.duration_days));
   const [result]=await conn.execute(`INSERT INTO memberships
    (user_id,plan_id,status,starts_at,ends_at,source,granted_by,grant_reason)
    VALUES (?,?,'active',?,?,'manual',?,?)`,[user.id,plan.id,start,end,req.admin.id,parsed.data.reason]);
   await conn.execute(`INSERT INTO audit_logs(actor_admin_id,action,entity_type,entity_id,details)
-   VALUES (?,'vip_manual_granted','membership',?,JSON_OBJECT('user_id',?,'plan_id',?,'days',?,'reason',?))`,
-   [req.admin.id,String(result.insertId),String(user.id),String(plan.id),Number(plan.duration_days),parsed.data.reason]);
-  await enqueueVipActivation(conn,user.id,result.insertId);
+   VALUES (?,'membership_manual_granted','membership',?,JSON_OBJECT('user_id',?,'tier',?,'plan_id',?,'days',?,'reason',?))`,
+   [req.admin.id,String(result.insertId),String(user.id),plan.tier,String(plan.id),Number(plan.duration_days),parsed.data.reason]);
+  if(plan.tier==='vip')await enqueueVipActivation(conn,user.id,result.insertId);
   await conn.commit();
-  res.status(201).json({ok:true,membership_id:result.insertId,plan:plan.name,starts_at:start,ends_at:end,
-   message:'VIP concedido manualmente. No se registró ningún pago.'});
- }catch(e){try{await conn.rollback();}catch{}console.error('vip grant',e.code||e.message);res.status(500).json({error:'No se pudo asignar el VIP'});}
+  res.status(201).json({ok:true,membership_id:result.insertId,tier:plan.tier,plan:plan.name,starts_at:start,ends_at:end,
+   message:`${plan.tier.toUpperCase()} concedido manualmente. No se registró ningún pago. El cliente debe vincular y autorizar su Telegram para recibir los mensajes privados.`});
+ }catch(e){try{await conn.rollback();}catch{}console.error('membership grant',e.code||e.message);res.status(500).json({error:'No se pudo asignar la membresía'});}
  finally{conn.release();}
 });
 app.post('/api/admin/vip/customers/:id/revoke',authenticate,async(req,res)=>{
- if(!canManagePayments(req.admin))return res.status(403).json({error:'Sin permisos para retirar VIP'});
+ if(!canManagePayments(req.admin))return res.status(403).json({error:'Sin permisos para retirar membresías'});
  if(!vipTargetId(req.params.id))return res.status(400).json({error:'ID inválido'});
  const parsed=manualVipRevokeSchema.safeParse(req.body);
  if(!parsed.success)return res.status(400).json({error:'Indica el motivo del retiro (4 a 350 caracteres)'});
@@ -672,16 +732,16 @@ app.post('/api/admin/vip/customers/:id/revoke',authenticate,async(req,res)=>{
   // Cancel ALL current and future confirmed VIP, irrespective of payment source.
   // Keep the original payments as-is: a revocation is NOT a refund.
   const [result]=await conn.execute(`UPDATE memberships m JOIN plans p ON p.id=m.plan_id SET m.status='cancelled',m.revoked_at=UTC_TIMESTAMP(),
-   m.revoked_by=?,m.revoke_reason=? WHERE m.user_id=? AND p.tier='vip' AND m.status='active' AND m.archived_at IS NULL AND m.ends_at>UTC_TIMESTAMP()`,
-   [req.admin.id,parsed.data.reason,user.id]);
-  if(result.affectedRows===0){await conn.rollback();return res.status(409).json({error:'Este cliente no tiene VIP vigente ni renovaciones confirmadas'});}
+   m.revoked_by=?,m.revoke_reason=? WHERE m.user_id=? AND p.tier=? AND m.status='active' AND m.archived_at IS NULL AND m.ends_at>UTC_TIMESTAMP()`,
+   [req.admin.id,parsed.data.reason,user.id,parsed.data.tier]);
+  if(result.affectedRows===0){await conn.rollback();return res.status(409).json({error:`Este cliente no tiene ${parsed.data.tier.toUpperCase()} vigente ni renovaciones confirmadas`});}
   await conn.execute(`INSERT INTO audit_logs(actor_admin_id,action,entity_type,entity_id,details)
-   VALUES (?,'vip_manual_revoked','user',?,JSON_OBJECT('reason',?,'memberships_cancelled',?))`,
-   [req.admin.id,String(user.id),parsed.data.reason,result.affectedRows]);
+   VALUES (?,'membership_manual_revoked','user',?,JSON_OBJECT('tier',?,'reason',?,'memberships_cancelled',?))`,
+   [req.admin.id,String(user.id),parsed.data.tier,parsed.data.reason,result.affectedRows]);
   await conn.commit();
   res.json({ok:true,cancelled:result.affectedRows,
-   message:'Acceso VIP retirado. Los pagos anteriores se conservan y NO se reembolsaron.'});
- }catch(e){try{await conn.rollback();}catch{}console.error('vip revoke',e.code||e.message);res.status(500).json({error:'No se pudo retirar el VIP'});}
+   message:`Acceso ${parsed.data.tier.toUpperCase()} retirado. Los pagos anteriores se conservan y NO se reembolsaron.`});
+ }catch(e){try{await conn.rollback();}catch{}console.error('membership revoke',e.code||e.message);res.status(500).json({error:'No se pudo retirar la membresía'});}
  finally{conn.release();}
 });
 
@@ -844,11 +904,15 @@ app.post('/api/customers/payments/paypal',paypalCreateLimit,customerAuth,async(r
  if(!paypalReady())return res.status(503).json({error:'PayPal todavía no está disponible'});
  const parsed=paypalPlan.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Plan inválido'});
  try{
-  const [[plan]]=await db.execute('SELECT id,name,price_pen FROM plans WHERE id=? AND active=1',[parsed.data.plan_id]);
-  if(!plan)return res.status(404).json({error:'Plan no disponible'});
-  const usd=usdFromPen(plan.price_pen);if(Number(usd)<0.01)return res.status(400).json({error:'Monto inválido'});
-  const conn=await db.getConnection();let paymentId;
-  try{await conn.beginTransaction();const [m]=await conn.execute("INSERT INTO memberships(user_id,plan_id,status) VALUES (?,?,'pending')",[req.customer.id,plan.id]);const [pay]=await conn.execute("INSERT INTO payments(user_id,membership_id,method,amount_pen,status,paypal_environment,paypal_amount_usd) VALUES (?,?,'card',?,'pending',?,?)",[req.customer.id,m.insertId,plan.price_pen,paypalMode(),usd]);paymentId=pay.insertId;await conn.commit();}
+  const conn=await db.getConnection();let paymentId,plan,usd;
+  try{await conn.beginTransaction();
+   const [[quoted]]=await conn.execute(`${pricedPlanQuery} WHERE p.id=? AND p.active=1 FOR UPDATE`,[parsed.data.plan_id]);
+   if(!quoted){await conn.rollback();return res.status(404).json({error:'Plan no disponible'});}
+   plan={...quoted,...discountForPlan(quoted)};
+   usd=usdFromPen(plan.price_pen);if(Number(usd)<0.01){await conn.rollback();return res.status(400).json({error:'Monto inválido'});}
+   const [m]=await conn.execute("INSERT INTO memberships(user_id,plan_id,status) VALUES (?,?,'pending')",[req.customer.id,plan.id]);
+   const [pay]=await conn.execute("INSERT INTO payments(user_id,membership_id,method,amount_pen,status,paypal_environment,paypal_amount_usd) VALUES (?,?,'card',?,'pending',?,?)",[req.customer.id,m.insertId,plan.price_pen,paypalMode(),usd]);
+   paymentId=pay.insertId;await conn.commit();}
   catch(e){await conn.rollback();throw e;}finally{conn.release();}
   const base=process.env.PUBLIC_BASE_URL.replace(/\/$/,'');
   const order=await paypalApi('/v2/checkout/orders',{method:'POST',headers:{'PayPal-Request-Id':'fijas-order-'+paymentId},body:JSON.stringify({intent:'CAPTURE',purchase_units:[{reference_id:String(paymentId),custom_id:String(paymentId),description:'Fijas de Élite - '+plan.name,amount:{currency_code:'USD',value:usd}}],application_context:{return_url:base+'/clientes.html?paypal_return=success',cancel_url:base+'/clientes.html?paypal_return=cancel',user_action:'PAY_NOW'}})});
@@ -857,7 +921,7 @@ app.post('/api/customers/payments/paypal',paypalCreateLimit,customerAuth,async(r
   // Store PayPal order id before redirect; use a compare-and-swap to avoid accidental overwrite.
   const [saved]=await db.execute("UPDATE payments SET external_reference=? WHERE id=? AND status='pending' AND paypal_environment=? AND external_reference IS NULL",[order.id,paymentId,paypalMode()]);
   if(saved.affectedRows!==1)throw new Error('Unable to link PayPal order');
-  res.json({checkout_url:approve,order_id:order.id,amount_usd:usd,pen_per_usd:paypalRate(),status:'pending'});
+  res.json({checkout_url:approve,order_id:order.id,amount_usd:usd,amount_pen:plan.price_pen,pen_per_usd:paypalRate(),status:'pending'});
  }catch(e){console.error('paypal create',e.message);res.status(503).json({error:'No se pudo preparar PayPal. No se activó ninguna membresía.'});}
 });
 async function reconcilePaypalOrder(orderId){

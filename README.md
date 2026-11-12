@@ -1,3 +1,10 @@
+## v3.7.9 · Descuentos, GOLD manual y comparativa (2026-11-12)
+
+- Promociones temporales o indefinidas, por porcentaje o importe fijo, con motivo obligatorio, gestionadas solo por el propietario en **Planes y precios**. Precio base intacto; promoción visible en la landing y en las opciones del cliente. Los pagos Yape/Plin y PayPal toman el precio promocional vigente al abrir la solicitud, guardando el importe en el recibo; cambios futuros no afectan pagos creados.
+- Asignación manual GOLD/VIP desde **Gestión manual GOLD y VIP**; acumula renovaciones del mismo nivel, conserva auditoría y no crea pagos ficticios. También permite retirar cualquiera de los dos niveles. El cliente GOLD debe vincular y verificar su Telegram para recibir selecciones privadas; VIP incluye GOLD.
+- Comparativa pública GOLD vs VIP con canal privado, Radar, listas blancas, envío y límites de servicio, sin promesas de pronósticos diarios ni resultados garantizados.
+- Migración MySQL aditiva `plan_discounts`, sin borrar usuarios, historial, cobros ni suscripciones.
+
 # Fijas de Élite v3.7.8 — Anuncios profesionales de Telegram
 
 **Actualización de mensajes sin cambios en la lógica de negocio.** Nuevos formatos premium para el canal oficial, mensajes VIP/GOLD, Radar VIP, comunidad y notificaciones. El Radar VIP es análisis anticipado; las selecciones VIP validadas se anuncian aparte. Los anuncios públicos no contienen información reservada y las advertencias conservan una explicación breve de incertidumbre. Despliega normalmente en Railway; sin migraciones adicionales.

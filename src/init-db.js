@@ -14,6 +14,20 @@ export async function initializeDatabase() {
     // v3.5.1: keep every existing plan VIP; GOLD is an independent tier.
     const [planCols]=await connection.query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='plans'");
     if(!planCols.some(c=>c.COLUMN_NAME==='tier'))await connection.query("ALTER TABLE plans ADD COLUMN tier ENUM('gold','vip') NOT NULL DEFAULT 'vip'");
+    // v3.7.9: independently auditable time-bounded promotions for GOLD/VIP.
+    // Never retroactively alter a paid amount or the original plan price.
+    await connection.query(`CREATE TABLE IF NOT EXISTS plan_discounts (
+      plan_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+      kind ENUM('percent','fixed') NOT NULL,
+      amount DECIMAL(10,2) NOT NULL,
+      reason VARCHAR(200) NOT NULL,
+      starts_at DATE NULL,
+      ends_at DATE NULL,
+      active TINYINT(1) NOT NULL DEFAULT 1,
+      updated_by BIGINT UNSIGNED NULL,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_plan_discount_active (active,starts_at,ends_at)
+    ) ENGINE=InnoDB`);
     const [cols] = await connection.query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='predictions'");
     const existing = new Set(cols.map(c=>c.COLUMN_NAME));
     const additions = {

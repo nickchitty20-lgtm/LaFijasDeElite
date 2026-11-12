@@ -15,7 +15,7 @@ async function call(url,body,auth=false){
 const form=id=>Object.fromEntries(new FormData($(id)));
 function view(name){document.querySelectorAll('.auth-view').forEach(el=>el.hidden=el.id!==`auth-${name}`);document.querySelectorAll('[data-view]').forEach(el=>el.classList.toggle('active',el.dataset.view===name));}
 document.querySelectorAll('[data-view]').forEach(el=>el.addEventListener('click',()=>view(el.dataset.view)));
-async function load(){try{const {plans}=await call('/api/plans');$('plans').replaceChildren();for(const p of plans){const o=document.createElement('option');o.value=p.id;o.textContent=`${p.name} · ${p.duration_days} días · S/ ${p.price_pen}`;$('plans').append(o);}const selected=new URLSearchParams(location.search).get('plan');if(selected && [...$('plans').options].some(o=>o.value===selected))$('plans').value=selected;}catch(e){$('requestMsg').textContent=e.message;}}
+async function load(){try{const {plans}=await call('/api/plans');$('plans').replaceChildren();for(const p of plans){const o=document.createElement('option');o.value=p.id;o.textContent=`${p.name} · ${p.duration_days} días · S/ ${p.price_pen}${p.discount?` (antes S/ ${p.original_price_pen} · ${p.discount.reason})`:''}`;$('plans').append(o);}const selected=new URLSearchParams(location.search).get('plan');if(selected && [...$('plans').options].some(o=>o.value===selected))$('plans').value=selected;}catch(e){$('requestMsg').textContent=e.message;}}
 async function loadCustomerPicks(){
  const box=$('customer-picks');
  try{
@@ -43,7 +43,7 @@ async function loadDashboard(){
   const r=await call('/api/customers/dashboard',null,true);
   summary.replaceChildren();stats.replaceChildren();notices.replaceChildren();
   const heading=document.createElement('div');heading.className='vip-status';heading.textContent=r.membership?(r.membership.staff_vip?'♛ VIP GRATUITO POR CARGO · SIN VENCIMIENTO':`✦ ${(r.membership.tier==='gold'?'GOLD':'VIP')} ACTIVO · ${r.membership.plan} · ${r.membership.days_left} día(s) restantes`):'◇ CUENTA PÚBLICA · MEMBRESÍAS DISPONIBLES';summary.append(heading);
-  const sub=document.createElement('p');sub.textContent=r.membership?(r.membership.staff_vip?'Tu acceso se mantiene mientras conserves tu cargo y la cuenta esté habilitada. No es una compra.':`Vigente hasta ${new Date(r.membership.ends_at).toLocaleDateString('es-PE',{dateStyle:'long'})}`):'Puedes consultar los pronósticos gratuitos. Activa un plan para desbloquear VIP.';summary.append(sub);
+  const sub=document.createElement('p');sub.textContent=r.membership?(r.membership.staff_vip?'Tu acceso se mantiene mientras conserves tu cargo y la cuenta esté habilitada. No es una compra.':`Vigente hasta ${new Date(r.membership.ends_at).toLocaleDateString('es-PE',{dateStyle:'long'})}`):'Explora las membresías GOLD y VIP para acceder a pronósticos privados.';summary.append(sub);
   if(r.membership?.renewals_scheduled>0){
    const renewal=document.createElement('p');renewal.className='vip-renewal-applied';
    renewal.textContent=`✓ Renovación confirmada: ${r.membership.renewals_scheduled} plan(es) adicional(es) incluido(s) en esta fecha de vencimiento.`;
@@ -58,7 +58,7 @@ async function loadDashboard(){
   if(payShortcut)payShortcut.textContent=r.membership?.staff_vip?'Consultar planes (opcional) ↗':activeVip?'Renovar mi membresía ↗':'Explorar planes GOLD y VIP ↗';
   if(payHeading)payHeading.textContent=r.membership?.staff_vip?'Planes disponibles · beneficio por cargo':'Membresías GOLD y VIP';
   const renewNote=$('vip-renewal-note');
-  if(renewNote){renewNote.hidden=!activeVip||Boolean(r.membership?.staff_vip);if(activeVip&&!r.membership?.staff_vip)renewNote.textContent=`✦ Tu VIP está activo hasta el ${new Date(r.membership.ends_at).toLocaleDateString('es-PE')}. Puedes renovarlo; la nueva duración se añadirá después de la fecha de vencimiento vigente.`;}
+  if(renewNote){renewNote.hidden=!activeVip||Boolean(r.membership?.staff_vip);if(activeVip&&!r.membership?.staff_vip)renewNote.textContent=`✦ Tu ${r.membership.tier==='gold'?'GOLD':'VIP'} está activo hasta el ${new Date(r.membership.ends_at).toLocaleDateString('es-PE')}. Puedes renovarlo; la nueva duración se añadirá después de la fecha de vencimiento vigente.`;}
   const accountTier=$('client-account-tier');
   if(accountTier)accountTier.textContent=r.membership?.staff_vip?'♛ PERSONAL · VIP GRATUITO':activeVip?(r.membership?.tier==='gold'?'✦ CLIENTE GOLD ACTIVO':'♛ CLIENTE VIP ACTIVO'):'◇ CUENTA PÚBLICA';
   const values=[['Publicados',r.stats.total],['Ganados',r.stats.won],['Perdidos',r.stats.lost],['Pendientes',r.stats.pending]];

@@ -229,3 +229,11 @@
 .football-ai-preview {border:1px solid rgba(184,143,54,.25);border-radius:12px;padding:12px;margin:10px 0;background:rgba(20,26,34,.45);overflow-wrap:anywhere;}
 .football-ai-preview p{margin:6px 0;font-size:.9rem;line-height:1.5;}
 .football-ai-preview small{opacity:.78;}
+
+/* v3.7.9 · owner discount management */
+.discount-manager{margin:20px 0;padding:18px;border:1px solid rgba(211,168,86,.28);border-radius:14px}
+.discount-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;align-items:end}
+.discount-form label{display:flex;flex-direction:column;gap:5px}
+.discount-form .discount-reason{grid-column:1/-1}
+.discount-plan-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;border-bottom:1px solid rgba(255,255,255,.12);padding:10px 0}
+.discount-plan-row p{margin:0;overflow-wrap:anywhere}
