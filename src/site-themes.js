@@ -1,7 +1,7 @@
 // Fijas de Élite: visual-only seasonal themes. No prediction, payment, or Telegram logic.
 export const SITE_THEMES=Object.freeze(['elite','navidad','ano_nuevo','san_valentin','fiestas_patrias','halloween','primavera']);
 export const SITE_THEME_MODES=Object.freeze(['automatico','manual']);
-export const SITE_THEME_MOTION=Object.freeze(['suave','normal','apagado']);
+export const SITE_THEME_MOTION=Object.freeze(['suave','normal','intenso','apagado']);
 export const DEFAULT_SITE_THEME=Object.freeze({mode:'automatico',theme:'elite',motion:'suave'});
 
 function limaParts(now){

@@ -1,109 +1,156 @@
-/* Fijas de Élite v3.8.3: seasonal atmosphere, visible over dark layouts, never captures clicks. */
+/* FIJAS DE ÉLITE 3.8.4 · Estaciones inmersivas: UI cromática, SVG animados, iluminación.
+   En todas las páginas; sin recursos ni JS por cuadro y sin bloquear clics. */
 :root{
- --fe-season-a:rgba(215,168,78,.32);--fe-season-b:rgba(64,132,115,.20);
- --fe-season-accent:#e8c780;--fe-season-fleck:rgba(252,209,116,.92);
- --fe-season-edge:rgba(221,176,91,.53);--fe-season-glow:rgba(219,172,88,.12);
+ --fe-ui-bg:#0a0e12;--fe-ui-surface:#13191e;--fe-ui-surface-2:#1c2225;
+ --fe-ui-accent:#deb970;--fe-ui-soft:rgba(218,180,103,.20);--fe-ui-line:rgba(219,174,88,.43);
+ --fe-ui-light:rgba(229,192,113,.22);--fe-ui-alt:rgba(43,132,112,.23);
 }
 html[data-fe-theme="navidad"]{
- --fe-season-a:rgba(16,157,111,.43);--fe-season-b:rgba(208,56,75,.34);
- --fe-season-accent:#b2f2d2;--fe-season-fleck:rgba(227,255,243,.98);
- --fe-season-edge:rgba(116,217,176,.59);--fe-season-glow:rgba(44,182,139,.18)
+ --fe-ui-bg:#061b1a;--fe-ui-surface:#0b2824;--fe-ui-surface-2:#19372f;
+ --fe-ui-accent:#e5c98d;--fe-ui-soft:rgba(33,174,120,.25);--fe-ui-line:rgba(88,227,165,.53);
+ --fe-ui-light:rgba(44,182,121,.43);--fe-ui-alt:rgba(213,45,73,.32);
 }
 html[data-fe-theme="ano_nuevo"]{
- --fe-season-a:rgba(141,78,226,.43);--fe-season-b:rgba(238,183,52,.34);
- --fe-season-accent:#f8d893;--fe-season-fleck:rgba(253,221,134,.99);
- --fe-season-edge:rgba(206,160,242,.61);--fe-season-glow:rgba(143,85,215,.18)
+ --fe-ui-bg:#100c26;--fe-ui-surface:#1b1737;--fe-ui-surface-2:#242044;
+ --fe-ui-accent:#ffe09a;--fe-ui-soft:rgba(171,124,248,.24);--fe-ui-line:rgba(210,163,248,.59);
+ --fe-ui-light:rgba(159,96,225,.45);--fe-ui-alt:rgba(245,187,66,.27);
 }
 html[data-fe-theme="san_valentin"]{
- --fe-season-a:rgba(208,72,131,.42);--fe-season-b:rgba(155,50,111,.30);
- --fe-season-accent:#f6c1d3;--fe-season-fleck:rgba(255,175,206,.95);
- --fe-season-edge:rgba(236,147,181,.61);--fe-season-glow:rgba(204,74,128,.18)
+ --fe-ui-bg:#260d22;--fe-ui-surface:#34172e;--fe-ui-surface-2:#46213d;
+ --fe-ui-accent:#ffc5d7;--fe-ui-soft:rgba(240,106,151,.22);--fe-ui-line:rgba(253,158,192,.53);
+ --fe-ui-light:rgba(238,88,151,.41);--fe-ui-alt:rgba(178,72,156,.27);
 }
 html[data-fe-theme="fiestas_patrias"]{
- --fe-season-a:rgba(220,63,71,.48);--fe-season-b:rgba(239,221,199,.21);
- --fe-season-accent:#ffe6dd;--fe-season-fleck:rgba(255,205,208,.96);
- --fe-season-edge:rgba(243,141,141,.60);--fe-season-glow:rgba(221,61,77,.18)
+ --fe-ui-bg:#270e15;--fe-ui-surface:#341721;--fe-ui-surface-2:#47212a;
+ --fe-ui-accent:#ffdad5;--fe-ui-soft:rgba(230,60,76,.24);--fe-ui-line:rgba(247,143,148,.61);
+ --fe-ui-light:rgba(226,59,74,.44);--fe-ui-alt:rgba(253,227,225,.18);
 }
 html[data-fe-theme="halloween"]{
- --fe-season-a:rgba(232,111,23,.46);--fe-season-b:rgba(129,65,204,.38);
- --fe-season-accent:#f5bb78;--fe-season-fleck:rgba(255,183,117,.97);
- --fe-season-edge:rgba(234,157,88,.65);--fe-season-glow:rgba(183,91,43,.19)
+ --fe-ui-bg:#160c21;--fe-ui-surface:#24152d;--fe-ui-surface-2:#32203d;
+ --fe-ui-accent:#ffb46d;--fe-ui-soft:rgba(236,129,49,.22);--fe-ui-line:rgba(255,164,84,.59);
+ --fe-ui-light:rgba(245,123,39,.41);--fe-ui-alt:rgba(150,87,211,.37);
 }
 html[data-fe-theme="primavera"]{
- --fe-season-a:rgba(103,177,78,.43);--fe-season-b:rgba(208,98,154,.33);
- --fe-season-accent:#e8dfac;--fe-season-fleck:rgba(243,222,154,.97);
- --fe-season-edge:rgba(177,221,139,.60);--fe-season-glow:rgba(112,181,86,.18)
+ --fe-ui-bg:#0d2018;--fe-ui-surface:#152d23;--fe-ui-surface-2:#244033;
+ --fe-ui-accent:#e9f2a3;--fe-ui-soft:rgba(149,198,102,.27);--fe-ui-line:rgba(169,228,134,.53);
+ --fe-ui-light:rgba(137,212,110,.39);--fe-ui-alt:rgba(231,113,168,.30);
 }
-/* This is a visible but translucent foreground lightscape. v3.8.2 placed it *behind*
-   solid main/hero/panel backgrounds, making the entire system look unchanged. */
-.fe-seasonal-atmosphere{
- position:fixed;inset:0;overflow:hidden;pointer-events:none;user-select:none;
- z-index:15;isolation:isolate;contain:strict;
- background:radial-gradient(ellipse 39% 46% at 0% 8%,var(--fe-season-a),transparent 80%),
- radial-gradient(ellipse 42% 54% at 100% 74%,var(--fe-season-b),transparent 83%);
+/* Paint the actual UI — not only a translucent rectangle over the default black site. */
+html[data-fe-theme]:not([data-fe-theme="elite"]){color-scheme:dark;--bg:var(--fe-ui-bg);--panel:var(--fe-ui-surface);--gold:var(--fe-ui-accent)}
+html[data-fe-theme]:not([data-fe-theme="elite"]) body{
+ background-color:var(--fe-ui-bg)!important;
+ background-image:radial-gradient(ellipse 70% 40% at 4% 5%,var(--fe-ui-light),transparent 84%),radial-gradient(ellipse 60% 65% at 98% 80%,var(--fe-ui-alt),transparent 88%)!important;
+ background-attachment:fixed;
 }
-.fe-seasonal-atmosphere::before{
- content:"";position:absolute;inset:-17%;pointer-events:none;
- background:radial-gradient(ellipse 33% 30% at 80% 8%,var(--fe-season-b),transparent 83%),
- radial-gradient(ellipse 38% 43% at 20% 81%,var(--fe-season-a),transparent 84%);
- opacity:.48;animation:fe-season-glow 27s ease-in-out infinite alternate
+html[data-fe-theme]:not([data-fe-theme="elite"]) :is(.hero,.plans-section,.performance-section,.benefits-section,.membership-comparison,.auth-layout){
+ background-image:radial-gradient(ellipse 67% 74% at 4% 13%,var(--fe-ui-light),transparent 85%),radial-gradient(ellipse 75% 70% at 97% 91%,var(--fe-ui-alt),transparent 87%)!important;
 }
-.fe-seasonal-atmosphere::after{
- content:"";position:absolute;inset:0;pointer-events:none;
- background-image:radial-gradient(circle,var(--fe-season-fleck) 1px,transparent 1.8px);
- background-size:105px 101px;opacity:.26;animation:fe-season-drift 42s linear infinite
+html[data-fe-theme]:not([data-fe-theme="elite"]) :is(.tier-card,.plan,.benefit,.pick,.card,.stadium,.cta,.performance-history,.membership-comparison,.client-welcome,.client-form-card){
+ border-color:var(--fe-ui-line)!important;
+ box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 22px 65px rgba(0,0,0,.23),0 0 32px var(--fe-ui-soft)!important;
 }
-.fe-seasonal-particle{
- position:absolute;left:var(--fe-x);top:var(--fe-y);font-size:var(--fe-size);
- color:var(--fe-season-fleck);opacity:.48;line-height:1;
- text-shadow:0 0 13px var(--fe-season-fleck),0 0 30px var(--fe-season-a);
- animation:fe-season-float var(--fe-duration) ease-in-out var(--fe-delay) infinite alternate;
- will-change:transform
+html[data-fe-theme]:not([data-fe-theme="elite"]) :is(.tier-card,.plan,.benefit,.pick,.stadium,.auth-card,.client-welcome,.client-panel .vip-stat){
+ background:linear-gradient(135deg,var(--fe-ui-surface-2),var(--fe-ui-surface) 76%,var(--fe-ui-bg))!important;
 }
-@keyframes fe-season-glow{from{transform:translate3d(-2%,3%,0) scale(1)}to{transform:translate3d(6%,-4%,0) scale(1.1)}}
-@keyframes fe-season-drift{to{background-position:105px 101px}}
-@keyframes fe-season-float{0%{transform:translate3d(-12px,14px,0) rotate(-14deg);opacity:.20}50%{opacity:.70}100%{transform:translate3d(26px,-44px,0) rotate(17deg);opacity:.30}}
-/* Opaque sections also receive their own festival light so themes are visible when scrolling. */
-html[data-fe-theme] body{isolation:isolate;background-image:radial-gradient(ellipse at 8% 4%,var(--fe-season-a),transparent 38%),radial-gradient(ellipse at 97% 74%,var(--fe-season-b),transparent 46%)}
-html[data-fe-theme] .hero,
-html[data-fe-theme] .plans-section,
-html[data-fe-theme] .performance-section,
-html[data-fe-theme] .benefits-section,
-html[data-fe-theme] .membership-comparison{
- background-image:radial-gradient(ellipse 68% 80% at 3% 4%,var(--fe-season-a),transparent 75%),radial-gradient(ellipse 68% 70% at 95% 99%,var(--fe-season-b),transparent 79%)!important;
+html[data-fe-theme]:not([data-fe-theme="elite"]) :is(.hero h1 span,.section-heading i,.kicker,.eyebrow,.logo em,.membership-comparison-kicker,.tier-card .tier-kicker){color:var(--fe-ui-accent)!important}
+html[data-fe-theme]:not([data-fe-theme="elite"]) :is(.button.gold,.tier-card .tier-cta,.plan a.button.gold,.nav-cta:hover){
+ background:linear-gradient(115deg,var(--fe-ui-accent),#c79561)!important;color:#1c171a!important;
+ box-shadow:0 12px 28px var(--fe-ui-soft)!important;
 }
-html[data-fe-theme] #dashboard .admin-content{
- background:radial-gradient(ellipse 70% 66% at 88% 4%,var(--fe-season-a),transparent 76%),
- radial-gradient(ellipse 76% 64% at 8% 87%,var(--fe-season-b),transparent 79%),#101319
+html[data-fe-theme]:not([data-fe-theme="elite"]) :is(.topbar,.client-public-header){
+ background:linear-gradient(90deg,rgba(8,13,16,.88),var(--fe-ui-surface))!important;
+ border-bottom:1px solid var(--fe-ui-line)!important;
+ backdrop-filter:blur(15px);
 }
-html[data-fe-theme] .auth-page .client-content,
-html[data-fe-theme] .auth-page .auth-layout{
- background-image:radial-gradient(ellipse 65% 63% at 85% 12%,var(--fe-season-a),transparent 80%),
- radial-gradient(ellipse 78% 70% at 12% 93%,var(--fe-season-b),transparent 83%)!important
+html[data-fe-theme]:not([data-fe-theme="elite"]) :is(.footer,.metrics){border-color:var(--fe-ui-line)!important}
+/* Admin and customer portal keep their real content legible. */
+html[data-fe-theme]:not([data-fe-theme="elite"]) #dashboard .admin-content,
+html[data-fe-theme]:not([data-fe-theme="elite"]) .auth-page .client-content{
+ background:radial-gradient(ellipse at 85% 0%,var(--fe-ui-light),transparent 45%),linear-gradient(135deg,var(--fe-ui-bg),var(--fe-ui-surface))!important
 }
-html[data-fe-theme] .auth-page .client-sidebar,
-html[data-fe-theme] #dashboard .admin-sidebar{
- background-image:radial-gradient(ellipse 100% 65% at 30% 0%,var(--fe-season-a),transparent 87%)
+html[data-fe-theme]:not([data-fe-theme="elite"]) :is(#dashboard .admin-sidebar,.auth-page .client-sidebar){
+ background:linear-gradient(170deg,var(--fe-ui-surface-2),var(--fe-ui-bg))!important;
+ border-right-color:var(--fe-ui-line)!important;
 }
-html[data-fe-theme] .tier-card,
-html[data-fe-theme] .auth-page .client-welcome,
-html[data-fe-theme] #dashboard .fe-season-settings{border-top-color:var(--fe-season-edge)}
-html[data-fe-theme]:not([data-fe-theme="elite"]) .topbar,
-html[data-fe-theme]:not([data-fe-theme="elite"]) #dashboard .admin-topline{
- border-bottom-color:var(--fe-season-edge)
+html[data-fe-theme]:not([data-fe-theme="elite"]) :is(#dashboard .card,.auth-page .client-panel,.auth-page .client-form-card,.auth-page .telegram-client-card){
+ border-color:var(--fe-ui-line)!important;
+ box-shadow:0 10px 34px var(--fe-ui-soft)!important;
 }
-html[data-fe-motion="suave"] .fe-seasonal-atmosphere::before{animation-duration:43s;opacity:.43}
-html[data-fe-motion="suave"] .fe-seasonal-particle{animation-duration:calc(var(--fe-duration) * 1.55);opacity:.37}
-html[data-fe-motion="apagado"] .fe-seasonal-atmosphere::before,
-html[data-fe-motion="apagado"] .fe-seasonal-atmosphere::after,
-html[data-fe-motion="apagado"] .fe-seasonal-particle{animation:none;will-change:auto}
-html[data-fe-motion="apagado"] .fe-seasonal-particle{display:none}
+html[data-fe-theme]:not([data-fe-theme="elite"]) :is(#dashboard .admin-nav button.active,.auth-page .client-nav button.active){
+ color:var(--fe-ui-accent)!important;border-color:var(--fe-ui-line)!important;background:var(--fe-ui-soft)!important
+}
+html[data-fe-theme]:not([data-fe-theme="elite"]) #dashboard .fe-season-settings{
+ background:linear-gradient(130deg,var(--fe-ui-surface-2),var(--fe-ui-surface))!important;
+ border-color:var(--fe-ui-line)!important;
+}
+/* Moving graphics: fixed viewport layer above opaque sections, but transparent to input. */
+.fe-seasonal-atmosphere{position:fixed;inset:0;z-index:8;pointer-events:none!important;overflow:hidden;user-select:none;isolation:isolate;contain:layout paint style}
+.fe-seasonal-atmosphere *{pointer-events:none!important;box-sizing:border-box}
+.fe-seasonal-aurora{position:absolute;inset:-12%;background:radial-gradient(ellipse 44% 47% at 7% 12%,var(--fe-ui-light),transparent 88%),radial-gradient(ellipse 38% 44% at 92% 83%,var(--fe-ui-alt),transparent 90%);opacity:.95;animation:fe-aurora-shift 12s ease-in-out infinite alternate}
+.fe-seasonal-ornaments,.fe-seasonal-particles{position:absolute;inset:0}
+.fe-fx{position:absolute;display:block;width:var(--s);height:var(--s);left:var(--x);top:var(--y);line-height:0;color:white;filter:drop-shadow(0 0 8px currentColor);will-change:transform,opacity}
+.fe-fx svg{width:100%;height:100%;display:block;overflow:visible}
+.fe-fx-snow{top:-18vh;color:#eefeff;opacity:.9;animation:fe-snowfall var(--duration) linear var(--delay) infinite}
+.fe-fx-star{opacity:.65;animation:fe-twinkle var(--duration) ease-in-out var(--delay) infinite}
+.fe-fx-bat{left:-13vw;color:#1b1225;filter:drop-shadow(0 0 3px #ff8a45);animation:fe-bat-flight var(--duration) linear var(--delay) infinite}
+.fe-fx-bat svg{animation:fe-bat-wing .48s ease-in-out infinite alternate}
+.fe-fx-ghost{color:#e4dbf4;opacity:.75;animation:fe-ghost-drift var(--duration) ease-in-out var(--delay) infinite alternate}
+.fe-fx-heart{top:112vh;opacity:.85;animation:fe-heart-rise var(--duration) linear var(--delay) infinite}
+.fe-fx-petal,.fe-fx-flower{top:-15vh;opacity:.85;animation:fe-petal-fall var(--duration) linear var(--delay) infinite}
+.fe-fx-butterfly{left:-14vw;opacity:.85;animation:fe-butterfly-flight var(--duration) linear var(--delay) infinite}
+.fe-fx-butterfly svg{animation:fe-butterfly-wing .7s ease-in-out infinite alternate}
+.fe-fx-streamer{top:-14vh;opacity:.85;animation:fe-confetti-fall var(--duration) linear var(--delay) infinite}
+/* Christmas: animated warm light string, *shaped* falling snowflakes and pine trees. */
+.fe-christmas-lights{position:absolute;top:5px;left:2%;width:96%;height:46px;border-top:2px solid rgba(205,231,173,.64);border-radius:50% 50% 0 0;display:flex;justify-content:space-around;align-items:flex-start;filter:drop-shadow(0 2px 7px rgba(255,210,106,.35))}
+.fe-christmas-lights i{display:block;margin-top:9px;width:9px;height:17px;border-radius:50% 50% 45% 45%;background:#e54356;box-shadow:0 0 14px 5px #e543566b;animation:fe-light-glow 1.45s ease-in-out calc(var(--bulb)*-.21s) infinite alternate}
+.fe-christmas-lights i:nth-child(4n+2){background:#f8dd89;box-shadow:0 0 16px 6px #f8dd899a}.fe-christmas-lights i:nth-child(4n+3){background:#7af5d1;box-shadow:0 0 15px 6px #7af5d18a}.fe-christmas-lights i:nth-child(4n){background:#91b8fb;box-shadow:0 0 15px 6px #91b8fb91}
+.fe-christmas-tree{position:absolute;bottom:-17px;font-size:clamp(64px,12vw,150px);filter:drop-shadow(0 0 23px #74d0a975);opacity:.77;animation:fe-tree-sway 5s ease-in-out infinite alternate}.fe-tree-left{left:0}.fe-tree-right{right:0;animation-delay:-2s}
+/* Halloween: glowing full moon, bats *cross the screen*, ghosts float and pumpkins glow. */
+.fe-halloween-moon{position:absolute;right:4%;top:11%;width:clamp(105px,17vw,230px);aspect-ratio:1;border-radius:50%;background:radial-gradient(circle at 36% 31%,#ffe6b2 0,#fbbc6f 48%,#b86b6d 83%,#5e3a75);box-shadow:0 0 35px #f4a4527d,0 0 140px #e8705364;opacity:.76;animation:fe-moon-pulse 7s ease-in-out infinite alternate}
+.fe-halloween-moon:after{content:"";position:absolute;inset:15%;border-radius:50%;background:radial-gradient(circle at 25% 35%,#9a6b6b60 9%,transparent 11%),radial-gradient(circle at 72% 60%,#845e5e52 13%,transparent 16%)}
+.fe-pumpkin-left,.fe-pumpkin-right{position:absolute;bottom:2%;width:clamp(70px,11vw,135px);height:clamp(70px,11vw,135px);opacity:.88;filter:drop-shadow(0 0 21px #ff7b3a73);animation:fe-tree-sway 4s ease-in-out infinite alternate}.fe-pumpkin-left{left:2%}.fe-pumpkin-right{right:2%;animation-delay:-2s}.fe-pumpkin-left svg,.fe-pumpkin-right svg{width:100%;height:100%}
+/* New year fireworks: every ray expands from a common center and fades. */
+.fe-firework{position:absolute;left:var(--x);top:var(--y);width:2px;height:2px;filter:drop-shadow(0 0 10px #ffe59d)}
+.fe-firework i{position:absolute;left:0;top:0;width:3px;height:55px;border-radius:5px;transform-origin:50% 0;background:linear-gradient(#fff4d5,#fcd45c 62%,transparent);animation:fe-firework-ray 4.8s ease-out calc(var(--fw-delay) + var(--ray)*.013s) infinite;opacity:0}
+.fe-firework:nth-child(even) i{background:linear-gradient(#f8f0ff,#b794ff 60%,transparent)}
+/* Valentine + spring + patrias ornaments complement floating illustrated particles. */
+.fe-valentine-halo{position:absolute;width:min(44vw,430px);aspect-ratio:1;left:50%;top:21%;transform:translateX(-50%) rotate(-20deg);border:1px solid #ff9fb85c;border-radius:50%;box-shadow:0 0 130px #ff81c044,inset 0 0 80px #ff81c015;animation:fe-halo-beat 4s ease-in-out infinite}
+.fe-patrias-ribbon{position:absolute;inset:-2% -4% auto;height:22px;transform:rotate(-3deg);background:linear-gradient(90deg,#e83b4d 0 29%,#fff6ef 30% 63%,#e83b4d 64% 100%);box-shadow:0 7px 40px #ed647267;opacity:.85;animation:fe-ribbon-wave 5s ease-in-out infinite alternate}
+.fe-spring-meadow{position:absolute;bottom:-16%;left:-10%;width:120%;height:29%;border-radius:50%;background:radial-gradient(ellipse at 50% 90%,#84dc785c,transparent 73%);filter:blur(18px);animation:fe-aurora-shift 7s ease-in-out infinite alternate}
+/* Motion varies by festival. Short, visible cycles, *not* 40s drifting two pixels. */
+@keyframes fe-snowfall{0%{transform:translate3d(0,-10vh,0) rotate(0);opacity:0}5%{opacity:.98}90%{opacity:.92}100%{transform:translate3d(var(--drift),129vh,0) rotate(360deg);opacity:0}}
+@keyframes fe-bat-flight{0%{transform:translate3d(-15vw,-12px,0) rotate(-8deg);opacity:0}7%{opacity:.8}45%{transform:translate3d(54vw,55px,0) rotate(4deg);opacity:.92}95%{opacity:.75}100%{transform:translate3d(130vw,-75px,0) rotate(-6deg);opacity:0}}
+@keyframes fe-bat-wing{from{transform:scaleY(.62)}to{transform:scaleY(1.12)}}
+@keyframes fe-ghost-drift{0%{transform:translate3d(-48px,10px,0) rotate(-12deg);opacity:.35}50%{transform:translate3d(45px,-30px,0) rotate(7deg);opacity:.84}100%{transform:translate3d(-9px,54px,0) rotate(-7deg);opacity:.48}}
+@keyframes fe-heart-rise{0%{transform:translate3d(0,12vh,0) rotate(-24deg) scale(.8);opacity:0}7%{opacity:.83}90%{opacity:.86}100%{transform:translate3d(var(--drift),-143vh,0) rotate(26deg) scale(1.15);opacity:0}}
+@keyframes fe-petal-fall{0%{transform:translate3d(0,-5vh,0) rotate(0) rotateY(0);opacity:0}8%{opacity:.86}100%{transform:translate3d(var(--drift),132vh,0) rotate(360deg) rotateY(200deg);opacity:0}}
+@keyframes fe-confetti-fall{0%{transform:translate3d(0,-5vh,0) rotate(0);opacity:0}10%{opacity:.92}100%{transform:translate3d(var(--drift),130vh,0) rotate(680deg);opacity:0}}
+@keyframes fe-butterfly-flight{0%{transform:translate3d(-10vw,80px,0);opacity:0}8%{opacity:.9}50%{transform:translate3d(54vw,-35px,0);opacity:1}100%{transform:translate3d(123vw,45px,0);opacity:0}}
+@keyframes fe-butterfly-wing{to{transform:scaleX(.56)}}
+@keyframes fe-firework-ray{0%,7%{transform:rotate(var(--angle)) translateY(0) scaleY(0);opacity:0}20%{transform:rotate(var(--angle)) translateY(26px) scaleY(1.5);opacity:.95}36%{transform:rotate(var(--angle)) translateY(65px) scaleY(.85);opacity:.7}52%,100%{transform:rotate(var(--angle)) translateY(100px) scaleY(.2);opacity:0}}
+@keyframes fe-twinkle{0%,100%{transform:scale(.5) rotate(0);opacity:.13}50%{transform:scale(1.15) rotate(50deg);opacity:.78}}
+@keyframes fe-aurora-shift{from{transform:translate3d(-3%,3%,0) scale(.95)}to{transform:translate3d(4%,-4%,0) scale(1.08)}}
+@keyframes fe-light-glow{from{opacity:.45;filter:brightness(.6)}to{opacity:1;filter:brightness(1.4)}}
+@keyframes fe-tree-sway{to{transform:rotate(4deg) translateY(-9px)}}
+@keyframes fe-moon-pulse{to{box-shadow:0 0 60px #f4a452b0,0 0 180px #e870538e;transform:scale(1.025)}}
+@keyframes fe-halo-beat{50%{transform:translateX(-50%) rotate(-20deg) scale(1.1);box-shadow:0 0 130px #ff81c069}}
+@keyframes fe-ribbon-wave{to{transform:rotate(2deg) translateY(10px)}}
+/* Intensity choices are effective even with existing stored 'suave' preferences. */
+html[data-fe-motion="suave"] .fe-fx{animation-duration:calc(var(--duration) * 1.2);filter:drop-shadow(0 0 5px currentColor)}
+html[data-fe-motion="suave"] .fe-seasonal-aurora{opacity:.70}
+html[data-fe-motion="intenso"] .fe-seasonal-aurora{opacity:1.0;filter:saturate(1.25)}
+html[data-fe-motion="intenso"] .fe-fx{animation-duration:calc(var(--duration) * .79)}
+html[data-fe-motion="apagado"] :is(.fe-fx,.fe-season-fixture){animation:none!important}
+html[data-fe-motion="apagado"] .fe-fx{display:none!important}
+html[data-fe-motion="apagado"] .fe-seasonal-aurora{animation:none!important}
 @media(max-width:700px){
- .fe-seasonal-atmosphere{background:radial-gradient(ellipse 72% 47% at -8% 13%,var(--fe-season-a),transparent 86%),radial-gradient(ellipse 73% 50% at 112% 78%,var(--fe-season-b),transparent 88%)}
- .fe-seasonal-particle{font-size:clamp(13px,3.3vw,19px);text-shadow:0 0 14px var(--fe-season-fleck)}
- .fe-seasonal-atmosphere::after{opacity:.14}
+ .fe-christmas-lights{height:29px}.fe-christmas-lights i{height:12px;width:7px}
+ .fe-pumpkin-left,.fe-pumpkin-right{bottom:1%}.fe-halloween-moon{top:14%;right:2%;opacity:.59}
+ .fe-seasonal-aurora{opacity:.72}
+ .fe-fx{filter:drop-shadow(0 0 4px currentColor)}
 }
 @media(prefers-reduced-motion:reduce){
- .fe-seasonal-atmosphere::before,.fe-seasonal-atmosphere::after,.fe-seasonal-particle{animation:none!important;will-change:auto!important}
- .fe-seasonal-particle{display:none!important}
+ .fe-seasonal-atmosphere *{animation:none!important;transition:none!important;will-change:auto!important}
+ .fe-fx{display:none!important}
+ .fe-seasonal-aurora{opacity:.42}
 }

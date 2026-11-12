@@ -36,7 +36,7 @@ import {publicPerformanceFilters,performanceWhere,summaryFromGroups,publicRecent
 import {effectiveSiteTheme,sanitizeSiteTheme,SITE_THEMES,SITE_THEME_MODES,SITE_THEME_MOTION} from './site-themes.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
-const APP_VERSION = '3.8.3';
+const APP_VERSION = '3.8.4';
 const app = express();
 let telegramVipControl=null;
 let notificationControl=null;

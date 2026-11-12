@@ -1,3 +1,7 @@
+## Ambientación festiva v3.8.4
+
+En **Administración → Temas y festividades**, selecciona un tema y pulsa **Probar animación en vivo** para comprobar movimiento real, o **Guardar para toda la web** para publicarlo. El selector usa modo manual al elegir una festividad. Intensidad: suave / normal / intenso / apagado. Si tu equipo tiene **Reducir movimiento** activado, se desactivan los efectos por accesibilidad. Se generan SVG locales, sin dependencias de CDN.
+
 ## v3.8.3 · Ambientación festiva visible y control intuitivo (2026-11-12)
 
 - Corregida la capa de ambiente: estaba detrás de fondos opacos, por eso casi no se percibían cambios.

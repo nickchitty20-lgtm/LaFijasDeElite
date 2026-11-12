@@ -1,3 +1,15 @@
+# v3.8.4 · Temas festivos inmersivos y animaciones reales (12-11-2026)
+
+- Recreación completa de `seasonal-theme.js` y `seasonal-theme.css` con gráficos vectoriales SVG propios.
+- Navidad: nieve en caída de arriba abajo, guirnalda de luces que parpadean y abetos.
+- Halloween: murciélagos cruzan la pantalla batiendo alas, fantasmas flotantes, luna y calabazas.
+- Año Nuevo: fuegos artificiales animados y serpentinas. San Valentín: corazones ascendentes.
+- Fiestas Patrias: cinta rojiblanca y serpentinas. Primavera: pétalos, flores y mariposas.
+- Paleta integral de la web, tarjetas, navegación y áreas administrativas. Efectos y contraste visibles sin impedir interacción.
+- Nuevo nivel `intenso`, además de suave/normal/apagado. Respeta `prefers-reduced-motion`.
+- Sin dependencias externas ni cambios a pagos, Telegram o modelos deportivos.
+- Control de caché v3.8.4 para archivos estáticos de todos los portales.
+
 ## v3.8.3 · Fondo festivo visible y selección manual intuitiva
 
 - La capa de partículas deja de quedar oculta tras superficies oscuras y ofrece colores temáticos perceptibles.
