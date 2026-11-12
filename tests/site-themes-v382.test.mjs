@@ -28,8 +28,8 @@ test('pages load theme script/css; panel exposes only-owner nav',()=>{
  const root=new URL('../',import.meta.url);
  const read=f=>readFileSync(new URL(f,root),'utf8');
  for(const f of ['public/index.html','public/clientes.html','views/panel.html']){
-  assert.match(read(f),/seasonal-theme\.css\?v=3\.8\.3/);
-  assert.match(read(f),/seasonal-theme\.js\?v=3\.8\.3/);
+  assert.match(read(f),/seasonal-theme\.css\?v=3\.8\.4/);
+  assert.match(read(f),/seasonal-theme\.js\?v=3\.8\.4/);
  }
  assert.match(read('views/panel.html'),/data-section="visual-theme"/);
  assert.match(read('views/panel.html'),/id="seasonalThemeForm"/);
@@ -42,4 +42,18 @@ test('theme effects keep accessibility and CSS pointer interactions',()=>{
  assert.match(css,/prefers-reduced-motion:reduce/);
  assert.match(css,/pointer-events:none/);
  assert.match(css,/data-fe-motion="apagado"/);
+});
+
+test('intense festive movement can be saved and sanitized',()=>{
+ assert.equal(sanitizeSiteTheme({mode:'manual',theme:'navidad',motion:'intenso'}).motion,'intenso');
+ assert.equal(effectiveSiteTheme({mode:'manual',theme:'halloween',motion:'intenso'}).activeTheme,'halloween');
+});
+test('all seven themes have illustrated animations and no external image requests',()=>{
+ const js=readFileSync(new URL('../public/seasonal-theme.js',import.meta.url),'utf8');
+ const css=readFileSync(new URL('../public/seasonal-theme.css',import.meta.url),'utf8');
+ for (const theme of ['navidad','halloween','ano_nuevo','san_valentin','fiestas_patrias','primavera']) assert.ok(js.includes(`theme==='${theme}'`),theme);
+ assert.match(js,/else\{\s*for\(let i=0;i<count\(19\)/);
+ for (const fx of ['snowfall','bat-flight','ghost-drift','heart-rise','petal-fall','confetti-fall','firework-ray']) assert.match(css,new RegExp('fe-'+fx));
+ assert.match(js,/getEffects:/);assert.match(css,/fe-seasonal-atmosphere.*pointer-events:none/);
+ assert.doesNotMatch(js,/fetch\([\'\"]https?:\/\//);
 });
